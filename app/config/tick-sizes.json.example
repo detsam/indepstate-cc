@@ -1,0 +1,7 @@
+{
+  "defaultTickSize": 0.01,
+  "bySymbol": {
+    "BNBUSDT.P": 0.01,
+    "AIOTUSDT.P": 0.00001
+  },
+}

@@ -1,0 +1,29 @@
+const { ExecutionAdapter } = require('./base');
+
+class SimulatedAdapter extends ExecutionAdapter {
+  constructor({ latencyMs = [120, 350] } = {}) {
+    super();
+    this.latencyMs = latencyMs;
+    this.provider = 'simulated';
+  }
+  async placeOrder(order) {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const rand = (a,b)=>Math.floor(a+Math.random()*(b-a+1));
+    await wait(rand(this.latencyMs[0], this.latencyMs[1]));
+    // простая серверная проверка на всякий случай
+    if (order.instrumentType === 'EQ' && (!(order.meta?.riskUsd > 0) || !(order.sl >= 6))) {
+      return { status:'rejected', provider:this.provider, reason:'Server validation failed (EQ)' };
+    }
+    if (order.instrumentType === 'CX' && (!(order.qty > 0) || !(order.price > 0) || !(order.sl >= 6))) {
+      return { status:'rejected', provider:this.provider, reason:'Server validation failed (CX)' };
+    }
+    console.log(`[Adapter:${this.provider}] placing`, order);
+    return {
+      status: 'simulated',
+      provider: this.provider,
+      providerOrderId: `SIM-${Date.now()}-${Math.floor(Math.random()*1e4)}`,
+      raw: { echo: order }
+    };
+  }
+}
+module.exports = { SimulatedAdapter };

@@ -1,0 +1,9 @@
+{
+  "bySymbol": {
+    "BNBUSDT.P": 0.01,
+    "AIOTUSDT.P": 0.00001
+  },
+  "patterns": [
+    { "match": "*USDC.P", "tickSize": 0.0001 }
+  ]
+}
