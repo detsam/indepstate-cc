@@ -57,6 +57,12 @@ function buildAdapter(name, cfg){
       inst.provider = 'j2t';
       return inst;
     }
+    case 'dwx': {
+      const { DWXExecutionAdapter } = require('../adapters/dwx');
+      const inst = new DWXExecutionAdapter(cfg || {});
+      inst.provider = 'dwx';
+      return inst;
+    }
     case 'simulated':
     default: {
       const { SimulatedExecutionAdapter } = require('../adapters/simulated');
