@@ -58,8 +58,8 @@ function buildAdapter(name, cfg){
       return inst;
     }
     case 'dwx': {
-      const { DWXExecutionAdapter } = require('../adapters/dwx');
-      const inst = new DWXExecutionAdapter(cfg || {});
+      const { DWXAdapter } = require('../adapters/dwx');
+      const inst = new DWXAdapter(cfg || {});
       inst.provider = 'dwx';
       return inst;
     }
