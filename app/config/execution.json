@@ -2,15 +2,23 @@
   "default": "simulated",
   "byInstrumentType": {
     "CX": "simulated",
-    "EQ": "j2t"
+    "EQ": "j2t",
+    "FX": "dwx",
+    "CFD": "dwx"
   },
   "providers": {
     "j2t": {
       "baseURL": "https://api.j2t.com",
       "accountId": "${ENV:J2T_ACCOUNT_ID}",
-      "accessToken": "${ENV:J2T_TOKEN}",      
+      "accessToken": "${ENV:J2T_TOKEN}",
       "timeoutMs": 10000,
       "defaultDuration": "gtc"
+    },
+    "dwx": {
+      "host": "${ENV:DWX_HOST}",
+      "port": "${ENV:DWX_PORT}",
+      "account": "${ENV:DWX_ACCOUNT}",
+      "password": "${ENV:DWX_PASSWORD}"
     }
   }
 }
