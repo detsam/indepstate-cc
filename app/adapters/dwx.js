@@ -4,21 +4,19 @@ const { ExecutionAdapter } = require('./base');
 class DWXExecutionAdapter extends ExecutionAdapter {
   /**
    * @param {Object} cfg
-   * @param {string} [cfg.host='127.0.0.1']
-   * @param {number} [cfg.port=5555]
+   * @param {string} [cfg.socketPath='/tmp/dwx.socket'] path to DWX Connect Unix socket
    * @param {number} [cfg.timeoutMs=5000]
    */
-  constructor({ host = '127.0.0.1', port = 5555, timeoutMs = 5000 } = {}) {
+  constructor({ socketPath = '/tmp/dwx.socket', timeoutMs = 5000 } = {}) {
     super();
-    this.host = host;
-    this.port = port;
+    this.socketPath = socketPath;
     this.timeoutMs = timeoutMs;
     this.provider = 'dwx';
   }
 
   _send(message) {
     return new Promise((resolve, reject) => {
-      const socket = net.createConnection({ host: this.host, port: this.port }, () => {
+      const socket = net.createConnection(this.socketPath, () => {
         socket.write(message + '\n');
       });
 
