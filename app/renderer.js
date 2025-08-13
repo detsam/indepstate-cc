@@ -36,11 +36,6 @@ function _normNum(val) {
 }
 function isPos(n) { return typeof n === 'number' && isFinite(n) && n > 0; }
 function isSL(n)  { return typeof n === 'number' && isFinite(n) && n >= 6; }
-function hhmmss(ts) {
-  const d = new Date(ts);
-  const pad = (x)=>String(x).padStart(2,'0');
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
 function isUpEvent(ev) { return /(up|long)/i.test(String(ev)); }
 // CX: правая часть тикера оканчивается на USDT.P (напр., "HTCUSDT.P")
 function isCrypto(t){
@@ -183,7 +178,6 @@ function createCard(row, index) {
 
   // meta
   const meta = el('div', 'meta');
-  meta.appendChild(el('span', null, hhmmss(row.time)));
   meta.appendChild(el('span', null, `#${index + 1}`));
 
   // body
