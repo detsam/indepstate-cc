@@ -47,6 +47,78 @@ function ensureLogs({ truncateExecutionsOnStart = false } = {}) {
    }
 }
 
+// --- Pending registry + wiring для адаптеров DWX-подтверждений ---
+const wiredAdapters = new WeakSet();
+const pendingIndex = new Map(); // pendingId(cID) -> { reqId, adapter, order, ts }
+
+function wireAdapter(adapter, adapterName) {
+  if (!adapter?.on || wiredAdapters.has(adapter)) return;
+  wiredAdapters.add(adapter);
+
+  adapter.on('order:confirmed', ({ pendingId, ticket, mtOrder, origOrder }) => {
+    const rec = pendingIndex.get(pendingId);
+    if (!rec) return;
+    pendingIndex.delete(pendingId);
+
+    const payload = {
+      ts: nowTs(),
+      reqId: rec.reqId,
+      provider: adapterName,
+      status: 'ok',
+      providerOrderId: String(ticket || ''),
+      pendingId,
+      order: rec.order
+    };
+    appendJsonl(EXEC_LOG, { t: payload.ts, kind: 'confirm', ...payload, mtOrder });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('execution:result', payload);
+    }
+    console.log('[EXEC][CONFIRMED]', { reqId: rec.reqId, ticket: payload.providerOrderId });
+  });
+
+  adapter.on('order:rejected', ({ pendingId, reason, msg, origOrder }) => {
+    const rec = pendingIndex.get(pendingId);
+    if (!rec) return;
+    pendingIndex.delete(pendingId);
+
+    const payload = {
+      ts: nowTs(),
+      reqId: rec.reqId,
+      provider: adapterName,
+      status: 'rejected',
+      reason: reason || 'EA error',
+      pendingId,
+      order: rec.order
+    };
+    appendJsonl(EXEC_LOG, { t: payload.ts, kind: 'reject', ...payload, msg });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('execution:result', payload);
+    }
+    console.log('[EXEC][REJECTED]', { reqId: rec.reqId, reason: payload.reason });
+  });
+
+  adapter.on('order:timeout', ({ pendingId, origOrder }) => {
+    const rec = pendingIndex.get(pendingId);
+    if (!rec) return;
+    pendingIndex.delete(pendingId);
+
+    const payload = {
+      ts: nowTs(),
+      reqId: rec.reqId,
+      provider: adapterName,
+      status: 'rejected',
+      reason: 'timeout',
+      pendingId,
+      order: rec.order
+    };
+    appendJsonl(EXEC_LOG, { t: payload.ts, kind: 'timeout', ...payload });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('execution:result', payload);
+    }
+    console.log('[EXEC][TIMEOUT]', { reqId: rec.reqId });
+  });
+}
+
 function appendJsonl(file, obj) {
   try { fs.appendFileSync(file, JSON.stringify(obj) + '\n'); }
   catch (e) { console.error('appendJsonl error:', e); }
@@ -211,9 +283,45 @@ function setupIpc(orderSvc) {
 
       console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price });
 
-      const adapter = getAdapter(adapterName);
+      const adapter = getAdapter(adapterName);      
+      // разово подключим слушатели подтверждений (если адаптер их поддерживает)
+      wireAdapter(adapter, adapterName);
+
       const result = await adapter.placeOrder(execOrder);
 
+      // если адаптер вернул "pending:<cid>" — не закрываем карточку,
+      // отправляем в UI спец-событие и ждём order:confirmed
+      const maybePending = String(result?.providerOrderId || '');
+      if (maybePending.startsWith('pending:')) {
+        const pendingId = maybePending.slice('pending:'.length);
+        pendingIndex.set(pendingId, { reqId, adapter: adapterName, order: execOrder, ts });
+
+        appendJsonl(EXEC_LOG, {
+          t: ts,
+          kind: 'place-queued',
+          reqId,
+          adapter: adapterName,
+          pendingId,
+          order: execOrder
+        });
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('execution:pending', {
+            ts,
+            reqId,
+            provider: adapterName,
+            pendingId,
+            order: execOrder
+          });
+        }
+
+        console.log('[EXEC][QUEUED]', { reqId, pendingId });
+        // для синхронного ответа IPC можно вернуть «ok» с pendingId,
+        // но UI должен ждать финального события 'execution:result'
+        return { status: 'ok', provider: adapterName, providerOrderId: result.providerOrderId };
+      }
+
+      // иначе — поведение как раньше (simulated/rejected/другие адаптеры)
       const execRecord = {
         t: ts,
         kind: 'place',
@@ -223,10 +331,8 @@ function setupIpc(orderSvc) {
         order: execOrder,
         result
       };
-
       appendJsonl(EXEC_LOG, execRecord);
 
-      // прокинуть в UI, чтобы карточка закрылась/подсветилась
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('execution:result', {
           ts,
@@ -240,8 +346,7 @@ function setupIpc(orderSvc) {
       }
 
       console.log('[EXEC][RES]', { reqId, status: result?.status, reason: result?.reason, providerOrderId: result?.providerOrderId });
-      return result; // {status:'ok'|'simulated'|'rejected', ...}
-
+      return result;
     } catch (err) {
       const rej = { status: 'rejected', reason: err.message || 'adapter error' };
       appendJsonl(EXEC_LOG, { t: nowTs(), kind: 'place', valid: true, order, error: String(err) });
