@@ -11,6 +11,7 @@ const { getAdapter, initExecutionConfig } = require('./services/adapterRegistry'
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const execCfg = require('./config/execution.json');
+const orderCardsCfg = require('./config/order-cards.json');
 initExecutionConfig(execCfg);
 
 function envBool(name, fallback = false) {
@@ -127,6 +128,7 @@ const nowTs = () => Date.now();
 
 // ----------------- Electron window -----------------
 let mainWindow;
+let orderCardServices = [];
 let orderCardService;
 
 function createWindow() {
@@ -148,20 +150,32 @@ function createWindow() {
 app.whenReady().then(() => {
   ensureLogs({ truncateExecutionsOnStart: true });
 
-  const WEBHOOK_LOG = path.join(LOG_DIR, 'webhooks.jsonl');
-  orderCardService = createOrderCardService({
-    type: 'webhook',
-    port: PORT,
-    logFile: WEBHOOK_LOG,
-    nowTs,
-    truncateOnStart: true,
-    onRow(row) {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('orders:new', row);
+  const sourcesCfg = orderCardsCfg?.sources || [{ type: 'webhook' }];
+  orderCardServices = sourcesCfg.map((src) => {
+    const opts = {
+      ...src,
+      nowTs,
+      onRow(row) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('orders:new', row);
+        }
       }
+    };
+    if (src.type === 'webhook') {
+      opts.port = src.port ?? PORT;
+      opts.logFile = path.join(LOG_DIR, src.logFile || 'webhooks.jsonl');
+      opts.truncateOnStart = src.truncateOnStart ?? true;
     }
+    return createOrderCardService(opts);
   });
-  orderCardService.start();
+  for (const svc of orderCardServices) svc.start();
+
+  orderCardService = {
+    async getOrdersList(rows = 100) {
+      const lists = await Promise.all(orderCardServices.map((s) => s.getOrdersList(rows)));
+      return lists.flat().sort((a, b) => (b.time || 0) - (a.time || 0));
+    }
+  };
 
   createWindow();
   setupIpc(orderCardService);
