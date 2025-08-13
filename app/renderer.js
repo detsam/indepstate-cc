@@ -22,6 +22,10 @@ const $filter = document.getElementById('filter');
 const $autoscroll = document.getElementById('autoscroll');
 
 // ======= Utils =======
+function findKeyByTicker(ticker){
+  const idx = state.rows.findIndex(r => r.ticker === ticker);
+  return idx >= 0 ? rowKey(state.rows[idx]) : null;
+}
 function rowKey(row){ return `${row.ticker}|${row.event}|${row.time}|${row.price}`; }
 function _normNum(val) {
   if (val == null) return null;
@@ -442,6 +446,9 @@ async function place(kind, row, v) {
 
   try{
     const res = await ipcRenderer.invoke('queue-place-order', payload);
+    if (res && typeof res.providerOrderId === 'string' && res.providerOrderId.startsWith('pending:')) {
+      toast(`… ${row.ticker}: sent, waiting confirmation`);
+    }
     if (!res || res.status === 'rejected') {
       setCardPending(key, false);
       toast(`✖ ${row.ticker}: ${res?.reason || 'Rejected'}`);
@@ -490,6 +497,24 @@ ipcRenderer.invoke('get-last-rows', 100).then(rows => {
   state.rows = Array.isArray(rows) ? rows : [];
   render();
 }).catch(()=>{});
+
+// Заявка поставлена в очередь адаптером (ждём подтверждение из DWX)
+ipcRenderer.on('execution:pending', (_evt, rec) => {
+  const reqId = rec?.reqId;
+  if (!reqId) return;
+
+  // 1) попробуем маппинг, созданный в момент клика
+  let key = pendingByReqId.get(reqId);
+
+  // 2) если вдруг страница перезагружалась/карточка обновлялась — найдём по тикеру
+  if (!key) key = findKeyByTicker(rec?.order?.symbol || rec?.order?.ticker);
+
+  if (!key) return;
+
+  pendingByReqId.set(reqId, key);
+  setCardPending(key, true);
+  toast(`… ${rec.order.symbol}: queued`);
+});
 
 // Обновлённая логика получения ивента
 ipcRenderer.on('webhook:new', (_evt, row) => {
