@@ -8,7 +8,7 @@ class DWXAdapter extends ExecutionAdapter {
   /**
    * cfg: {
    *   provider?: 'dwx-mt5',
-   *   metatrader_dir_path: string,
+   *   metatraderDirPath: string,
    *   verbose?: boolean,
    *   confirmTimeoutMs?: number, // время ожидания подтверждения
    *   event_handler?: { ... }    // ваши внешние колбэки (необязательно)
@@ -16,7 +16,7 @@ class DWXAdapter extends ExecutionAdapter {
    */
   constructor(cfg) {
     super();
-    if (!cfg?.metatrader_dir_path) throw new Error('[DWXAdapter] metatrader_dir_path is required');
+    if (!cfg?.metatraderDirPath) throw new Error('[DWXAdapter] metatraderDirPath is required');
 
     this.provider = cfg.provider || 'dwx-mt5';
     this.confirmTimeoutMs = cfg.confirmTimeoutMs ?? 7000;
@@ -48,7 +48,7 @@ class DWXAdapter extends ExecutionAdapter {
     };
 
     this.client = new dwx_client({
-      metatrader_dir_path: cfg.metatrader_dir_path,
+      metatrader_dir_path: cfg.metatraderDirPath,
       verbose: this.verbose,
       event_handler: internalHandler,
     });

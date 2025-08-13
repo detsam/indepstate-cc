@@ -493,7 +493,7 @@ function removeRowByKey(key){
 }
 
 // ======= IPC wiring =======
-ipcRenderer.invoke('get-last-rows', 100).then(rows => {
+ipcRenderer.invoke('orders:list', 100).then(rows => {
   state.rows = Array.isArray(rows) ? rows : [];
   render();
 }).catch(()=>{});
@@ -517,7 +517,7 @@ ipcRenderer.on('execution:pending', (_evt, rec) => {
 });
 
 // Обновлённая логика получения ивента
-ipcRenderer.on('webhook:new', (_evt, row) => {
+ipcRenderer.on('orders:new', (_evt, row) => {
   // ищем существующую карточку по ТИКЕРУ
   const idx = state.rows.findIndex(r => r.ticker === row.ticker);
 
