@@ -1,9 +1,10 @@
 // services/orderCards/index.js
-// Factory for order card sources. Currently supports only 'webhook'.
+// Factory for order card sources. Supports 'webhook' and 'file'.
 
 const { OrderCardsSource } = require('./base');
 const sources = {
   webhook: require('./webhook').WebhookOrderCardsSource,
+  file: require('./file').FileOrderCardsSource,
 };
 
 function createOrderCardService(opts = {}) {

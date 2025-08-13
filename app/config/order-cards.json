@@ -1,0 +1,6 @@
+{
+  "sources": [
+    { "type": "webhook" },
+    { "type": "file", "pathEnvVar": "ORDER_CARDS_PATH", "pollMs": 1000 }
+  ]
+}
