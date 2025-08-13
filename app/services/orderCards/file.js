@@ -7,13 +7,13 @@ const { OrderCardsSource } = require('./base');
 // Only TICKER and PRICE are required. If TP is provided then SL must be
 // provided; if QTY is provided then both SL and TP must be present. Values are
 // separated by whitespace.
-function parseLine(line, nowTs) {
+function parseLine(line) {
   const parts = String(line).trim().split(/\s+/);
   if (parts.length < 2) return null;
   const [ticker, priceStr, slStr = '', tpStr = '', qtyStr = ''] = parts;
   const price = Number(priceStr);
   if (!Number.isFinite(price)) return null;
-  const row = { ticker, price, time: nowTs() };
+  const row = { ticker, price };
   if (slStr !== '') {
     const sl = parseInt(slStr, 10);
     if (Number.isFinite(sl)) row.sl = sl;
@@ -37,7 +37,8 @@ class FileOrderCardsSource extends OrderCardsSource {
     this.nowTs = opts.nowTs || (() => Date.now());
     this.onRow = typeof opts.onRow === 'function' ? opts.onRow : () => {};
     this.timer = null;
-    this.prev = new Map(); // ticker -> json string
+    this.prev = new Map(); // ticker -> { sig, row }
+    this.prevMtime = 0;
   }
 
   filePath() {
@@ -48,20 +49,32 @@ class FileOrderCardsSource extends OrderCardsSource {
   poll() {
     const file = this.filePath();
     if (!file) return;
+
+    let stat;
+    try {
+      stat = fs.statSync(file);
+    } catch {
+      return;
+    }
+    const mtime = stat.mtimeMs || stat.mtime?.getTime() || 0;
+    if (mtime === this.prevMtime) return;
+    this.prevMtime = mtime;
+
     let text = '';
     try {
       text = fs.readFileSync(file, 'utf8');
-    } catch (e) {
+    } catch {
       return; // ignore
     }
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     for (const line of lines) {
-      const row = parseLine(line, this.nowTs);
-      if (!row) continue;
-      const sig = JSON.stringify(row);
-      const prev = this.prev.get(row.ticker);
-      if (prev !== sig) {
-        this.prev.set(row.ticker, sig);
+      const baseRow = parseLine(line);
+      if (!baseRow) continue;
+      const sig = JSON.stringify(baseRow);
+      const prev = this.prev.get(baseRow.ticker);
+      if (!prev || prev.sig !== sig) {
+        const row = { ...baseRow, time: this.nowTs() };
+        this.prev.set(baseRow.ticker, { sig, row });
         try { this.onRow(row); } catch {}
       }
     }
@@ -78,7 +91,7 @@ class FileOrderCardsSource extends OrderCardsSource {
   }
 
   async getOrdersList(rows = 100) {
-    const arr = Array.from(this.prev.values()).map(s => JSON.parse(s));
+    const arr = Array.from(this.prev.values()).map(rec => rec.row);
     return arr.slice(-Math.max(1, rows));
   }
 }
