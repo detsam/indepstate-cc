@@ -4,12 +4,11 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const express = require('express');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..','.env') });
 
 const { getAdapter, initExecutionConfig } = require('./services/adapterRegistry');
-const { parseWebhook } = require('./services/webhooks');
+const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const execCfg = require('./config/execution.json');
 initExecutionConfig(execCfg);
@@ -36,18 +35,15 @@ function envFloat(name, fallback = 0) {
 const PORT = envInt("TV_WEBHOOK_PORT");
 const IS_ELECTRON_MENU_ENABLED = envBool("IS_ELECTRON_MENU_ENABLED");
 const LOG_DIR = path.join(__dirname, 'logs');
-const WEBHOOK_LOG = path.join(LOG_DIR, 'webhooks.jsonl');
 const EXEC_LOG = path.join(LOG_DIR, 'executions.jsonl');
 
 // ----------------- FS utils -----------------
 function ensureLogs({ truncateExecutionsOnStart = false } = {}) {
    if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
-   if (!fs.existsSync(WEBHOOK_LOG)) fs.writeFileSync(WEBHOOK_LOG, '');
    if (!fs.existsSync(EXEC_LOG)) fs.writeFileSync(EXEC_LOG, '');
    if (truncateExecutionsOnStart) {
      // обнуляем лог заявок при старте
-    fs.writeFileSync(EXEC_LOG, '');
-    fs.writeFileSync(WEBHOOK_LOG, '');
+     fs.writeFileSync(EXEC_LOG, '');
    }
 }
 
@@ -59,6 +55,7 @@ const nowTs = () => Date.now();
 
 // ----------------- Electron window -----------------
 let mainWindow;
+let orderCardService;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -78,9 +75,24 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ensureLogs({ truncateExecutionsOnStart: true });
+
+  const WEBHOOK_LOG = path.join(LOG_DIR, 'webhooks.jsonl');
+  orderCardService = createOrderCardService({
+    type: 'webhook',
+    port: PORT,
+    logFile: WEBHOOK_LOG,
+    nowTs,
+    truncateOnStart: true,
+    onRow(row) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('orders:new', row);
+      }
+    }
+  });
+  orderCardService.start();
+
   createWindow();
-  setupServer();
-  setupIpc();
+  setupIpc(orderCardService);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -89,43 +101,6 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
-
-// ----------------- Express /webhook -----------------
-function setupServer() {
-  const srv = express();
-  // Принимаем text/plain и JSON (парсим вручную из raw)
-  srv.use(express.text({ type: '*/*', limit: '256kb' }));
-
-  srv.post('/webhook', (req, res) => {
-    const t = nowTs();
-    try {
-      const raw = req.body || '';
-
-      const parsed = parseWebhook(String(raw), () => t);
-      if (!parsed)
-        throw new Error('Invalid payload');
-
-      const row = parsed.row; // уже содержит time
-      // унификация (если хотите принудительно проставить time здесь)
-      row.time = row.time || t;
-
-      appendJsonl(WEBHOOK_LOG, { t, kind: 'webhook', parser: parsed.name, row });
-
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('webhook:new', row);
-      }
-
-      res.json({ status: 'ok' });
-    } catch (e) {
-      appendJsonl(WEBHOOK_LOG, { t, kind: 'webhook-error', error: String(e) });
-      res.status(400).json({ status: 'error', error: String(e) });
-    }
-  });
-
-  srv.listen(PORT, () => {
-    console.log(`Express listening on http://localhost:${PORT}`);
-  });
-}
 
 // ----------------- IPC: queue-place-order -----------------
 
@@ -212,7 +187,7 @@ function normalizeEquityOrderForExecution(order) {
   return norm;
 }
 
-function setupIpc() {
+function setupIpc(orderSvc) {
   ipcMain.handle('queue-place-order', async (_evt, payload) => {
     const order = normalizeOrderPayload(payload);
 
@@ -287,13 +262,8 @@ function setupIpc() {
     }
   });
 
-  // --- IPC: get-last-rows (tail JSONL файлов, совместим с старым вызовом) ---
-  const FILE_MAP = {
-    webhooks: WEBHOOK_LOG,
-    executions: EXEC_LOG,
-  };
-
-  ipcMain.handle('get-last-rows', async (_evt, arg) => {
+  // --- IPC: orders:list (tail JSONL файлов, совместим с старым вызовом) ---
+  ipcMain.handle('orders:list', async (_evt, arg) => {
     // Совместимость: могут передать число (rows) или объект {file, rows}
     let file = 'webhooks';
     let rows = 100;
@@ -304,39 +274,33 @@ function setupIpc() {
       rows = arg.rows || rows;
     }
 
-    const p = FILE_MAP[file];
-    if (!p) throw new Error(`Unknown file alias: ${file}`);
-
-    // Читаем весь файл (объёмы небольшие); при росте — заменить на tail по байтам
-    let text = '';
-    try {
-      text = fs.readFileSync(p, 'utf8');
-    } catch (e) {
-      if (e.code === 'ENOENT') return [];
-      throw e;
+    if (file === 'webhooks') {
+      return orderSvc.getOrdersList(rows);
     }
-
-    const lines = text.split('\n').filter(Boolean);
-    const tail = lines.slice(-Math.max(1, rows));
-    const result = [];
-    for (const l of tail) {
+    if (file === 'executions') {
+      // Читаем весь файл (объёмы небольшие); при росте — заменить на tail по байтам
+      let text = '';
       try {
-        const rec = JSON.parse(l);
-        if (rec && rec.kind === 'webhook' && rec.row) {
-          result.push(rec.row);
-        } else if (rec && rec.payload) {
-          // старые записи: {payload:{ticker,event,price}, t}
-          result.push({
-            ticker: rec.payload.ticker,
-            event: rec.payload.event,
-            price: rec.payload.price,
-            time: rec.t || nowTs()
-          });
-        }
-      } catch {
-        // skip bad line
+        text = fs.readFileSync(EXEC_LOG, 'utf8');
+      } catch (e) {
+        if (e.code === 'ENOENT') return [];
+        throw e;
       }
+
+      const lines = text.split('\n').filter(Boolean);
+      const tail = lines.slice(-Math.max(1, rows));
+      const result = [];
+      for (const l of tail) {
+        try {
+          const rec = JSON.parse(l);
+          result.push(rec);
+        } catch {
+          // skip bad line
+        }
+      }
+      return result;
     }
-    return result;
+
+    throw new Error(`Unknown file alias: ${file}`);
   });
 }
