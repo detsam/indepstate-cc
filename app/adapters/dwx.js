@@ -18,6 +18,12 @@ class DWXAdapter extends ExecutionAdapter {
     super();
     if (!cfg?.metatraderDirPath) throw new Error('[DWXAdapter] metatraderDirPath is required');
 
+    this.cfg = {
+      openOrderRetries: cfg?.openOrderRetries ?? 0,       // сколько ДОП. попыток, по умолчанию 0
+      openOrderRetryDelayMs: cfg?.openOrderRetryDelayMs ?? 25,
+      openOrderRetryBackoff: cfg?.openOrderRetryBackoff ?? 2,
+    };
+
     this.provider = cfg.provider || 'dwx-mt5';
     this.confirmTimeoutMs = cfg.confirmTimeoutMs ?? 7000;
     this.verbose = !!cfg.verbose;
@@ -89,6 +95,29 @@ class DWXAdapter extends ExecutionAdapter {
     // положим в pending
     this.#trackPending(cid, order);
 
+    try {
+      const attempts = order?.meta?.openOrderRetries ?? this.cfg.openOrderRetries; // можно переопределять в payload.meta
+      const delayMs  = this.cfg.openOrderRetryDelayMs;
+      const backoff  = this.cfg.openOrderRetryBackoff;
+
+      await this.#openOrderWithRetry(order, order_type, { attempts, delayMs, backoff });
+
+      return {
+        status: 'ok',
+        provider: this.provider,
+        providerOrderId: `pending:${cid}`,
+        raw: { enqueued: true, cid, attempts },
+      };
+    } catch (e) {
+      this.#rejectPending(cid, e?.message || String(e));
+      return { status: 'rejected', provider: this.provider, reason: e?.message || String(e) };
+    }
+
+  }
+
+  /** ---------- внутреннее ---------- */
+  async #openOrderWithRetry(order, order_type, { attempts = 0, delayMs = 25, backoff = 2 } = {}) {
+    let lastErr;
     let sl = 0.0;
     let tp = 0.0;
 
@@ -99,33 +128,31 @@ class DWXAdapter extends ExecutionAdapter {
       tp = order.price - (order.tp / 100)
       sl = order.price + (order.sl / 100)
     }
-
-    try {
-      await this.client.open_order(
-        order.symbol,
-        order_type,
-        order.qty,
-        order.price ?? 0,
-        sl ?? 0,
-        tp ?? 0,
-        order.magic ?? 0,
-        comment,
-        order.expiration ?? 0
-      );
-
-      return {
-        status: 'ok',
-        provider: this.provider,
-        providerOrderId: `pending:${cid}`, // UI может ключеваться по этому id
-        raw: { enqueued: true, cid },
-      };
-    } catch (e) {
-      this.#rejectPending(cid, e?.message || String(e));
-      return { status: 'rejected', provider: this.provider, reason: e?.message || String(e) };
+    for (let i = 0; i <= attempts; i++) {
+      try {
+        await this.client.open_order(
+          order.symbol,
+          order_type,
+          // qty/volume — как у тебя в коде
+          order.qty,
+          order.price ?? 0,
+          sl,
+          tp,
+          order.magic ?? 0,
+          order.commentWithCid ?? order.comment ?? '', // если прокинул заранее
+          order.expiration ?? 0
+        );
+        return; // успех
+      } catch (e) {
+        lastErr = e;
+        if (i === attempts) break;
+        const wait = Math.max(1, Math.round(delayMs * Math.pow(backoff, i)));
+        if (this.verbose) console.warn(`[DWXAdapter] open_order failed (attempt ${i+1}/${attempts+1}), retry in ${wait}ms:`, e?.message || e);
+        await new Promise(r => setTimeout(r, wait));
+      }
     }
+    throw lastErr;
   }
-
-  /** ---------- внутреннее ---------- */
 
   #trackPending(cid, order) {
     // таймер таймаута

@@ -15,7 +15,8 @@
             "defaultDuration": "gtc"
         },
         "dwx": {
-            "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}"
+            "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}",
+            "openOrderRetries" : "${ENV:DWX_ORDER_PLACE_RETRY_COUNTS}"
         }
     }
 }
