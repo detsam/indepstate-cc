@@ -15,7 +15,7 @@
             "defaultDuration": "gtc"
         },
         "dwx": {
-            "metatrader_dir_path" : "${ENV:DWX_SOCKET_DIR}"
+            "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}"
         }
     }
 }
