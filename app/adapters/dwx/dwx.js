@@ -18,11 +18,13 @@ class DWXAdapter extends ExecutionAdapter {
     super();
     if (!cfg?.metatraderDirPath) throw new Error('[DWXAdapter] metatraderDirPath is required');
 
+    const envMaxDelay = Number(process.env.DWX_MAX_RETRY_DELAY_MS);
+    const parsedMaxDelay = Number.isFinite(envMaxDelay) ? envMaxDelay : Infinity;
+
     this.cfg = {
       openOrderRetryDelayMs: cfg?.openOrderRetryDelayMs ?? 25,
       openOrderRetryBackoff: cfg?.openOrderRetryBackoff ?? 2,
-      openOrderRetryMaxDelayMs:
-        cfg?.openOrderRetryMaxDelayMs ?? Number(process.env.DWX_MAX_RETRY_DELAY_MS) || Infinity,
+      openOrderRetryMaxDelayMs: cfg?.openOrderRetryMaxDelayMs ?? parsedMaxDelay,
     };
 
     this.provider = cfg.provider || 'dwx-mt5';
