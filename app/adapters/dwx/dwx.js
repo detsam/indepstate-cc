@@ -128,6 +128,7 @@ class DWXAdapter extends ExecutionAdapter {
       tp = order.price - (order.tp / 100)
       sl = order.price + (order.sl / 100)
     }
+    
     for (let i = 0; i <= attempts; i++) {
       try {
         await this.client.open_order(
