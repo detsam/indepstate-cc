@@ -145,7 +145,7 @@ function wireAdapter(adapter, adapterName) {
     const info = trackerIndex.get(String(ticket));
     if (info) {
       const status = profit >= 0 ? 'take' : 'loss';
-      dealTrackers.notifyPositionClosed({ ...info, status });
+      dealTrackers.notifyPositionClosed({ ...info, status, profit });
       trackerIndex.delete(String(ticket));
     }
     if (mainWindow && !mainWindow.isDestroyed()) {

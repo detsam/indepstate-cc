@@ -13,7 +13,7 @@ class ObsidianDealTracker extends DealTracker {
     this.journalPath = cfg.journalPath || cfg.vaultPath;
   }
 
-  onPositionClosed({ ticker, tp, sp, status }) {
+  onPositionClosed({ ticker, tp, sp, status, profit }) {
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
     if (!vault || !targetDir) return;
@@ -37,6 +37,7 @@ class ObsidianDealTracker extends DealTracker {
     content = content.replace(/^- Ticker::.*$/m, `-  Ticker:: [[${ticker}]]`);
     if (tp != null) content = content.replace(/^- Take Setup::.*$/m, `- Take Setup:: ${tp}`);
     if (sp != null) content = content.replace(/^- Stop Setup::.*$/m, `- Stop Setup:: ${sp}`);
+    if (profit != null) content = content.replace(/^- Trade Profit::.*$/m, `- Trade Profit:: ${profit}`);
     const statusLine = status === 'take' ? '- Status:: [[Result. Take]]' : '- Status:: [[Result. Stop]]';
     content = content.replace(/^- Status::.*$/m, statusLine);
 
