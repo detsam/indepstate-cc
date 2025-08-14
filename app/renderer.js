@@ -113,12 +113,14 @@ function setCardState(key, state) {
   const buttons = card.querySelectorAll('button.btn');
 
   if (state) {
+    card.classList.add('card--collapsed');
     status.style.display = 'inline-block';
     status.className = `card__status card__status--${state}`;
     if (close) close.style.display = 'none';
     inputs.forEach(inp => { inp.disabled = true; });
     buttons.forEach(btn => { btn.disabled = true; });
   } else {
+    card.classList.remove('card--collapsed');
     status.style.display = 'none';
     if (close) close.style.display = '';
     inputs.forEach(inp => { inp.disabled = false; });
