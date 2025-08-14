@@ -11,6 +11,8 @@ const uiState = new Map();
 
 // Per-card execution state (pending/open/profit/loss)
 const cardStates = new Map();
+// Order for sorting cards by execution state
+const cardStateOrder = { pending: 1, open: 2, profit: 3, loss: 4 };
 
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
@@ -209,7 +211,21 @@ function migrateKey(oldKey, newKey, { preserveUi = false, nextUiPatch = null } =
 // ======= Rendering =======
 function render() {
   const f = (state.filter || '').trim().toLowerCase();
-  const list = f ? state.rows.filter(r => (r.ticker || '').toLowerCase().startsWith(f)) : state.rows;
+  let list = state.rows;
+  if (f) {
+    list = list.filter(r => (r.ticker || '').toLowerCase().startsWith(f));
+  } else {
+    list = list.slice();
+  }
+
+  list.sort((a, b) => {
+    const stateA = cardStates.get(rowKey(a));
+    const stateB = cardStates.get(rowKey(b));
+    const orderA = stateA ? (cardStateOrder[stateA] ?? 5) : 0;
+    const orderB = stateB ? (cardStateOrder[stateB] ?? 5) : 0;
+    if (orderA !== orderB) return orderA - orderB;
+    return 0; // stable sort keeps original order within groups
+  });
 
   $grid.innerHTML = '';
   for (let i = 0; i < list.length; i++) {
@@ -541,14 +557,17 @@ async function place(kind, row, v) {
       setCardState(key, null);
       toast(`✖ ${row.ticker}: ${res?.reason || 'Rejected'}`);
       shakeCard(key);
+      render();
     } else {
       setCardState(key, 'pending');
+      render();
     }
   }catch(e){
     setCardPending(key, false);
     setCardState(key, null);
     toast(`✖ ${row.ticker}: ${e.message || e}`);
     shakeCard(key);
+    render();
   }
 }
 
@@ -680,6 +699,7 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
     setCardState(key, 'pending');
     if (rec.providerOrderId) ticketToKey.set(String(rec.providerOrderId), key);
     toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
+    render();
   } else {
     setCardPending(key, false);
     setCardState(key, null);
@@ -695,6 +715,7 @@ ipcRenderer.on('position:opened', (_evt, rec) => {
   const key = ticketToKey.get(String(rec.ticket));
   if (!key) return;
   setCardState(key, 'open');
+  render();
 });
 
 ipcRenderer.on('position:closed', (_evt, rec) => {
@@ -704,6 +725,7 @@ ipcRenderer.on('position:closed', (_evt, rec) => {
   setCardPending(key, false);
   if (typeof rec.profit === 'number') {
     setCardState(key, rec.profit >= 0 ? 'profit' : 'loss');
+    render();
   } else {
     removeRowByKey(key);
   }
