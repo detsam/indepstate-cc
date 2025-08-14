@@ -50,7 +50,11 @@ class DWXAdapter extends ExecutionAdapter {
       on_tick: (...a) => userHandler.on_tick?.(...a),
       on_bar_data: (...a) => userHandler.on_bar_data?.(...a),
       on_historic_data: (...a) => userHandler.on_historic_data?.(...a),
-      on_historic_trades: (...a) => userHandler.on_historic_trades?.(...a),
+      on_historic_trades() {
+        // при появлении новых исторических сделок проверим закрытие позиций
+        self.#reconcilePendingWithOpenOrders();
+        userHandler.on_historic_trades?.();
+      },
     };
 
     this.client = new dwx_client({
@@ -200,27 +204,46 @@ class DWXAdapter extends ExecutionAdapter {
   }
 
   #reconcilePendingWithOpenOrders() {
-    // найдём новые тикеты
     const nowTickets = new Set(Object.keys(this.client.open_orders || {}));
     const newTickets = [...nowTickets].filter(t => !this._lastTickets.has(t));
+    const removedTickets = [...this._lastTickets].filter(t => !nowTickets.has(t));
 
     if (newTickets.length) {
       for (const t of newTickets) {
         const ord = this.client.open_orders[t];
         if (!ord) continue;
-        // попытаемся найти cid в comment
         const cid = extractCid(ord.comment || '');
         if (cid && this.pending.has(cid)) {
           this.#confirmPending(cid, t, ord);
         } else {
-          // fallback: хэпуристический матч по символу/объёму/направлению/цене
           const hitCid = findHeuristicMatchCid(this.pending, ord);
           if (hitCid) this.#confirmPending(hitCid, t, ord);
+        }
+        // событие открытия позиции
+        this.events.emit('position:opened', { ticket: t, order: ord });
+      }
+    }
+
+    if (removedTickets.length) {
+      for (const t of removedTickets) {
+        const trade = this.client.historic_trades?.[t];
+        if (trade) {
+          this.events.emit('position:closed', { ticket: t, trade });
+        } else {
+          this.events.emit('order:cancelled', { ticket: t });
         }
       }
     }
 
     this._lastTickets = nowTickets;
+  }
+
+  async listOpenOrders() {
+    return Object.values(this.client.open_orders || {});
+  }
+
+  async listClosedPositions() {
+    return Object.values(this.client.historic_trades || {});
   }
 }
 
