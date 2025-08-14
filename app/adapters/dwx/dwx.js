@@ -134,7 +134,7 @@ class DWXAdapter extends ExecutionAdapter {
       tp = order.price - (order.tp / 100)
       sl = order.price + (order.sl / 100)
     }
-    
+
     for (let i = 0; i <= attempts; i++) {
       try {
         await this.client.open_order(
@@ -219,7 +219,7 @@ class DWXAdapter extends ExecutionAdapter {
         meta = {
           initialOpenTime: ord.open_time,
           lastOpenTime: ord.open_time,
-          profit: ord.profit ?? ord.pnl ?? 0,
+          profit: ord.pnl,
           opened: false,
         };
         this._ticketMeta.set(t, meta);
@@ -229,7 +229,7 @@ class DWXAdapter extends ExecutionAdapter {
           this.events.emit('position:opened', { ticket: t, order: ord });
         }
         meta.lastOpenTime = ord.open_time;
-        meta.profit = ord.profit ?? ord.pnl ?? 0;
+        meta.profit = ord.pnl;
       }
     }
 
