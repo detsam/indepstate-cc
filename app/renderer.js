@@ -9,6 +9,9 @@ const state = { rows: [], filter: '', autoscroll: true };
 // Equities:  { qty, price, sl, tp, risk, tpTouched }
 const uiState = new Map();
 
+// Per-card execution state (pending/open/profit/loss)
+const cardStates = new Map();
+
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
 const ticketToKey = new Map(); // ticket -> rowKey
@@ -109,15 +112,68 @@ function setCardState(key, state) {
   const close = card.querySelector('.card__close');
   if (!status) return;
 
+  const inputs = card.querySelectorAll('input');
+  const buttons = card.querySelectorAll('button.btn');
+
   if (state) {
-    card.classList.add('card--collapsed');
+    cardStates.set(key, state);
     status.style.display = 'inline-block';
     status.className = `card__status card__status--${state}`;
     if (close) close.style.display = 'none';
+    inputs.forEach(inp => { inp.disabled = true; });
+    buttons.forEach(btn => { btn.disabled = true; });
+
+    if (state === 'pending') {
+      // restore full card for pending state
+      card.classList.remove('card--mini');
+      if (card._removedParts) {
+        for (const { node, next } of card._removedParts) {
+          if (next && next.parentNode === card) {
+            card.insertBefore(node, next);
+          } else {
+            card.appendChild(node);
+          }
+        }
+        card._removedParts = null;
+      }
+      card.querySelectorAll('input').forEach(inp => inp.disabled = true);
+      card.querySelectorAll('button.btn').forEach(btn => btn.disabled = true);
+    } else {
+      // shrink card to ticker + status
+      card.classList.add('card--mini');
+      if (!card._removedParts) {
+        card._removedParts = [];
+        ['.meta', '.quad-line', '.extraRow', '.btns'].forEach(sel => {
+          const n = card.querySelector(sel);
+          if (n) {
+            card._removedParts.push({ node: n, next: n.nextSibling });
+            n.remove();
+          }
+        });
+      }
+    }
   } else {
-    card.classList.remove('card--collapsed');
+    cardStates.delete(key);
+    card.classList.remove('card--mini');
     status.style.display = 'none';
     if (close) close.style.display = '';
+    inputs.forEach(inp => { inp.disabled = false; });
+    buttons.forEach(btn => { btn.disabled = false; });
+
+    // restore removed sections
+    if (card._removedParts) {
+      for (const { node, next } of card._removedParts) {
+        if (next && next.parentNode === card) {
+          card.insertBefore(node, next);
+        } else {
+          card.appendChild(node);
+        }
+      }
+      card._removedParts = null;
+      // re-enable fields after restoration
+      card.querySelectorAll('input').forEach(inp => inp.disabled = false);
+      card.querySelectorAll('button.btn').forEach(btn => btn.disabled = false);
+    }
   }
 }
 
@@ -142,6 +198,12 @@ function migrateKey(oldKey, newKey, { preserveUi = false, nextUiPatch = null } =
   for (const [rid, key] of pendingByReqId.entries()) {
     if (key === oldKey) pendingByReqId.set(rid, newKey);
   }
+
+  // cardStates
+  if (cardStates.has(oldKey)) {
+    cardStates.set(newKey, cardStates.get(oldKey));
+    cardStates.delete(oldKey);
+  }
 }
 
 // ======= Rendering =======
@@ -151,7 +213,12 @@ function render() {
 
   $grid.innerHTML = '';
   for (let i = 0; i < list.length; i++) {
-    $grid.appendChild(createCard(list[i], i));
+    const row = list[i];
+    const key = rowKey(row);
+    const card = createCard(row, i);
+    $grid.appendChild(card);
+    const st = cardStates.get(key);
+    if (st) setCardState(key, st);
   }
   if (state.autoscroll) {
     try { $wrap.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
@@ -499,6 +566,7 @@ function removeRow(row) {
     state.rows = state.rows.filter(r => !(r.ticker === row.ticker && r.event === row.event && r.time === row.time && r.price === row.price));
   }
   uiState.delete(key);
+  cardStates.delete(key);
   clearPendingByKey(key);
   userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
   render();
@@ -510,6 +578,7 @@ function removeRowByKey(key){
     const row = state.rows[idx];
     state.rows.splice(idx, 1);
     uiState.delete(key);
+    cardStates.delete(key);
     clearPendingByKey(key);
     userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
     render();
