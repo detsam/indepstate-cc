@@ -13,7 +13,10 @@ const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
 const execCfg = require('./config/execution.json');
 const orderCardsCfg = require('./config/order-cards.json');
+const dealTrackersCfg = require('./config/deal-trackers.json');
+const dealTrackers = require('./services/dealTrackers');
 initExecutionConfig(execCfg);
+dealTrackers.init(dealTrackersCfg);
 
 function envBool(name, fallback = false) {
   const v = process.env[name];
@@ -52,6 +55,8 @@ function ensureLogs({ truncateExecutionsOnStart = false } = {}) {
 // --- Pending registry + wiring для адаптеров DWX-подтверждений ---
 const wiredAdapters = new WeakSet();
 const pendingIndex = new Map(); // pendingId(cID) -> { reqId, adapter, order, ts }
+const trackerPending = new Map(); // reqId -> { ticker, tp, sp }
+const trackerIndex = new Map(); // ticket -> { ticker, tp, sp }
 
 function wireAdapter(adapter, adapterName) {
   if (!adapter?.on || wiredAdapters.has(adapter)) return;
@@ -75,6 +80,11 @@ function wireAdapter(adapter, adapterName) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('execution:result', payload);
     }
+    const info = trackerPending.get(rec.reqId);
+    if (info) {
+      trackerIndex.set(String(ticket), info);
+      trackerPending.delete(rec.reqId);
+    }
     console.log('[EXEC][CONFIRMED]', { reqId: rec.reqId, ticket: payload.providerOrderId });
   });
 
@@ -96,6 +106,7 @@ function wireAdapter(adapter, adapterName) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('execution:result', payload);
     }
+    trackerPending.delete(rec.reqId);
     console.log('[EXEC][REJECTED]', { reqId: rec.reqId, reason: payload.reason });
   });
 
@@ -117,6 +128,7 @@ function wireAdapter(adapter, adapterName) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('execution:result', payload);
     }
+    trackerPending.delete(rec.reqId);
     console.log('[EXEC][TIMEOUT]', { reqId: rec.reqId });
   });
 
@@ -129,14 +141,21 @@ function wireAdapter(adapter, adapterName) {
 
   adapter.on('position:closed', ({ ticket, trade }) => {
     events.emit('position:closed', { ticket, trade, adapter: adapterName });
+    const profit = trade?.profit;
+    const info = trackerIndex.get(String(ticket));
+    if (info) {
+      const status = profit >= 0 ? 'take' : 'loss';
+      dealTrackers.notifyPositionClosed({ ...info, status, profit });
+      trackerIndex.delete(String(ticket));
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
-      const profit = trade?.profit;
       mainWindow.webContents.send('position:closed', { ticket, trade, profit, provider: adapterName });
     }
   });
 
   adapter.on('order:cancelled', ({ ticket }) => {
     events.emit('order:cancelled', { ticket, adapter: adapterName });
+    trackerIndex.delete(String(ticket));
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('order:cancelled', { ticket, provider: adapterName });
     }
@@ -317,6 +336,12 @@ function setupIpc(orderSvc) {
       if (!order.meta) order.meta = {};
       order.meta.requestId = reqId;
 
+        trackerPending.set(reqId, {
+          ticker: order.meta?.ticker || order.symbol,
+          tp: order.meta?.takePts,
+          sp: order.meta?.stopPts,
+        });
+
       execOrder = normalizeEquityOrderForExecution(order);
 
       console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price });
@@ -385,6 +410,12 @@ function setupIpc(orderSvc) {
         });
       }
 
+      const info = trackerPending.get(reqId);
+      if (info && result?.status !== 'rejected' && result?.providerOrderId) {
+        trackerIndex.set(String(result.providerOrderId), info);
+      }
+      trackerPending.delete(reqId);
+
       events.emit('order:placed', { order: execOrder, result: { status: result?.status || 'rejected', provider: execRecord.adapter, providerOrderId: result?.providerOrderId, reason: result?.reason } });
 
       console.log('[EXEC][RES]', { reqId, status: result?.status, reason: result?.reason, providerOrderId: result?.providerOrderId });
@@ -403,7 +434,7 @@ function setupIpc(orderSvc) {
           order
         });
       }
-
+      trackerPending.delete(order?.meta?.requestId);
       console.log('[EXEC][ERR]', { adapter: adapterName, reqId: order?.meta?.requestId, error: String(err) });
       events.emit('order:placed', { order: execOrder, result: { status: 'rejected', provider: adapterName, reason: rej.reason } });
       return rej;
