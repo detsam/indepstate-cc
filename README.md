@@ -5,12 +5,13 @@ through pluggable adapters. Order cards remain in the interface after an order
 is placed and collapse to a header with a colored status dot that reflects the
 position lifecycle:
 
-- **orange** – order placed, waiting for fill
-- **blue** – position opened
+- **blue** – order placed, waiting for fill
+- **yellow** – position opened
 - **green/red** – position closed in profit/loss
 
-A lightweight event bus emits `order:placed`, `position:opened` and
-`position:closed` so other parts of the app can react to changes.
+A lightweight event bus emits `order:placed`, `position:opened`,
+`position:closed` and `order:cancelled` so other parts of the app can
+react to changes.
 
 ## Environment variables
 
