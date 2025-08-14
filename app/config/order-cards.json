@@ -2,5 +2,6 @@
   "sources": [
     { "type": "webhook" },
     { "type": "file", "pathEnvVar": "ORDER_CARDS_PATH", "pollMs": 1000 }
-  ]
+  ],
+  "defaultEquityStopUsd": 50
 }

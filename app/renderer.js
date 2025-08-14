@@ -1,5 +1,10 @@
 // renderer.js — crypto & equities cards, stable UI state, safe layout
 const { ipcRenderer } = require('electron');
+const orderCardsCfg = require('./config/order-cards.json');
+const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
+const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
+  ? envEquityStop
+  : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
 
 // ======= App state =======
 const state = { rows: [], filter: '', autoscroll: true };
@@ -408,7 +413,7 @@ function createEquitiesBody(row, key) {
     price: row.price != null ? String(row.price) : '',
     sl:    row.sl != null ? String(row.sl)    : '',
     tp:    row.tp != null ? String(row.tp)    : '',
-    risk:  '', // риск пользователь вводит сам
+    risk:  EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига
     tpTouched: row.tp != null,
   };
   let tpTouched = !!saved.tpTouched;
@@ -505,7 +510,8 @@ function createEquitiesBody(row, key) {
   line.appendChild($tp);
   line.appendChild($risk);
 
-  persist();
+  // compute qty from default risk and SL (if provided)
+  recomputeQtyFromRisk();
   return body;
 }
 

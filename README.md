@@ -31,6 +31,9 @@ The application uses environment variables to supply credentials for execution p
 - `OBSIDIAN_INDEPSTATE_VAULT` – path to the Obsidian vault used for deal notes
 - `OBSIDIAN_INDEPSTATE_DEALS_JOURNAL` – directory within the vault where notes are written
 
+### Order cards
+- `DEFAULT_EQUITY_STOP_USD` – default dollar amount to pre-fill the Risk $ field on equity cards
+
 ## Documentation
 
 See [docs/](docs/README.md) for an overview of the codebase and

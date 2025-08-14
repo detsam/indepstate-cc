@@ -1,20 +1,26 @@
 # Order Card Source Configuration
 
 The `order-cards.json` file lists every source that can feed order cards into the
-application. The file contains a single object with a `sources` array:
+application. The file contains a single object with a `sources` array and optional
+settings such as a default stop value in dollars for equity cards:
 
 ```json
 {
   "sources": [
     { "type": "webhook" },
     { "type": "file", "pathEnvVar": "ORDER_CARDS_PATH", "pollMs": 1000 }
-  ]
+  ],
+  "defaultEquityStopUsd": 50
 }
 ```
 
 Each entry in `sources` is an object with a `type` field and additional options
 depending on the type. Multiple sources can be defined and their orders are
 merged together.
+
+If `defaultEquityStopUsd` is present, its numeric value (in dollars) is used as a
+pre-filled Risk $ field for new equity order cards. The
+`DEFAULT_EQUITY_STOP_USD` environment variable (if set) overrides this value.
 
 ## Source types
 
