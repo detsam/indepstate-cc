@@ -132,6 +132,14 @@ function wireAdapter(adapter, adapterName) {
     console.log('[EXEC][TIMEOUT]', { reqId: rec.reqId });
   });
 
+  adapter.on('order:retry', ({ pendingId, count }) => {
+    const rec = pendingIndex.get(pendingId);
+    if (!rec) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('execution:retry', { reqId: rec.reqId, pendingId, count });
+    }
+  });
+
   adapter.on('position:opened', ({ ticket, order, origOrder }) => {
     events.emit('position:opened', { ticket, order, origOrder, adapter: adapterName });
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -357,7 +365,7 @@ function setupIpc(orderSvc) {
       const maybePending = String(result?.providerOrderId || '');
       if (maybePending.startsWith('pending:')) {
         const pendingId = maybePending.slice('pending:'.length);
-        pendingIndex.set(pendingId, { reqId, adapter: adapterName, order: execOrder, ts });
+        pendingIndex.set(pendingId, { reqId, adapter, adapterName, order: execOrder, ts });
 
         appendJsonl(EXEC_LOG, {
           t: ts,
@@ -438,6 +446,20 @@ function setupIpc(orderSvc) {
       console.log('[EXEC][ERR]', { adapter: adapterName, reqId: order?.meta?.requestId, error: String(err) });
       events.emit('order:placed', { order: execOrder, result: { status: 'rejected', provider: adapterName, reason: rej.reason } });
       return rej;
+    }
+  });
+
+  ipcMain.handle('execution:stop-retry', async (_evt, reqId) => {
+    for (const [pendingId, rec] of pendingIndex.entries()) {
+      if (rec.reqId === reqId) {
+        rec.adapter?.stopOpenOrder?.(pendingId);
+        pendingIndex.delete(pendingId);
+        trackerPending.delete(reqId);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('execution:retry-stopped', { reqId, pendingId });
+        }
+        break;
+      }
     }
   });
 

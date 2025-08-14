@@ -197,7 +197,7 @@ Implements `ExecutionAdapter.placeOrder()` with pending/confirmation logic.
   sl?: number, tp?: number,
   qty: number,
   magic?: number, comment?: string, expiration?: number,
-  meta?: { openOrderRetries?: number } // per-order retries override
+  meta?: { /* unused */ }
 }
 ```
 
@@ -223,9 +223,9 @@ Configuration options (constructor):
 - `metatrader_dir_path` (required)
 - `verbose` (default `false`)
 - `confirmTimeoutMs` (default `7000`)
-- `openOrderRetries` (default `0`)
 - `openOrderRetryDelayMs` (default `25`)
 - `openOrderRetryBackoff` (default `2`)
+- `openOrderRetryMaxDelayMs` (default `Infinity`; override via `DWX_MAX_RETRY_DELAY_MS` env)
 - `event_handler` (optional; proxied into `dwx_client`)
 
 ---
@@ -235,32 +235,25 @@ Configuration options (constructor):
 **Main process:**
 - When `placeOrder()` returns a result with `providerOrderId` starting with `pending:`, send `execution:pending` and store mapping `pendingId → reqId`.
 - Subscribe to `order:confirmed` / `order:rejected` / `order:timeout` from the adapter and forward a final `execution:result`.
+- Forward `order:retry` as `execution:retry`.
+- Handle `execution:stop-retry` from the renderer to abort retries via `stopOpenOrder()` and emit `execution:retry-stopped`.
 
 **Renderer process:**
 - On `execution:pending`: set card to pending (`.card--pending`), disable action buttons.
+- On `execution:retry`: update the retry counter on the card.
+- On `execution:retry-stopped`: revert the card to editable state.
 - On `execution:result`: remove card only when `status:'ok'`. For `rejected`/`timeout`, unpend, highlight error, and keep the card.
 
 ---
 
 ## Retries (`open_order`)
 
-An additional retry layer is implemented in the adapter (on top of the client’s mutex/command-file retry):
+The adapter performs infinite `open_order` retries with exponential backoff. The delay starts from
+`openOrderRetryDelayMs` and multiplies by `openOrderRetryBackoff` on each failure. The delay will not exceed
+`openOrderRetryMaxDelayMs` (set via the `DWX_MAX_RETRY_DELAY_MS` environment variable).
 
-- **Adapter options**
-  - `openOrderRetries`: number of additional attempts (0 = no retries).
-  - `openOrderRetryDelayMs`: initial delay before retry (ms).
-  - `openOrderRetryBackoff`: exponential backoff multiplier.
-
-- **Per-order override**
-  ```js
-  await exec.placeOrder({
-    symbol: 'EURUSD', side: 'buy', type: 'limit', price: 1.0835,
-    sl: 1.0815, tp: 1.0875, qty: 0.2,
-    meta: { openOrderRetries: 3 }
-  });
-  ```
-
-On final failure, a rejection is emitted and a rejected result is returned; pending is cleared accordingly.
+After every failed attempt the adapter emits `order:retry { pendingId, count }`. Retries can be stopped via
+`stopOpenOrder(pendingId)` which aborts the loop and clears pending state.
 
 ---
 
