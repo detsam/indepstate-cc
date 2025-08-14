@@ -28,8 +28,15 @@ class ObsidianDealTracker extends DealTracker {
     }
 
     const dateStr = new Date().toISOString().slice(0, 10);
-    const fileName = `${dateStr}. ${sanitizeFileName(ticker)}.md`;
-    const filePath = path.join(targetDir, fileName);
+    const baseName = `${dateStr}. ${sanitizeFileName(ticker)}`;
+    let fileName = `${baseName}.md`;
+    let filePath = path.join(targetDir, fileName);
+    let i = 1;
+    while (fs.existsSync(filePath)) {
+      fileName = `${baseName} (${i}).md`;
+      filePath = path.join(targetDir, fileName);
+      i += 1;
+    }
 
     let content = template;
     content = content.replace(/^- Date::.*$/m, `- Date:: [[${dateStr}]]`);
