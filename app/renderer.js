@@ -117,15 +117,19 @@ function setCardState(key, state) {
 
   if (state) {
     cardStates.set(key, state);
-    card.classList.add('card--collapsed');
     status.style.display = 'inline-block';
     status.className = `card__status card__status--${state}`;
     if (close) close.style.display = 'none';
     inputs.forEach(inp => { inp.disabled = true; });
     buttons.forEach(btn => { btn.disabled = true; });
+    if (state === 'pending') {
+      card.classList.remove('card--mini');
+    } else {
+      card.classList.add('card--mini');
+    }
   } else {
     cardStates.delete(key);
-    card.classList.remove('card--collapsed');
+    card.classList.remove('card--mini');
     status.style.display = 'none';
     if (close) close.style.display = '';
     inputs.forEach(inp => { inp.disabled = false; });
