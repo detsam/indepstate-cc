@@ -18,10 +18,13 @@ class DWXAdapter extends ExecutionAdapter {
     super();
     if (!cfg?.metatraderDirPath) throw new Error('[DWXAdapter] metatraderDirPath is required');
 
+    const envMaxDelay = Number(process.env.DWX_MAX_RETRY_DELAY_MS);
+    const parsedMaxDelay = Number.isFinite(envMaxDelay) ? envMaxDelay : Infinity;
+
     this.cfg = {
-      openOrderRetries: cfg?.openOrderRetries ?? 0,       // сколько ДОП. попыток, по умолчанию 0
       openOrderRetryDelayMs: cfg?.openOrderRetryDelayMs ?? 25,
       openOrderRetryBackoff: cfg?.openOrderRetryBackoff ?? 2,
+      openOrderRetryMaxDelayMs: cfg?.openOrderRetryMaxDelayMs ?? parsedMaxDelay,
     };
 
     this.provider = cfg.provider || 'dwx-mt5';
@@ -68,6 +71,8 @@ class DWXAdapter extends ExecutionAdapter {
 
     // pending: cid -> { order, timer, createdAt }
     this.pending = new Map();
+    // abort controllers for open_order retries
+    this._retryControllers = new Map();
     // для дельты открытых ордеров
     this._lastTickets = new Set();
     // мета-информация по тикетам: open_time, profit и т.п.
@@ -92,6 +97,7 @@ class DWXAdapter extends ExecutionAdapter {
     // делаем cid и (если нет) проставляем его в comment, чтобы потом надёжно матчинговалось
     const cid = randomId();
     const comment = appendCidToComment(order.comment, cid);
+    order.commentWithCid = comment;
 
     // маппинг типа
     let order_type = order.side;
@@ -101,29 +107,36 @@ class DWXAdapter extends ExecutionAdapter {
     // положим в pending
     this.#trackPending(cid, order);
 
-    try {
-      const attempts = order?.meta?.openOrderRetries ?? this.cfg.openOrderRetries; // можно переопределять в payload.meta
-      const delayMs  = this.cfg.openOrderRetryDelayMs;
-      const backoff  = this.cfg.openOrderRetryBackoff;
+    const delayMs  = this.cfg.openOrderRetryDelayMs;
+    const backoff  = this.cfg.openOrderRetryBackoff;
+    const maxDelay = this.cfg.openOrderRetryMaxDelayMs;
 
-      await this.#openOrderWithRetry(order, order_type, { attempts, delayMs, backoff });
+    const ctrl = new AbortController();
+    this._retryControllers.set(cid, ctrl);
 
-      return {
-        status: 'ok',
-        provider: this.provider,
-        providerOrderId: `pending:${cid}`,
-        raw: { enqueued: true, cid, attempts },
-      };
-    } catch (e) {
-      this.#rejectPending(cid, e?.message || String(e));
-      return { status: 'rejected', provider: this.provider, reason: e?.message || String(e) };
-    }
+    this.#openOrderWithRetry(order, order_type, {
+      delayMs,
+      backoff,
+      maxDelay,
+      signal: ctrl.signal,
+      cid,
+    }).catch((e) => {
+      if (e?.message !== 'RETRY_STOPPED') this.#rejectPending(cid, e?.message || String(e));
+    }).finally(() => {
+      this._retryControllers.delete(cid);
+    });
+
+    return {
+      status: 'ok',
+      provider: this.provider,
+      providerOrderId: `pending:${cid}`,
+      raw: { enqueued: true, cid },
+    };
 
   }
 
   /** ---------- внутреннее ---------- */
-  async #openOrderWithRetry(order, order_type, { attempts = 0, delayMs = 25, backoff = 2 } = {}) {
-    let lastErr;
+  async #openOrderWithRetry(order, order_type, { delayMs = 25, backoff = 2, maxDelay = Infinity, signal, cid } = {}) {
     let sl = 0.0;
     let tp = 0.0;
 
@@ -135,30 +148,46 @@ class DWXAdapter extends ExecutionAdapter {
       sl = order.price + (order.sl / 100)
     }
 
-    for (let i = 0; i <= attempts; i++) {
+    let attempt = 0;
+    let wait = delayMs;
+    for (;;) {
+      if (signal?.aborted) throw new Error('RETRY_STOPPED');
       try {
         await this.client.open_order(
           order.symbol,
           order_type,
-          // qty/volume — как у тебя в коде
           order.qty,
           order.price ?? 0,
           sl,
           tp,
           order.magic ?? 0,
-          order.commentWithCid ?? order.comment ?? '', // если прокинул заранее
+          order.commentWithCid ?? order.comment ?? '',
           order.expiration ?? 0
         );
         return; // успех
       } catch (e) {
-        lastErr = e;
-        if (i === attempts) break;
-        const wait = Math.max(1, Math.round(delayMs * Math.pow(backoff, i)));
-        if (this.verbose) console.warn(`[DWXAdapter] open_order failed (attempt ${i+1}/${attempts+1}), retry in ${wait}ms:`, e?.message || e);
-        await new Promise(r => setTimeout(r, wait));
+        attempt++;
+        this.events.emit('order:retry', { pendingId: cid, count: attempt });
+        if (this.verbose) console.warn(`[DWXAdapter] open_order failed (attempt ${attempt}), retry in ${Math.min(wait, maxDelay)}ms:`, e?.message || e);
+        const pause = Math.min(wait, maxDelay);
+        await new Promise(r => setTimeout(r, pause));
+        wait = Math.min(wait * backoff, maxDelay);
       }
     }
-    throw lastErr;
+  }
+
+  stopOpenOrder(cid) {
+    const ctrl = this._retryControllers.get(cid);
+    if (ctrl) ctrl.abort();
+    this._retryControllers.delete(cid);
+    this.#cancelPending(cid);
+  }
+
+  #cancelPending(cid) {
+    const p = this.pending.get(cid);
+    if (!p) return;
+    clearTimeout(p.timer);
+    this.pending.delete(cid);
   }
 
   #trackPending(cid, order) {

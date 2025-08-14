@@ -26,6 +26,7 @@ The application uses environment variables to supply credentials for execution p
 - `DWX_PORT` – port for the bridge
 - `DWX_ACCOUNT` – trading account number
 - `DWX_PASSWORD` – password for the trading account
+- `DWX_MAX_RETRY_DELAY_MS` – maximum delay between order placement retries
 
 ### Obsidian integration
 - `OBSIDIAN_INDEPSTATE_VAULT` – path to the Obsidian vault used for deal notes
@@ -33,6 +34,7 @@ The application uses environment variables to supply credentials for execution p
 
 ### Order cards
 - `DEFAULT_EQUITY_STOP_USD` – default dollar amount to pre-fill the Risk $ field on equity cards
+- Pending cards display a round button with the retry count; clicking it stops further retries and returns the card to an editable state.
 
 ## Documentation
 

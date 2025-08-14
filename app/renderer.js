@@ -22,6 +22,7 @@ const cardStateOrder = { pending: 1, open: 2, profit: 3, loss: 4 };
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
 const ticketToKey = new Map(); // ticket -> rowKey
+const retryCounts = new Map(); // reqId -> retry count
 
 // --- пользователь вручную менял поля карточки для этого тикера?
 const userTouchedByTicker = new Map(); // ticker -> boolean
@@ -87,6 +88,8 @@ function setCardPending(key, pending=true){
   card.querySelectorAll('button.btn').forEach(b=>{
     if (pending) b.disabled = true;
   });
+  const r = card.querySelector('.retry-btn');
+  if (r) r.style.display = pending ? 'inline-block' : 'none';
 }
 function shakeCard(key){
   const card = cardByKey(key);
@@ -264,6 +267,20 @@ function createCard(row, index) {
   const $status = el('span', 'card__status');
   $status.style.display = 'none';
   right.appendChild($status);
+
+  const $retry = document.createElement('button');
+  $retry.type = 'button';
+  $retry.className = 'retry-btn';
+  $retry.textContent = '0';
+  $retry.title = 'Stop retries';
+  $retry.style.display = 'none';
+  $retry.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const cardEl = e.currentTarget.closest('.card');
+    const reqId = cardEl?.dataset.reqId;
+    if (reqId) ipcRenderer.invoke('execution:stop-retry', reqId);
+  });
+  right.appendChild($retry);
 
   const $close = document.createElement('button');
   $close.type = 'button';
@@ -523,6 +540,13 @@ async function place(kind, row, v) {
   const requestId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
   pendingByReqId.set(requestId, key);
   setCardPending(key, true);
+  const card = cardByKey(key);
+  if (card) {
+    card.dataset.reqId = requestId;
+    const rb = card.querySelector('.retry-btn');
+    if (rb) rb.textContent = '0';
+  }
+  retryCounts.set(requestId, 0);
 
   let qtyVal, priceVal, slVal, takeVal, extra = {};
   if (v.type === 'crypto') {
@@ -579,7 +603,10 @@ async function place(kind, row, v) {
 
 function clearPendingByKey(key){
   for (const [rid, k] of pendingByReqId.entries()){
-    if (k === key) pendingByReqId.delete(rid);
+    if (k === key) {
+      pendingByReqId.delete(rid);
+      retryCounts.delete(rid);
+    }
   }
 }
 
@@ -631,7 +658,41 @@ ipcRenderer.on('execution:pending', (_evt, rec) => {
 
   pendingByReqId.set(reqId, key);
   setCardPending(key, true);
+  if (!retryCounts.has(reqId)) retryCounts.set(reqId, 0);
+  const card = cardByKey(key);
+  if (card) {
+    card.dataset.reqId = reqId;
+    const rb = card.querySelector('.retry-btn');
+    if (rb) rb.textContent = String(retryCounts.get(reqId));
+  }
   toast(`… ${rec.order.symbol}: queued`);
+});
+
+ipcRenderer.on('execution:retry', (_evt, rec) => {
+  const key = pendingByReqId.get(rec.reqId);
+  if (!key) return;
+  retryCounts.set(rec.reqId, rec.count);
+  const card = cardByKey(key);
+  if (card) {
+    const rb = card.querySelector('.retry-btn');
+    if (rb) rb.textContent = String(rec.count);
+  }
+});
+
+ipcRenderer.on('execution:retry-stopped', (_evt, rec) => {
+  const key = pendingByReqId.get(rec.reqId);
+  if (!key) return;
+  pendingByReqId.delete(rec.reqId);
+  retryCounts.delete(rec.reqId);
+  const card = cardByKey(key);
+  if (card) {
+    delete card.dataset.reqId;
+    const rb = card.querySelector('.retry-btn');
+    if (rb) { rb.textContent = '0'; rb.style.display = 'none'; }
+  }
+  setCardPending(key, false);
+  setCardState(key, null);
+  render();
 });
 
 // Обновлённая логика получения ивента
@@ -698,6 +759,13 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
   if (!key) return;
 
   pendingByReqId.delete(reqId);
+  retryCounts.delete(reqId);
+  const card = cardByKey(key);
+  if (card) {
+    delete card.dataset.reqId;
+    const rb = card.querySelector('.retry-btn');
+    if (rb) rb.textContent = '0';
+  }
 
   const ok = rec.status === 'ok' || rec.status === 'simulated';
   if (ok) {
@@ -711,7 +779,6 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
     setCardState(key, null);
     render();
     shakeCard(key);
-    const card = cardByKey(key);
     if (card) card.title = rec.reason || 'Rejected';
     toast(`✖ ${rec.order?.symbol || ''}: ${rec.reason || 'Rejected'}`);
   }
