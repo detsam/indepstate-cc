@@ -608,9 +608,9 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
   const ok = rec.status === 'ok' || rec.status === 'simulated';
   if (ok) {
     setCardPending(key, false);
-    setCardState(key, 'open');
+    setCardState(key, 'pending');
     if (rec.providerOrderId) ticketToKey.set(String(rec.providerOrderId), key);
-    toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — ${rec.status}`);
+    toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
   } else {
     setCardPending(key, false);
     setCardState(key, null);
@@ -620,6 +620,12 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
     if (card) card.title = rec.reason || 'Rejected';
     toast(`✖ ${rec.order?.symbol || ''}: ${rec.reason || 'Rejected'}`);
   }
+});
+
+ipcRenderer.on('position:opened', (_evt, rec) => {
+  const key = ticketToKey.get(String(rec.ticket));
+  if (!key) return;
+  setCardState(key, 'open');
 });
 
 ipcRenderer.on('position:closed', (_evt, rec) => {
