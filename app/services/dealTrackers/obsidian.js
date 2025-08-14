@@ -7,11 +7,18 @@ function sanitizeFileName(name) {
 }
 
 class ObsidianDealTracker extends DealTracker {
-  onPositionClosed({ ticker, tp, sp, status }) {
-    const vault = process.env.OBSIDIAN_INDEPSTATE_VAULT;
-    if (!vault) return;
+  constructor(cfg = {}) {
+    super();
+    this.vaultPath = cfg.vaultPath;
+    this.journalPath = cfg.journalPath || cfg.vaultPath;
+  }
 
-    const templatePath = path.join(vault, 'z. Staff', 'Templates', 'Template. Deal');
+  onPositionClosed({ ticker, tp, sp, status }) {
+    const vault = this.vaultPath;
+    const targetDir = this.journalPath;
+    if (!vault || !targetDir) return;
+
+    const templatePath = path.join(vault, 'z. Staff', 'Templates', 'Template. Deal.md');
     let template;
     try {
       template = fs.readFileSync(templatePath, 'utf8');
@@ -22,10 +29,10 @@ class ObsidianDealTracker extends DealTracker {
 
     const dateStr = new Date().toISOString().slice(0, 10);
     const fileName = `${dateStr}. ${sanitizeFileName(ticker)}.md`;
-    const filePath = path.join(vault, fileName);
+    const filePath = path.join(targetDir, fileName);
 
     let content = template;
-    content = content.replace(/^- Date::.*$/m, `- Date:: ${dateStr}`);
+    content = content.replace(/^- Date::.*$/m, `- Date:: [[${dateStr}]]`);
     content = content.replace(/^- Tactics::.*$/m, `- Tactics:: #Tactics/InPlay`);
     content = content.replace(/^- Ticker::.*$/m, `-  Ticker:: [[${ticker}]]`);
     if (tp != null) content = content.replace(/^- Take Setup::.*$/m, `- Take Setup:: ${tp}`);

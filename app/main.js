@@ -336,11 +336,11 @@ function setupIpc(orderSvc) {
       if (!order.meta) order.meta = {};
       order.meta.requestId = reqId;
 
-      trackerPending.set(reqId, {
-        ticker: order.ticker,
-        tp: order.meta?.takePts,
-        sp: order.meta?.stopPts,
-      });
+        trackerPending.set(reqId, {
+          ticker: order.meta?.ticker || order.symbol,
+          tp: order.meta?.takePts,
+          sp: order.meta?.stopPts,
+        });
 
       execOrder = normalizeEquityOrderForExecution(order);
 
