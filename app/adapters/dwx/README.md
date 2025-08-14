@@ -5,6 +5,26 @@ Modules:
 - **`dwx_client.js`** — Node.js port of the Python `dwx_client.py`. File-based IPC with MT4/MT5 EA/Script. Original **file names** and **command format** are preserved.
 - **`adapters/dwx.js`** — Adapter for `ExecutionAdapter.placeOrder()`. Adds **pending/confirmation** semantics and **retry** support for `OPEN_ORDER`.
 
+### Position lifecycle
+
+`DWXAdapter` tracks the state of orders and positions and exposes:
+
+- `listOpenOrders()` – snapshot of current MT orders
+- `listClosedPositions()` – historic trades keyed by ticket
+
+`check_open_orders` returns both pending orders and open positions and triggers
+`on_order_event` whenever an order is added, removed or its `open_time`
+changes. The adapter stores the initial `open_time` for each ticket and treats
+any change of this field as the moment the order is filled. As new data arrives
+it also keeps the latest `profit` value so that when a ticket disappears we can
+distinguish between a cancelled order and a closed position.
+
+It emits events when positions change:
+
+- `position:opened` `{ticket, order}`
+- `position:closed` `{ticket, trade}`
+- `order:cancelled` `{ticket}`
+
 ---
 
 ## Table of Contents

@@ -57,6 +57,17 @@
 
     /* disabled */
     button:disabled { opacity: 0.5; pointer-events: none; }
+
+    /* collapsed cards */
+    .card--collapsed .meta,
+    .card--collapsed .quad-line,
+    .card--collapsed .btns,
+    .card--collapsed .extraRow { display: none; }
+    .card__status { width:10px; height:10px; border-radius:50%; display:none; margin-left:6px; }
+    .card__status--pending { background:#f97316; }
+    .card__status--open { background:#3b82f6; }
+    .card__status--profit { background:var(--green); }
+    .card__status--loss { background:var(--red); }
   </style>
 </head>
 <body>

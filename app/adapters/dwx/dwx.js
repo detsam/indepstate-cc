@@ -50,7 +50,11 @@ class DWXAdapter extends ExecutionAdapter {
       on_tick: (...a) => userHandler.on_tick?.(...a),
       on_bar_data: (...a) => userHandler.on_bar_data?.(...a),
       on_historic_data: (...a) => userHandler.on_historic_data?.(...a),
-      on_historic_trades: (...a) => userHandler.on_historic_trades?.(...a),
+      on_historic_trades() {
+        // при появлении новых исторических сделок проверим закрытие позиций
+        self.#reconcilePendingWithOpenOrders();
+        userHandler.on_historic_trades?.();
+      },
     };
 
     this.client = new dwx_client({
@@ -66,6 +70,8 @@ class DWXAdapter extends ExecutionAdapter {
     this.pending = new Map();
     // для дельты открытых ордеров
     this._lastTickets = new Set();
+    // мета-информация по тикетам: open_time, profit и т.п.
+    this._ticketMeta = new Map();
   }
 
   /**
@@ -128,7 +134,7 @@ class DWXAdapter extends ExecutionAdapter {
       tp = order.price - (order.tp / 100)
       sl = order.price + (order.sl / 100)
     }
-    
+
     for (let i = 0; i <= attempts; i++) {
       try {
         await this.client.open_order(
@@ -200,27 +206,69 @@ class DWXAdapter extends ExecutionAdapter {
   }
 
   #reconcilePendingWithOpenOrders() {
-    // найдём новые тикеты
     const nowTickets = new Set(Object.keys(this.client.open_orders || {}));
     const newTickets = [...nowTickets].filter(t => !this._lastTickets.has(t));
+    const removedTickets = [...this._lastTickets].filter(t => !nowTickets.has(t));
+
+    // обновляем информацию по текущим ордерам
+    for (const t of nowTickets) {
+      const ord = this.client.open_orders[t];
+      if (!ord) continue;
+      let meta = this._ticketMeta.get(t);
+      if (!meta) {
+        meta = {
+          initialOpenTime: ord.open_time,
+          lastOpenTime: ord.open_time,
+          profit: ord.pnl,
+          opened: false,
+        };
+        this._ticketMeta.set(t, meta);
+      } else {
+        if (!meta.opened && ord.open_time !== meta.initialOpenTime) {
+          meta.opened = true;
+          this.events.emit('position:opened', { ticket: t, order: ord });
+        }
+        meta.lastOpenTime = ord.open_time;
+        meta.profit = ord.pnl;
+      }
+    }
 
     if (newTickets.length) {
       for (const t of newTickets) {
         const ord = this.client.open_orders[t];
         if (!ord) continue;
-        // попытаемся найти cid в comment
         const cid = extractCid(ord.comment || '');
         if (cid && this.pending.has(cid)) {
           this.#confirmPending(cid, t, ord);
         } else {
-          // fallback: хэпуристический матч по символу/объёму/направлению/цене
           const hitCid = findHeuristicMatchCid(this.pending, ord);
           if (hitCid) this.#confirmPending(hitCid, t, ord);
         }
       }
     }
 
+    if (removedTickets.length) {
+      for (const t of removedTickets) {
+        const meta = this._ticketMeta.get(t) || {};
+        const profit = meta.profit;
+        this._ticketMeta.delete(t);
+        if (typeof profit === 'number' && profit !== 0) {
+          this.events.emit('position:closed', { ticket: t, trade: { profit } });
+        } else {
+          this.events.emit('order:cancelled', { ticket: t });
+        }
+      }
+    }
+
     this._lastTickets = nowTickets;
+  }
+
+  async listOpenOrders() {
+    return Object.values(this.client.open_orders || {});
+  }
+
+  async listClosedPositions() {
+    return Object.values(this.client.historic_trades || {});
   }
 }
 

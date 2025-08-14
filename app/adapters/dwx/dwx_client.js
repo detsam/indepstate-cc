@@ -158,6 +158,12 @@ class dwx_client {
         if (!(order_id in this.open_orders)) {
           new_event = true;
           if (this.verbose) console.log('New order: ', order);
+        } else if (this.open_orders[order_id]?.open_time !== order.open_time) {
+          new_event = true;
+          if (this.verbose) console.log('Order updated: ', order);
+        } else if (this.open_orders[order_id]?.pnl !== order.pnl) {
+          new_event = true;
+          if (this.verbose) console.log('Order updated: ', order);
         }
       }
 

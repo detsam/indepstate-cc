@@ -11,6 +11,7 @@ const uiState = new Map();
 
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
+const ticketToKey = new Map(); // ticket -> rowKey
 
 // --- пользователь вручную менял поля карточки для этого тикера?
 const userTouchedByTicker = new Map(); // ticker -> boolean
@@ -101,6 +102,25 @@ function toast(msg){
   t._h = setTimeout(()=>{ t.style.opacity = '0'; }, 2500);
 }
 
+function setCardState(key, state) {
+  const card = cardByKey(key);
+  if (!card) return;
+  const status = card.querySelector('.card__status');
+  const close = card.querySelector('.card__close');
+  if (!status) return;
+
+  if (state) {
+    card.classList.add('card--collapsed');
+    status.style.display = 'inline-block';
+    status.className = `card__status card__status--${state}`;
+    if (close) close.style.display = 'none';
+  } else {
+    card.classList.remove('card--collapsed');
+    status.style.display = 'none';
+    if (close) close.style.display = '';
+  }
+}
+
 // --- touched helpers ---
 function markTouched(ticker){ if (ticker) userTouchedByTicker.set(ticker, true); }
 function isTouched(ticker){ return !!userTouchedByTicker.get(ticker); }
@@ -151,11 +171,16 @@ function createCard(row, index) {
   // Левая часть: тикер
   head.appendChild(el('div', null, row.ticker, { style: 'font-weight:600;font-size:13px' }));
 
-  // Правая часть: кнопка удаления (вместо лейбла event)
+  // Правая часть: статус + кнопка удаления
+  const right = el('div', null, null, { style: 'display:flex;align-items:center' });
+  const $status = el('span', 'card__status');
+  $status.style.display = 'none';
+  right.appendChild($status);
+
   const $close = document.createElement('button');
   $close.type = 'button';
   $close.textContent = '×';
-  // компактный внешний вид, не зависящий от .btn
+  $close.className = 'card__close';
   Object.assign($close.style, {
     border: 'none',
     background: 'transparent',
@@ -166,7 +191,7 @@ function createCard(row, index) {
     fontSize: '16px',
     cursor: 'pointer',
     borderRadius: '4px',
-    color: isUpEvent(row.event) ? '#2e7d32' : '#c62828', // легкая подсказка направления
+    color: isUpEvent(row.event) ? '#2e7d32' : '#c62828',
     marginLeft: '8px'
   });
   $close.title = 'Удалить карточку';
@@ -174,7 +199,8 @@ function createCard(row, index) {
     e.stopPropagation();
     removeRow(row);
   });
-  head.appendChild($close);
+  right.appendChild($close);
+  head.appendChild(right);
 
   // meta
   const meta = el('div', 'meta');
@@ -445,11 +471,15 @@ async function place(kind, row, v) {
     }
     if (!res || res.status === 'rejected') {
       setCardPending(key, false);
+      setCardState(key, null);
       toast(`✖ ${row.ticker}: ${res?.reason || 'Rejected'}`);
       shakeCard(key);
+    } else {
+      setCardState(key, 'pending');
     }
   }catch(e){
     setCardPending(key, false);
+    setCardState(key, null);
     toast(`✖ ${row.ticker}: ${e.message || e}`);
     shakeCard(key);
   }
@@ -577,15 +607,44 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
 
   const ok = rec.status === 'ok' || rec.status === 'simulated';
   if (ok) {
-    removeRowByKey(key);
-    toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — ${rec.status}`);
+    setCardPending(key, false);
+    setCardState(key, 'pending');
+    if (rec.providerOrderId) ticketToKey.set(String(rec.providerOrderId), key);
+    toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
   } else {
     setCardPending(key, false);
+    setCardState(key, null);
     render();
     shakeCard(key);
     const card = cardByKey(key);
     if (card) card.title = rec.reason || 'Rejected';
     toast(`✖ ${rec.order?.symbol || ''}: ${rec.reason || 'Rejected'}`);
+  }
+});
+
+ipcRenderer.on('position:opened', (_evt, rec) => {
+  const key = ticketToKey.get(String(rec.ticket));
+  if (!key) return;
+  setCardState(key, 'open');
+});
+
+ipcRenderer.on('position:closed', (_evt, rec) => {
+  const key = ticketToKey.get(String(rec.ticket));
+  if (!key) return;
+  ticketToKey.delete(String(rec.ticket));
+  setCardPending(key, false);
+  if (typeof rec.profit === 'number') {
+    setCardState(key, rec.profit >= 0 ? 'profit' : 'loss');
+  } else {
+    removeRowByKey(key);
+  }
+});
+
+ipcRenderer.on('order:cancelled', (_evt, rec) => {
+  const key = ticketToKey.get(String(rec.ticket));
+  if (key) {
+    ticketToKey.delete(String(rec.ticket));
+    removeRowByKey(key);
   }
 });
 

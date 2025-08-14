@@ -10,6 +10,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '..','.env') });
 const { getAdapter, initExecutionConfig } = require('./services/adapterRegistry');
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
+const events = require('./services/events');
 const execCfg = require('./config/execution.json');
 const orderCardsCfg = require('./config/order-cards.json');
 initExecutionConfig(execCfg);
@@ -117,6 +118,28 @@ function wireAdapter(adapter, adapterName) {
       mainWindow.webContents.send('execution:result', payload);
     }
     console.log('[EXEC][TIMEOUT]', { reqId: rec.reqId });
+  });
+
+  adapter.on('position:opened', ({ ticket, order, origOrder }) => {
+    events.emit('position:opened', { ticket, order, origOrder, adapter: adapterName });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('position:opened', { ticket, order, origOrder, provider: adapterName });
+    }
+  });
+
+  adapter.on('position:closed', ({ ticket, trade }) => {
+    events.emit('position:closed', { ticket, trade, adapter: adapterName });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const profit = trade?.profit;
+      mainWindow.webContents.send('position:closed', { ticket, trade, profit, provider: adapterName });
+    }
+  });
+
+  adapter.on('order:cancelled', ({ ticket }) => {
+    events.emit('order:cancelled', { ticket, adapter: adapterName });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('order:cancelled', { ticket, provider: adapterName });
+    }
   });
 }
 
@@ -287,13 +310,14 @@ function setupIpc(orderSvc) {
 
     // выбор адаптера, requestId и нормализация под исполнение
     const adapterName = pickAdapterName(order.instrumentType);
+    let execOrder;
     try {
       const ts = nowTs();
       const reqId = order?.meta?.requestId || `${ts}_${Math.random().toString(36).slice(2,8)}`;
       if (!order.meta) order.meta = {};
       order.meta.requestId = reqId;
 
-      const execOrder = normalizeEquityOrderForExecution(order);
+      execOrder = normalizeEquityOrderForExecution(order);
 
       console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price });
 
@@ -329,6 +353,8 @@ function setupIpc(orderSvc) {
           });
         }
 
+        events.emit('order:placed', { order: execOrder, result: { status: 'ok', provider: adapterName, providerOrderId: result.providerOrderId } });
+
         console.log('[EXEC][QUEUED]', { reqId, pendingId });
         // для синхронного ответа IPC можно вернуть «ok» с pendingId,
         // но UI должен ждать финального события 'execution:result'
@@ -359,6 +385,8 @@ function setupIpc(orderSvc) {
         });
       }
 
+      events.emit('order:placed', { order: execOrder, result: { status: result?.status || 'rejected', provider: execRecord.adapter, providerOrderId: result?.providerOrderId, reason: result?.reason } });
+
       console.log('[EXEC][RES]', { reqId, status: result?.status, reason: result?.reason, providerOrderId: result?.providerOrderId });
       return result;
     } catch (err) {
@@ -377,6 +405,7 @@ function setupIpc(orderSvc) {
       }
 
       console.log('[EXEC][ERR]', { adapter: adapterName, reqId: order?.meta?.requestId, error: String(err) });
+      events.emit('order:placed', { order: execOrder, result: { status: 'rejected', provider: adapterName, reason: rej.reason } });
       return rej;
     }
   });
