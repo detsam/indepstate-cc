@@ -9,6 +9,9 @@ const state = { rows: [], filter: '', autoscroll: true };
 // Equities:  { qty, price, sl, tp, risk, tpTouched }
 const uiState = new Map();
 
+// Per-card execution state (pending/open/profit/loss)
+const cardStates = new Map();
+
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
 const ticketToKey = new Map(); // ticket -> rowKey
@@ -113,6 +116,7 @@ function setCardState(key, state) {
   const buttons = card.querySelectorAll('button.btn');
 
   if (state) {
+    cardStates.set(key, state);
     card.classList.add('card--collapsed');
     status.style.display = 'inline-block';
     status.className = `card__status card__status--${state}`;
@@ -120,6 +124,7 @@ function setCardState(key, state) {
     inputs.forEach(inp => { inp.disabled = true; });
     buttons.forEach(btn => { btn.disabled = true; });
   } else {
+    cardStates.delete(key);
     card.classList.remove('card--collapsed');
     status.style.display = 'none';
     if (close) close.style.display = '';
@@ -149,6 +154,12 @@ function migrateKey(oldKey, newKey, { preserveUi = false, nextUiPatch = null } =
   for (const [rid, key] of pendingByReqId.entries()) {
     if (key === oldKey) pendingByReqId.set(rid, newKey);
   }
+
+  // cardStates
+  if (cardStates.has(oldKey)) {
+    cardStates.set(newKey, cardStates.get(oldKey));
+    cardStates.delete(oldKey);
+  }
 }
 
 // ======= Rendering =======
@@ -158,7 +169,12 @@ function render() {
 
   $grid.innerHTML = '';
   for (let i = 0; i < list.length; i++) {
-    $grid.appendChild(createCard(list[i], i));
+    const row = list[i];
+    const key = rowKey(row);
+    const card = createCard(row, i);
+    $grid.appendChild(card);
+    const st = cardStates.get(key);
+    if (st) setCardState(key, st);
   }
   if (state.autoscroll) {
     try { $wrap.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
@@ -506,6 +522,7 @@ function removeRow(row) {
     state.rows = state.rows.filter(r => !(r.ticker === row.ticker && r.event === row.event && r.time === row.time && r.price === row.price));
   }
   uiState.delete(key);
+  cardStates.delete(key);
   clearPendingByKey(key);
   userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
   render();
@@ -517,6 +534,7 @@ function removeRowByKey(key){
     const row = state.rows[idx];
     state.rows.splice(idx, 1);
     uiState.delete(key);
+    cardStates.delete(key);
     clearPendingByKey(key);
     userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
     render();
