@@ -1,12 +1,12 @@
 # Order Execution Gateway
 
 Electron application that executes trading orders received from various sources
-through pluggable adapters. Order cards remain in the interface after an
-order is placed and collapse to a header with a colored status dot that
-reflects the position lifecycle:
+through pluggable adapters. Order cards remain in the interface after an order
+is placed and collapse to a header with a colored status dot that reflects the
+position lifecycle:
 
-- **blue** – order placed, waiting for fill
-- **yellow** – position opened
+- **orange** – order placed, waiting for fill
+- **blue** – position opened
 - **green/red** – position closed in profit/loss
 
 A lightweight event bus emits `order:placed`, `position:opened` and

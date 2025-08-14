@@ -12,6 +12,12 @@ Modules:
 - `listOpenOrders()` – snapshot of current MT orders
 - `listClosedPositions()` – historic trades keyed by ticket
 
+`check_open_orders` returns both pending orders and open positions. The adapter
+stores the initial `open_time` for each ticket and treats any change of this
+field as the moment the order is filled. As new data arrives it also keeps the
+latest `profit` value so that when a ticket disappears we can distinguish
+between a cancelled order and a closed position.
+
 It emits events when positions change:
 
 - `position:opened` `{ticket, order}`

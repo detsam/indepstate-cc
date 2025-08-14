@@ -70,6 +70,8 @@ class DWXAdapter extends ExecutionAdapter {
     this.pending = new Map();
     // для дельты открытых ордеров
     this._lastTickets = new Set();
+    // мета-информация по тикетам: open_time, profit и т.п.
+    this._ticketMeta = new Map();
   }
 
   /**
@@ -208,6 +210,29 @@ class DWXAdapter extends ExecutionAdapter {
     const newTickets = [...nowTickets].filter(t => !this._lastTickets.has(t));
     const removedTickets = [...this._lastTickets].filter(t => !nowTickets.has(t));
 
+    // обновляем информацию по текущим ордерам
+    for (const t of nowTickets) {
+      const ord = this.client.open_orders[t];
+      if (!ord) continue;
+      let meta = this._ticketMeta.get(t);
+      if (!meta) {
+        meta = {
+          initialOpenTime: ord.open_time,
+          lastOpenTime: ord.open_time,
+          profit: ord.profit ?? ord.pnl ?? 0,
+          opened: false,
+        };
+        this._ticketMeta.set(t, meta);
+      } else {
+        if (!meta.opened && ord.open_time !== meta.initialOpenTime) {
+          meta.opened = true;
+          this.events.emit('position:opened', { ticket: t, order: ord });
+        }
+        meta.lastOpenTime = ord.open_time;
+        meta.profit = ord.profit ?? ord.pnl ?? 0;
+      }
+    }
+
     if (newTickets.length) {
       for (const t of newTickets) {
         const ord = this.client.open_orders[t];
@@ -219,16 +244,16 @@ class DWXAdapter extends ExecutionAdapter {
           const hitCid = findHeuristicMatchCid(this.pending, ord);
           if (hitCid) this.#confirmPending(hitCid, t, ord);
         }
-        // событие открытия позиции
-        this.events.emit('position:opened', { ticket: t, order: ord });
       }
     }
 
     if (removedTickets.length) {
       for (const t of removedTickets) {
-        const trade = this.client.historic_trades?.[t];
-        if (trade) {
-          this.events.emit('position:closed', { ticket: t, trade });
+        const meta = this._ticketMeta.get(t) || {};
+        const profit = meta.profit;
+        this._ticketMeta.delete(t);
+        if (typeof profit === 'number' && profit !== 0) {
+          this.events.emit('position:closed', { ticket: t, trade: { profit } });
         } else {
           this.events.emit('order:cancelled', { ticket: t });
         }
