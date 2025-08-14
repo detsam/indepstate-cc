@@ -1,5 +1,5 @@
-// adapters/dwx.js
-const { ExecutionAdapter } = require('./base');
+// adapters/dwx/dwx.js
+const { ExecutionAdapter } = require('../base');
 const { dwx_client } = require('./dwx_client');
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
