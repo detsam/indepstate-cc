@@ -122,10 +122,35 @@ function setCardState(key, state) {
     if (close) close.style.display = 'none';
     inputs.forEach(inp => { inp.disabled = true; });
     buttons.forEach(btn => { btn.disabled = true; });
+
     if (state === 'pending') {
+      // restore full card for pending state
       card.classList.remove('card--mini');
+      if (card._removedParts) {
+        for (const { node, next } of card._removedParts) {
+          if (next && next.parentNode === card) {
+            card.insertBefore(node, next);
+          } else {
+            card.appendChild(node);
+          }
+        }
+        card._removedParts = null;
+      }
+      card.querySelectorAll('input').forEach(inp => inp.disabled = true);
+      card.querySelectorAll('button.btn').forEach(btn => btn.disabled = true);
     } else {
+      // shrink card to ticker + status
       card.classList.add('card--mini');
+      if (!card._removedParts) {
+        card._removedParts = [];
+        ['.meta', '.quad-line', '.extraRow', '.btns'].forEach(sel => {
+          const n = card.querySelector(sel);
+          if (n) {
+            card._removedParts.push({ node: n, next: n.nextSibling });
+            n.remove();
+          }
+        });
+      }
     }
   } else {
     cardStates.delete(key);
@@ -134,6 +159,21 @@ function setCardState(key, state) {
     if (close) close.style.display = '';
     inputs.forEach(inp => { inp.disabled = false; });
     buttons.forEach(btn => { btn.disabled = false; });
+
+    // restore removed sections
+    if (card._removedParts) {
+      for (const { node, next } of card._removedParts) {
+        if (next && next.parentNode === card) {
+          card.insertBefore(node, next);
+        } else {
+          card.appendChild(node);
+        }
+      }
+      card._removedParts = null;
+      // re-enable fields after restoration
+      card.querySelectorAll('input').forEach(inp => inp.disabled = false);
+      card.querySelectorAll('button.btn').forEach(btn => btn.disabled = false);
+    }
   }
 }
 
