@@ -76,7 +76,14 @@ function buildDeal(group) {
 
   const side = String(entry.side).toLowerCase() === 'sell' ? 'short' : 'long';
   const type = String(entry.type).toLowerCase();
-  const price = type === 'limit' ? entry.limitPrice : entry.stopPrice;
+  let price;
+  if (type === 'limit') {
+    price = entry.limitPrice;
+  } else if (type === 'stop') {
+    price = entry.stopPrice;
+  } else {
+    price = entry.fillPrice;
+  }
   const qty = Number(entry.qty) || 0;
 
   let takeOrder, stopOrder;
