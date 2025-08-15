@@ -23,6 +23,13 @@ function resolveSecrets(obj) {
 }
 
 function parseCsvText(text) {
+  function parsePrice(str) {
+    if (str === '') return { num: undefined, int: undefined, dec: 0 };
+    const dec = (str.split('.')[1] || '').length;
+    const int = Number(str.replace('.', ''));
+    return { num: Number(str), int, dec };
+  }
+
   const lines = String(text).split(/\r?\n/);
   const rows = [];
   for (const line of lines) {
@@ -33,14 +40,25 @@ function parseCsvText(text) {
       symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr,
       status, commissionStr, _lev, _margin, placingTime, closingTime, orderIdStr
     ] = parts.map(p => p.trim());
+
+    const limit = parsePrice(limitPriceStr);
+    const stop = parsePrice(stopPriceStr);
+    const fill = parsePrice(fillPriceStr);
+
     const row = {
       symbol,
       side,
       type,
       qty: Number(qtyStr),
-      limitPrice: limitPriceStr === '' ? undefined : Number(limitPriceStr),
-      stopPrice: stopPriceStr === '' ? undefined : Number(stopPriceStr),
-      fillPrice: fillPriceStr === '' ? undefined : Number(fillPriceStr),
+      limitPrice: limit.num,
+      limitPriceInt: limit.int,
+      limitPriceDec: limit.dec,
+      stopPrice: stop.num,
+      stopPriceInt: stop.int,
+      stopPriceDec: stop.dec,
+      fillPrice: fill.num,
+      fillPriceInt: fill.int,
+      fillPriceDec: fill.dec,
       status,
       commission: commissionStr === '' ? 0 : Number(commissionStr),
       placingTime,
@@ -74,15 +92,33 @@ function buildDeal(group) {
   if (filled.length < 2) return null;
   const closing = filled.find(o => o !== entry) || filled[1];
 
+  function diffInt(aInt, aDec, bInt, bDec) {
+    const scale = Math.max(aDec, bDec);
+    const a = aInt * Math.pow(10, scale - aDec);
+    const b = bInt * Math.pow(10, scale - bDec);
+    return Math.abs(a - b);
+  }
+
+  function ensureIntDec(num, intVal, decVal) {
+    if (intVal != null && decVal != null) return { int: intVal, dec: decVal };
+    const str = String(num);
+    const dec = (str.split('.')[1] || '').length;
+    const int = Number(str.replace('.', ''));
+    return { int, dec };
+  }
+
   const side = String(entry.side).toLowerCase() === 'sell' ? 'short' : 'long';
   const type = String(entry.type).toLowerCase();
-  let price;
+  let price, priceInt, priceDec;
   if (type === 'limit') {
     price = entry.limitPrice;
+    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.limitPrice, entry.limitPriceInt, entry.limitPriceDec));
   } else if (type === 'stop') {
     price = entry.stopPrice;
+    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.stopPrice, entry.stopPriceInt, entry.stopPriceDec));
   } else {
     price = entry.fillPrice;
+    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.fillPrice, entry.fillPriceInt, entry.fillPriceDec));
   }
   const qty = Number(entry.qty) || 0;
 
@@ -97,22 +133,27 @@ function buildDeal(group) {
     }
   }
 
-  const takeSetup = takeOrder && takeOrder.limitPrice != null
-    ? Math.floor(Math.abs(takeOrder.limitPrice - price) * 100)
-    : undefined;
-  const stopSetup = stopOrder && stopOrder.stopPrice != null
-    ? Math.floor(Math.abs(stopOrder.stopPrice - price) * 100)
-    : undefined;
+  let takeSetup, stopSetup;
+  if (takeOrder && takeOrder.limitPrice != null) {
+    const t = ensureIntDec(takeOrder.limitPrice, takeOrder.limitPriceInt, takeOrder.limitPriceDec);
+    takeSetup = diffInt(t.int, t.dec, priceInt, priceDec);
+  }
+  if (stopOrder && stopOrder.stopPrice != null) {
+    const s = ensureIntDec(stopOrder.stopPrice, stopOrder.stopPriceInt, stopOrder.stopPriceDec);
+    stopSetup = diffInt(s.int, s.dec, priceInt, priceDec);
+  }
 
   const result = side === 'long'
     ? (closing.fillPrice > entry.fillPrice ? 'take' : 'stop')
     : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
 
   let takePoints, stopPoints;
+  const c = ensureIntDec(closing.fillPrice, closing.fillPriceInt, closing.fillPriceDec);
+  const diffPoints = diffInt(c.int, c.dec, priceInt, priceDec);
   if (result === 'take') {
-    takePoints = Math.abs(price - closing.fillPrice) * 100;
+    takePoints = diffPoints;
   } else {
-    stopPoints = Math.abs(price - closing.fillPrice) * 100;
+    stopPoints = diffPoints;
   }
 
   const commission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
