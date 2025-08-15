@@ -53,7 +53,7 @@ class ObsidianDealTracker extends DealTracker {
     let content = template;
     content = content.replace(/^- Date::.*$/m, `- Date:: [[${dateStr}]]`);
     content = content.replace(/^- Tactics::.*$/m, `- Tactics:: ${tactic || '#Tactics/InPlay'}`);
-    content = content.replace(/^- Ticker::.*$/m, `-  Ticker:: [[${ticker}]]`);
+    content = content.replace(/^- Ticker::.*$/m, `- Ticker:: [[Ticker. ${ticker}]]`);
     if (tp != null) content = content.replace(/^- Take Setup::.*$/m, `- Take Setup:: ${tp}`);
     if (sp != null) content = content.replace(/^- Stop Setup::.*$/m, `- Stop Setup:: ${sp}`);
     if (profit != null) {
