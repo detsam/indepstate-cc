@@ -117,28 +117,6 @@ function wireAdapter(adapter, adapterName) {
     console.log('[EXEC][REJECTED]', { reqId: rec.reqId, reason: payload.reason });
   });
 
-  adapter.on('order:timeout', ({ pendingId, origOrder }) => {
-    const rec = pendingIndex.get(pendingId);
-    if (!rec) return;
-    pendingIndex.delete(pendingId);
-
-    const payload = {
-      ts: nowTs(),
-      reqId: rec.reqId,
-      provider: adapterName,
-      status: 'rejected',
-      reason: 'timeout',
-      pendingId,
-      order: rec.order
-    };
-    appendJsonl(EXEC_LOG, { t: payload.ts, kind: 'timeout', ...payload });
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('execution:result', payload);
-    }
-    trackerPending.delete(rec.reqId);
-    console.log('[EXEC][TIMEOUT]', { reqId: rec.reqId });
-  });
-
   adapter.on('order:retry', ({ pendingId, count }) => {
     const rec = pendingIndex.get(pendingId);
     if (!rec) return;

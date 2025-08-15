@@ -18,13 +18,9 @@ class DWXAdapter extends ExecutionAdapter {
     super();
     if (!cfg?.metatraderDirPath) throw new Error('[DWXAdapter] metatraderDirPath is required');
 
-    const envMaxDelay = Number(process.env.DWX_MAX_RETRY_DELAY_MS);
-    const parsedMaxDelay = Number.isFinite(envMaxDelay) ? envMaxDelay : Infinity;
-
     this.cfg = {
       openOrderRetryDelayMs: cfg?.openOrderRetryDelayMs ?? 25,
       openOrderRetryBackoff: cfg?.openOrderRetryBackoff ?? 2,
-      openOrderRetryMaxDelayMs: cfg?.openOrderRetryMaxDelayMs ?? parsedMaxDelay,
     };
 
     this.provider = cfg.provider || 'dwx-mt5';
@@ -105,11 +101,10 @@ class DWXAdapter extends ExecutionAdapter {
     else if (order.type === 'stop') order_type = order.side === 'buy' ? 'buystop' : 'sellstop';
 
     // положим в pending
-    this.#trackPending(cid, order);
+    this.#trackPending(cid, order, order_type);
 
     const delayMs  = this.cfg.openOrderRetryDelayMs;
     const backoff  = this.cfg.openOrderRetryBackoff;
-    const maxDelay = this.cfg.openOrderRetryMaxDelayMs;
 
     const ctrl = new AbortController();
     this._retryControllers.set(cid, ctrl);
@@ -117,7 +112,6 @@ class DWXAdapter extends ExecutionAdapter {
     this.#openOrderWithRetry(order, order_type, {
       delayMs,
       backoff,
-      maxDelay,
       signal: ctrl.signal,
       cid,
     }).catch((e) => {
@@ -136,7 +130,7 @@ class DWXAdapter extends ExecutionAdapter {
   }
 
   /** ---------- внутреннее ---------- */
-  async #openOrderWithRetry(order, order_type, { delayMs = 25, backoff = 2, maxDelay = Infinity, signal, cid } = {}) {
+  async #openOrderWithRetry(order, order_type, { delayMs = 25, backoff = 2, signal, cid } = {}) {
     let sl = 0.0;
     let tp = 0.0;
 
@@ -148,8 +142,8 @@ class DWXAdapter extends ExecutionAdapter {
       sl = order.price + (order.sl / 100)
     }
 
-    let attempt = 0;
     let wait = delayMs;
+    let attempt = 0;
     for (;;) {
       if (signal?.aborted) throw new Error('RETRY_STOPPED');
       try {
@@ -167,11 +161,9 @@ class DWXAdapter extends ExecutionAdapter {
         return; // успех
       } catch (e) {
         attempt++;
-        this.events.emit('order:retry', { pendingId: cid, count: attempt });
-        if (this.verbose) console.warn(`[DWXAdapter] open_order failed (attempt ${attempt}), retry in ${Math.min(wait, maxDelay)}ms:`, e?.message || e);
-        const pause = Math.min(wait, maxDelay);
-        await new Promise(r => setTimeout(r, pause));
-        wait = Math.min(wait * backoff, maxDelay);
+        if (this.verbose) console.warn(`[DWXAdapter] open_order failed (attempt ${attempt}), retry in ${wait}ms:`, e?.message || e);
+        await new Promise(r => setTimeout(r, wait));
+        wait *= backoff;
       }
     }
   }
@@ -190,16 +182,34 @@ class DWXAdapter extends ExecutionAdapter {
     this.pending.delete(cid);
   }
 
-  #trackPending(cid, order) {
-    // таймер таймаута
-    const timer = setTimeout(() => {
-      if (!this.pending.has(cid)) return;
+  #trackPending(cid, order, order_type) {
+    const schedule = () => {
       const p = this.pending.get(cid);
-      this.pending.delete(cid);
-      this.events.emit('order:timeout', { pendingId: cid, origOrder: p.order });
-    }, this.confirmTimeoutMs);
+      if (!p) return;
+      clearTimeout(p.timer);
+      p.timer = setTimeout(() => this.#retryPending(cid), this.confirmTimeoutMs);
+    };
 
-    this.pending.set(cid, { order, createdAt: Date.now(), timer });
+    this.pending.set(cid, { order, order_type, createdAt: Date.now(), timer: null, cycles: 0, schedule });
+    schedule();
+  }
+
+  #retryPending(cid) {
+    const p = this.pending.get(cid);
+    if (!p) return;
+    p.cycles++;
+    this.events.emit('order:retry', { pendingId: cid, count: p.cycles });
+
+    const delayMs  = this.cfg.openOrderRetryDelayMs;
+    const backoff  = this.cfg.openOrderRetryBackoff;
+    const ctrl = this._retryControllers.get(cid);
+
+    this.#openOrderWithRetry(p.order, p.order_type, { delayMs, backoff, signal: ctrl?.signal, cid })
+      .catch((e) => {
+        if (e?.message !== 'RETRY_STOPPED') this.#rejectPending(cid, e?.message || String(e));
+      });
+
+    p.schedule();
   }
 
   #confirmPending(cid, ticket, mtOrder) {
