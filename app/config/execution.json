@@ -16,7 +16,6 @@
         },
         "dwx": {
             "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}",
-            "openOrderRetryMaxDelayMs" : "${ENV:DWX_MAX_RETRY_DELAY_MS}",
             "confirmTimeoutMs" : "${ENV:DWX_CONFIRM_TIMEOUT}"
         }
     }

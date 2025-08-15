@@ -18,13 +18,9 @@ class DWXAdapter extends ExecutionAdapter {
     super();
     if (!cfg?.metatraderDirPath) throw new Error('[DWXAdapter] metatraderDirPath is required');
 
-    const envMaxDelay = Number(process.env.DWX_MAX_RETRY_DELAY_MS);
-    const parsedMaxDelay = Number.isFinite(envMaxDelay) ? envMaxDelay : Infinity;
-
     this.cfg = {
       openOrderRetryDelayMs: cfg?.openOrderRetryDelayMs ?? 25,
       openOrderRetryBackoff: cfg?.openOrderRetryBackoff ?? 2,
-      openOrderRetryMaxDelayMs: cfg?.openOrderRetryMaxDelayMs ?? parsedMaxDelay,
     };
 
     this.provider = cfg.provider || 'dwx-mt5';
@@ -109,7 +105,6 @@ class DWXAdapter extends ExecutionAdapter {
 
     const delayMs  = this.cfg.openOrderRetryDelayMs;
     const backoff  = this.cfg.openOrderRetryBackoff;
-    const maxDelay = this.cfg.openOrderRetryMaxDelayMs;
 
     const ctrl = new AbortController();
     this._retryControllers.set(cid, ctrl);
@@ -117,7 +112,6 @@ class DWXAdapter extends ExecutionAdapter {
     this.#openOrderWithRetry(order, order_type, {
       delayMs,
       backoff,
-      maxDelay,
       signal: ctrl.signal,
       cid,
     }).catch((e) => {
@@ -136,7 +130,7 @@ class DWXAdapter extends ExecutionAdapter {
   }
 
   /** ---------- внутреннее ---------- */
-  async #openOrderWithRetry(order, order_type, { delayMs = 25, backoff = 2, maxDelay = Infinity, signal, cid } = {}) {
+  async #openOrderWithRetry(order, order_type, { delayMs = 25, backoff = 2, signal, cid } = {}) {
     let sl = 0.0;
     let tp = 0.0;
 
@@ -167,10 +161,9 @@ class DWXAdapter extends ExecutionAdapter {
         return; // успех
       } catch (e) {
         attempt++;
-        if (this.verbose) console.warn(`[DWXAdapter] open_order failed (attempt ${attempt}), retry in ${Math.min(wait, maxDelay)}ms:`, e?.message || e);
-        const pause = Math.min(wait, maxDelay);
-        await new Promise(r => setTimeout(r, pause));
-        wait = Math.min(wait * backoff, maxDelay);
+        if (this.verbose) console.warn(`[DWXAdapter] open_order failed (attempt ${attempt}), retry in ${wait}ms:`, e?.message || e);
+        await new Promise(r => setTimeout(r, wait));
+        wait *= backoff;
       }
     }
   }
@@ -209,10 +202,9 @@ class DWXAdapter extends ExecutionAdapter {
 
     const delayMs  = this.cfg.openOrderRetryDelayMs;
     const backoff  = this.cfg.openOrderRetryBackoff;
-    const maxDelay = this.cfg.openOrderRetryMaxDelayMs;
     const ctrl = this._retryControllers.get(cid);
 
-    this.#openOrderWithRetry(p.order, p.order_type, { delayMs, backoff, maxDelay, signal: ctrl?.signal, cid })
+    this.#openOrderWithRetry(p.order, p.order_type, { delayMs, backoff, signal: ctrl?.signal, cid })
       .catch((e) => {
         if (e?.message !== 'RETRY_STOPPED') this.#rejectPending(cid, e?.message || String(e));
       });
