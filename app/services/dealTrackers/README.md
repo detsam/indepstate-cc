@@ -23,7 +23,7 @@ When all listed fields are found with matching values the tracker skips creating
 
 The Obsidian deal tracker expects an `info` object with properties describing the trade. When present the tracker substitutes matching lines in the `Template. Deal.md` note:
 
-- `ticker` – injected into `-  Ticker:: [[TICKER]]`
+- `ticker` – injected into `- Ticker:: [[Ticker. TICKER]]`
 - `tactic` – fills the `- Tactics::` line
 - `side` – sets `- Direction:: [[Direction. Long]]` or `[[Direction. Short]]`
 - `status` – selects `- Status:: [[Result. Take]]` or `[[Result. Stop]]`
