@@ -168,7 +168,10 @@ function processAll(config = cfg) {
         tp: d.takeSetup,
         sp: d.stopSetup,
         status: d.result,
-        profit: d.profit
+        profit: d.profit,
+        commission: d.commission,
+        takePoints: d.takePoints,
+        stopPoints: d.stopPoints
       });
     }
   }
@@ -203,7 +206,10 @@ function start(config = cfg) {
           tp: d.takeSetup,
           sp: d.stopSetup,
           status: d.result,
-          profit: d.profit
+          profit: d.profit,
+          commission: d.commission,
+          takePoints: d.takePoints,
+          stopPoints: d.stopPoints
         });
       }
     }

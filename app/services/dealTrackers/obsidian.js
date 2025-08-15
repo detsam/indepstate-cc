@@ -13,7 +13,7 @@ class ObsidianDealTracker extends DealTracker {
     this.journalPath = cfg.journalPath || cfg.vaultPath;
   }
 
-  onPositionClosed({ ticker, tp, sp, status, profit }) {
+  onPositionClosed({ ticker, tp, sp, status, profit, commission, takePoints, stopPoints }) {
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
     if (!vault || !targetDir) return;
@@ -45,6 +45,15 @@ class ObsidianDealTracker extends DealTracker {
     if (tp != null) content = content.replace(/^- Take Setup::.*$/m, `- Take Setup:: ${tp}`);
     if (sp != null) content = content.replace(/^- Stop Setup::.*$/m, `- Stop Setup:: ${sp}`);
     if (profit != null) content = content.replace(/^- Trade Profit::.*$/m, `- Trade Profit:: ${profit}`);
+    if (commission != null && commission !== 0) {
+      content = content.replace(/^- Trade Commissions::.*$/m, `- Trade Commissions:: ${commission}`);
+    }
+    if (takePoints != null && takePoints !== 0) {
+      content = content.replace(/^- Take Points::.*$/m, `- Take Points:: ${takePoints}`);
+    }
+    if (stopPoints != null && stopPoints !== 0) {
+      content = content.replace(/^- Stop Points::.*$/m, `- Stop Points:: ${stopPoints}`);
+    }
     const statusLine = status === 'take' ? '- Status:: [[Result. Take]]' : '- Status:: [[Result. Stop]]';
     content = content.replace(/^- Status::.*$/m, statusLine);
 
