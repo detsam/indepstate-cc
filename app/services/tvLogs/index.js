@@ -247,6 +247,18 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
     stopPoints = diffPoints;
   }
 
+  const result = side === 'long'
+    ? (closing.fillPrice > entry.fillPrice ? 'take' : 'stop')
+    : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
+
+  let takePoints; let stopPoints;
+  const diffPoints = pricePoints(closing.fillPriceStr, priceStr);
+  if (result === 'take') {
+    takePoints = diffPoints;
+  } else {
+    stopPoints = diffPoints;
+  }
+
   const base = calcDealData({
     ticker,
     side,
