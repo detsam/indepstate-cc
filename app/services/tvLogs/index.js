@@ -214,7 +214,8 @@ function processAll(config = cfg) {
         profit: d.profit,
         commission: d.commission,
         takePoints: d.takePoints,
-        stopPoints: d.stopPoints
+        stopPoints: d.stopPoints,
+        _key: d._key
       });
     }
   }
@@ -252,7 +253,8 @@ function start(config = cfg) {
           profit: d.profit,
           commission: d.commission,
           takePoints: d.takePoints,
-          stopPoints: d.stopPoints
+          stopPoints: d.stopPoints,
+          _key: d._key
         });
       }
     }

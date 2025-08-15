@@ -11,9 +11,11 @@ class ObsidianDealTracker extends DealTracker {
     super();
     this.vaultPath = cfg.vaultPath;
     this.journalPath = cfg.journalPath || cfg.vaultPath;
+    this.skipExisting = Array.isArray(cfg.skipExisting) ? cfg.skipExisting : null;
   }
 
-  onPositionClosed({ ticker, tp, sp, status, profit, commission, takePoints, stopPoints }) {
+  onPositionClosed(info = {}) {
+    const { ticker, tp, sp, status, profit, commission, takePoints, stopPoints } = info;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
     if (!vault || !targetDir) return;
@@ -31,8 +33,19 @@ class ObsidianDealTracker extends DealTracker {
     const baseName = `${dateStr}. ${sanitizeFileName(ticker)}`;
     let fileName = `${baseName}.md`;
     let filePath = path.join(targetDir, fileName);
+
+    const criteria = Array.isArray(this.skipExisting) ? this.skipExisting : [];
+    const canCheck = criteria.length > 0 && criteria.every(c => info[c.prop] != null && info[c.prop] !== '');
+
     let i = 1;
     while (fs.existsSync(filePath)) {
+      if (canCheck) {
+        try {
+          const existing = fs.readFileSync(filePath, 'utf8');
+          const found = criteria.every(c => existing.includes(`${c.field}: ${info[c.prop]}`));
+          if (found) return;
+        } catch {}
+      }
       fileName = `${baseName} (${i}).md`;
       filePath = path.join(targetDir, fileName);
       i += 1;
@@ -60,6 +73,13 @@ class ObsidianDealTracker extends DealTracker {
     }
     const statusLine = status === 'take' ? '- Status:: [[Result. Take]]' : '- Status:: [[Result. Stop]]';
     content = content.replace(/^- Status::.*$/m, statusLine);
+
+    if (canCheck) {
+      const front = ['---'];
+      for (const c of criteria) front.push(`${c.field}: ${info[c.prop]}`);
+      front.push('---', '');
+      content = front.join('\n') + content;
+    }
 
     try {
       fs.writeFileSync(filePath, content);
