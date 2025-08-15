@@ -119,33 +119,28 @@ function buildDeal(group, sessions = cfg.sessions) {
   if (filled.length < 2) return null;
   const closing = filled.find(o => o !== entry) || filled[1];
 
-  function diffInt(aInt, aDec, bInt, bDec) {
-    const scale = Math.max(aDec, bDec);
-    const a = aInt * Math.pow(10, scale - aDec);
-    const b = bInt * Math.pow(10, scale - bDec);
+  function pricePoints(aStr, bStr) {
+    if (!aStr || !bStr) return undefined;
+    const fracLen = s => (s.includes('.') ? s.split('.')[1].length : 0);
+    const decimals = Math.max(fracLen(aStr), fracLen(bStr));
+    const scale = 10 ** decimals;
+    const a = Math.round(parseFloat(aStr) * scale);
+    const b = Math.round(parseFloat(bStr) * scale);
     return Math.abs(a - b);
-  }
-
-  function ensureIntDec(num, intVal, decVal, rawStr) {
-    if (intVal != null && decVal != null) return { int: intVal, dec: decVal };
-    const src = rawStr != null ? String(rawStr) : String(num);
-    const dec = (src.split('.')[1] || '').length;
-    const int = Number(src.replace('.', ''));
-    return { int, dec };
   }
 
   const side = String(entry.side).toLowerCase() === 'sell' ? 'short' : 'long';
   const type = String(entry.type).toLowerCase();
-  let price, priceInt, priceDec;
+  let price, priceStr;
   if (type === 'limit') {
     price = entry.limitPrice;
-    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.limitPrice, entry.limitPriceInt, entry.limitPriceDec, entry.limitPriceStr));
+    priceStr = entry.limitPriceStr;
   } else if (type === 'stop') {
     price = entry.stopPrice;
-    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.stopPrice, entry.stopPriceInt, entry.stopPriceDec, entry.stopPriceStr));
+    priceStr = entry.stopPriceStr;
   } else {
     price = entry.fillPrice;
-    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.fillPrice, entry.fillPriceInt, entry.fillPriceDec, entry.fillPriceStr));
+    priceStr = entry.fillPriceStr;
   }
   const qty = Number(entry.qty) || 0;
 
@@ -161,13 +156,13 @@ function buildDeal(group, sessions = cfg.sessions) {
   }
 
   let takeSetup, stopSetup;
-  if (takeOrder && takeOrder.limitPrice != null) {
-    const t = ensureIntDec(takeOrder.limitPrice, takeOrder.limitPriceInt, takeOrder.limitPriceDec, takeOrder.limitPriceStr);
-    takeSetup = diffInt(t.int, t.dec, priceInt, priceDec);
+  if (takeOrder && takeOrder.limitPriceStr) {
+    takeSetup = pricePoints(takeOrder.limitPriceStr, priceStr);
+    if (takeSetup != null) takeSetup = Math.floor(takeSetup);
   }
-  if (stopOrder && stopOrder.stopPrice != null) {
-    const s = ensureIntDec(stopOrder.stopPrice, stopOrder.stopPriceInt, stopOrder.stopPriceDec, stopOrder.stopPriceStr);
-    stopSetup = diffInt(s.int, s.dec, priceInt, priceDec);
+  if (stopOrder && stopOrder.stopPriceStr) {
+    stopSetup = pricePoints(stopOrder.stopPriceStr, priceStr);
+    if (stopSetup != null) stopSetup = Math.floor(stopSetup);
   }
 
   const result = side === 'long'
@@ -175,8 +170,7 @@ function buildDeal(group, sessions = cfg.sessions) {
     : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
 
   let takePoints, stopPoints;
-  const c = ensureIntDec(closing.fillPrice, closing.fillPriceInt, closing.fillPriceDec, closing.fillPriceStr);
-  const diffPoints = diffInt(c.int, c.dec, priceInt, priceDec);
+  const diffPoints = pricePoints(closing.fillPriceStr, priceStr);
   if (result === 'take') {
     takePoints = diffPoints;
   } else {
