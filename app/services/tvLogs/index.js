@@ -235,7 +235,6 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
   }
 
   const rawCommission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
-
   const result = side === 'long'
     ? (closing.fillPrice > entry.fillPrice ? 'take' : 'stop')
     : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');

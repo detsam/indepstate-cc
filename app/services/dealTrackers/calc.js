@@ -62,6 +62,7 @@ function calcDealData(data = {}) {
   }
   if (!Number.isFinite(profit)) profit = 0;
 
+
   const status = preStatus || (profit >= 0 ? 'take' : 'stop');
 
   let calcTakePoints; let calcStopPoints;
@@ -69,6 +70,7 @@ function calcDealData(data = {}) {
     const diff = exitPrice - entry;
     const pts = points.toPoints(ticker, diff, undefined, diff);
     if (status === 'take') {
+
       calcTakePoints = pts;
     } else {
       calcStopPoints = pts;
@@ -77,7 +79,7 @@ function calcDealData(data = {}) {
 
   const takePoints = preTakePoints != null ? preTakePoints : calcTakePoints;
   const stopPoints = preStopPoints != null ? preStopPoints : calcStopPoints;
-
+  
   let tradeRisk;
   if (stopSetup != null) {
     const basePts = status === 'take' ? takePoints : stopPoints;
