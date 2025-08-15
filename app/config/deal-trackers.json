@@ -3,10 +3,7 @@
     {
       "type": "obsidian",
       "vaultPath": "${ENV:OBSIDIAN_INDEPSTATE_VAULT}",
-      "journalPath": "${ENV:OBSIDIAN_INDEPSTATE_DEALS_JOURNAL}",
-      "skipExisting": [
-        { "field": "TV-LOG-KEY", "prop": "_key" }
-      ]
+      "journalPath": "${ENV:OBSIDIAN_INDEPSTATE_DEALS_JOURNAL}"
     }
   ]
 }

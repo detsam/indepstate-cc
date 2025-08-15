@@ -38,10 +38,10 @@ function init(cfg = {}) {
   }
 }
 
-function notifyPositionClosed(info) {
+function notifyPositionClosed(info, opts) {
   for (const t of trackers) {
     try {
-      t.onPositionClosed(info);
+      t.onPositionClosed(info, opts);
     } catch (e) {
       console.error('DealTracker error', e);
     }

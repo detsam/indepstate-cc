@@ -10,6 +10,9 @@ Settings live in `app/config/tv-logs.json`:
 {
   "enabled": true,
   "pollMs": 5000,
+  "skipExisting": [
+    { "field": "TV-LOG-KEY", "prop": "_key" }
+  ],
   "accounts": [
     { "tactic": "example", "path": "${ENV:TV_LOG_EXAMPLE}" }
   ]
@@ -19,6 +22,7 @@ Settings live in `app/config/tv-logs.json`:
 - `enabled` – set `false` to prevent automatic polling from `main.js`.
 - `pollMs` – interval in milliseconds used to check files for changes.
 - `accounts` – list of tactic accounts with paths to their CSV logs. Paths may reference environment variables using `${ENV:VAR}`.
+- `skipExisting` – array mapping front‑matter fields to trade properties so trackers can detect existing notes.
 
 ## Processing rules
 
@@ -30,9 +34,9 @@ For each account the service:
 4. Calculates `takeSetup` and `stopSetup` by comparing order prices with the entry price and truncates them to integer points.
 5. Derives the result (`take` or `stop`), `takePoints`/`stopPoints`, commission total and profit (rounded to two decimals).
 6. Strips the exchange prefix from the symbol and the time portion from the placing time.
-7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `ticker`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints` and `_key`.
+7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `ticker`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints` and `_key`, passing along the configured `skipExisting` rules to avoid duplicate notes.
 
-The `_key` combines the raw symbol and placing time and can be used with a deal tracker's `skipExisting` setting to avoid duplicate notes.
+The `_key` combines the raw symbol and placing time and is suitable for use in `skipExisting`.
 
 ## Usage
 

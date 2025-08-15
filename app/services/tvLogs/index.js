@@ -201,6 +201,7 @@ function processFile(file) {
 function processAll(config = cfg) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
+  const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
   for (const acc of accounts) {
     const file = acc.path;
     if (!file) continue;
@@ -216,7 +217,7 @@ function processAll(config = cfg) {
         takePoints: d.takePoints,
         stopPoints: d.stopPoints,
         _key: d._key
-      });
+      }, opts);
     }
   }
 }
@@ -225,6 +226,7 @@ function start(config = cfg) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
   const pollMs = resolved.pollMs || 5000;
+  const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
   const state = new Map(); // file -> { mtime, keys:Set }
 
   function tick() {
@@ -255,7 +257,7 @@ function start(config = cfg) {
           takePoints: d.takePoints,
           stopPoints: d.stopPoints,
           _key: d._key
-        });
+        }, opts);
       }
     }
   }

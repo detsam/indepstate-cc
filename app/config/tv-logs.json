@@ -1,6 +1,9 @@
 {
   "enabled": true,
   "pollMs": 5000,
+  "skipExisting": [
+    { "field": "TV-LOG-KEY", "prop": "_key" }
+  ],
   "accounts": [
     {
       "tactic": "example",

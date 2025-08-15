@@ -11,10 +11,9 @@ class ObsidianDealTracker extends DealTracker {
     super();
     this.vaultPath = cfg.vaultPath;
     this.journalPath = cfg.journalPath || cfg.vaultPath;
-    this.skipExisting = Array.isArray(cfg.skipExisting) ? cfg.skipExisting : null;
   }
 
-  onPositionClosed(info = {}) {
+  onPositionClosed(info = {}, opts = {}) {
     const { ticker, tp, sp, status, profit, commission, takePoints, stopPoints } = info;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
@@ -34,7 +33,7 @@ class ObsidianDealTracker extends DealTracker {
     let fileName = `${baseName}.md`;
     let filePath = path.join(targetDir, fileName);
 
-    const criteria = Array.isArray(this.skipExisting) ? this.skipExisting : [];
+    const criteria = Array.isArray(opts?.skipExisting) ? opts.skipExisting : [];
     const canCheck = criteria.length > 0 && criteria.every(c => info[c.prop] != null && info[c.prop] !== '');
 
     let i = 1;
