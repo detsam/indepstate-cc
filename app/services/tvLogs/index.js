@@ -116,9 +116,10 @@ function buildDeal(group) {
   }
 
   const commission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
-  const profit = side === 'short'
+  const rawProfit = side === 'short'
     ? (price - closing.fillPrice) * qty
     : (closing.fillPrice - price) * qty;
+  const profit = Math.round(rawProfit * 100) / 100;
 
   return {
     _key: `${rawSymbol}|${rawPlacingTime}`,

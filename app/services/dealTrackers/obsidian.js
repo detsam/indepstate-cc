@@ -44,7 +44,10 @@ class ObsidianDealTracker extends DealTracker {
     content = content.replace(/^- Ticker::.*$/m, `-  Ticker:: [[${ticker}]]`);
     if (tp != null) content = content.replace(/^- Take Setup::.*$/m, `- Take Setup:: ${tp}`);
     if (sp != null) content = content.replace(/^- Stop Setup::.*$/m, `- Stop Setup:: ${sp}`);
-    if (profit != null) content = content.replace(/^- Trade Profit::.*$/m, `- Trade Profit:: ${profit}`);
+    if (profit != null) {
+      const rounded = Math.round(profit * 100) / 100;
+      content = content.replace(/^- Trade Profit::.*$/m, `- Trade Profit:: ${rounded}`);
+    }
     if (commission != null && commission !== 0) {
       content = content.replace(/^- Trade Commissions::.*$/m, `- Trade Commissions:: ${commission}`);
     }
