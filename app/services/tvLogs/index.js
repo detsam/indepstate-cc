@@ -156,7 +156,8 @@ function buildDeal(group) {
     stopPoints = diffPoints;
   }
 
-  const commission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
+  const rawCommission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
+  const commission = Math.round(rawCommission * 100) / 100;
   const rawProfit = side === 'short'
     ? (price - closing.fillPrice) * qty
     : (closing.fillPrice - price) * qty;

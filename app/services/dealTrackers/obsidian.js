@@ -49,7 +49,8 @@ class ObsidianDealTracker extends DealTracker {
       content = content.replace(/^- Trade Profit::.*$/m, `- Trade Profit:: ${rounded}`);
     }
     if (commission != null && commission !== 0) {
-      content = content.replace(/^- Trade Commissions::.*$/m, `- Trade Commissions:: ${commission}`);
+      const roundedCommission = Math.round(commission * 100) / 100;
+      content = content.replace(/^- Trade Commissions::.*$/m, `- Trade Commissions:: ${roundedCommission}`);
     }
     if (takePoints != null && takePoints !== 0) {
       content = content.replace(/^- Take Points::.*$/m, `- Take Points:: ${takePoints}`);
