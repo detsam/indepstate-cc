@@ -59,7 +59,7 @@ flowchart LR
   FILES --- MT5[MT4/MT5 EA]
   MT5 -- writes updates --> FILES
   ADP -- reads --> FILES
-  ADP -- order:confirmed / rejected / timeout --> MAIN
+  ADP -- order:confirmed / rejected --> MAIN
   MAIN -- IPC: execution:pending --> UI[Renderer (cards)]
   MAIN -- IPC: execution:result --> UI
 ```
@@ -104,11 +104,6 @@ sequenceDiagram
     MAIN-->>SRC: execution:result {status: rejected, reason}
   end
 
-  opt Timeout
-    ADP->>ADP: confirmTimeoutMs elapsed
-    ADP-->>MAIN: order:timeout {cid}
-    MAIN-->>SRC: execution:result {status: rejected, reason: "timeout"}
-  end
 ```
 
 ---
@@ -216,7 +211,7 @@ Mapping to DWX order types:
 - Events emitted by the adapter:
   - `order:confirmed` → `{ pendingId, ticket, mtOrder, origOrder }`
   - `order:rejected`  → `{ pendingId, reason, msg, origOrder }`
-  - `order:timeout`   → `{ pendingId, origOrder }`
+
 
 Configuration options (constructor):
 - `provider` (default `dwx-mt5`)
@@ -234,7 +229,7 @@ Configuration options (constructor):
 
 **Main process:**
 - When `placeOrder()` returns a result with `providerOrderId` starting with `pending:`, send `execution:pending` and store mapping `pendingId → reqId`.
-- Subscribe to `order:confirmed` / `order:rejected` / `order:timeout` from the adapter and forward a final `execution:result`.
+- Subscribe to `order:confirmed` / `order:rejected` from the adapter and forward a final `execution:result`.
 - Forward `order:retry` as `execution:retry`.
 - Handle `execution:stop-retry` from the renderer to abort retries via `stopOpenOrder()` and emit `execution:retry-stopped`.
 
@@ -242,7 +237,7 @@ Configuration options (constructor):
 - On `execution:pending`: set card to pending (`.card--pending`), disable action buttons.
 - On `execution:retry`: update the retry counter on the card.
 - On `execution:retry-stopped`: revert the card to editable state.
-- On `execution:result`: remove card only when `status:'ok'`. For `rejected`/`timeout`, unpend, highlight error, and keep the card.
+- On `execution:result`: remove card only when `status:'ok'`. For `rejected`, unpend, highlight error, and keep the card.
 
 ---
 
@@ -274,11 +269,6 @@ Confirmed:
 Rejected:
 ```json
 {"t": 1722850000456, "kind": "reject", "reqId":"1722850_abcd12","provider":"dwx-mt5","status":"rejected","reason":"Invalid stops","pendingId":"e3b1c2d4e5","order":{"symbol":"EURUSD","side":"buy","type":"limit","price":1.0835,"sl":1.0800,"tp":1.0875,"qty":0.2}}
-```
-
-Timeout:
-```json
-{"t": 1722850007000, "kind": "timeout", "reqId":"1722850_abcd12","provider":"dwx-mt5","status":"rejected","reason":"timeout","pendingId":"e3b1c2d4e5","order":{"symbol":"EURUSD","side":"buy","type":"limit","price":1.0835,"sl":1.0815,"tp":1.0875,"qty":0.2}}
 ```
 
 ### `DWX_Messages.txt` (example)

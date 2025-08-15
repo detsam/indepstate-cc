@@ -14,10 +14,10 @@ const state = { rows: [], filter: '', autoscroll: true };
 // Equities:  { qty, price, sl, tp, risk, tpTouched }
 const uiState = new Map();
 
-// Per-card execution state (pending/open/profit/loss)
+// Per-card execution state (pending/placed/executing/profit/loss)
 const cardStates = new Map();
 // Order for sorting cards by execution state
-const cardStateOrder = { pending: 1, open: 2, profit: 3, loss: 4 };
+const cardStateOrder = { pending: 1, placed: 2, executing: 3, profit: 4, loss: 5 };
 
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
@@ -229,8 +229,8 @@ function render() {
   list.sort((a, b) => {
     const stateA = cardStates.get(rowKey(a));
     const stateB = cardStates.get(rowKey(b));
-    const orderA = stateA ? (cardStateOrder[stateA] ?? 5) : 0;
-    const orderB = stateB ? (cardStateOrder[stateB] ?? 5) : 0;
+    const orderA = stateA ? (cardStateOrder[stateA] ?? 6) : 0;
+    const orderB = stateB ? (cardStateOrder[stateB] ?? 6) : 0;
     if (orderA !== orderB) return orderA - orderB;
     return 0; // stable sort keeps original order within groups
   });
@@ -658,6 +658,7 @@ ipcRenderer.on('execution:pending', (_evt, rec) => {
 
   pendingByReqId.set(reqId, key);
   setCardPending(key, true);
+  setCardState(key, 'pending');
   if (!retryCounts.has(reqId)) retryCounts.set(reqId, 0);
   const card = cardByKey(key);
   if (card) {
@@ -770,7 +771,7 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
   const ok = rec.status === 'ok' || rec.status === 'simulated';
   if (ok) {
     setCardPending(key, false);
-    setCardState(key, 'pending');
+    setCardState(key, 'placed');
     if (rec.providerOrderId) ticketToKey.set(String(rec.providerOrderId), key);
     toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
     render();
@@ -787,7 +788,7 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
 ipcRenderer.on('position:opened', (_evt, rec) => {
   const key = ticketToKey.get(String(rec.ticket));
   if (!key) return;
-  setCardState(key, 'open');
+  setCardState(key, 'executing');
   render();
 });
 
