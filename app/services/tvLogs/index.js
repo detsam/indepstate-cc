@@ -46,10 +46,10 @@ function findSession(timeStr, map) {
 
 function parseCsvText(text) {
   function parsePrice(str) {
-    if (str === '') return { num: undefined, int: undefined, dec: 0 };
+    if (str === '') return { num: undefined, int: undefined, dec: 0, raw: '' };
     const dec = (str.split('.')[1] || '').length;
     const int = Number(str.replace('.', ''));
-    return { num: Number(str), int, dec };
+    return { num: Number(str), int, dec, raw: str };
   }
 
   const lines = String(text).split(/\r?\n/);
@@ -75,12 +75,15 @@ function parseCsvText(text) {
       limitPrice: limit.num,
       limitPriceInt: limit.int,
       limitPriceDec: limit.dec,
+      limitPriceStr: limit.raw,
       stopPrice: stop.num,
       stopPriceInt: stop.int,
       stopPriceDec: stop.dec,
+      stopPriceStr: stop.raw,
       fillPrice: fill.num,
       fillPriceInt: fill.int,
       fillPriceDec: fill.dec,
+      fillPriceStr: fill.raw,
       status,
       commission: commissionStr === '' ? 0 : Number(commissionStr),
       placingTime,
@@ -123,11 +126,11 @@ function buildDeal(group, sessions = cfg.sessions) {
     return Math.abs(a - b);
   }
 
-  function ensureIntDec(num, intVal, decVal) {
+  function ensureIntDec(num, intVal, decVal, rawStr) {
     if (intVal != null && decVal != null) return { int: intVal, dec: decVal };
-    const str = String(num);
-    const dec = (str.split('.')[1] || '').length;
-    const int = Number(str.replace('.', ''));
+    const src = rawStr != null ? String(rawStr) : String(num);
+    const dec = (src.split('.')[1] || '').length;
+    const int = Number(src.replace('.', ''));
     return { int, dec };
   }
 
@@ -136,13 +139,13 @@ function buildDeal(group, sessions = cfg.sessions) {
   let price, priceInt, priceDec;
   if (type === 'limit') {
     price = entry.limitPrice;
-    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.limitPrice, entry.limitPriceInt, entry.limitPriceDec));
+    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.limitPrice, entry.limitPriceInt, entry.limitPriceDec, entry.limitPriceStr));
   } else if (type === 'stop') {
     price = entry.stopPrice;
-    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.stopPrice, entry.stopPriceInt, entry.stopPriceDec));
+    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.stopPrice, entry.stopPriceInt, entry.stopPriceDec, entry.stopPriceStr));
   } else {
     price = entry.fillPrice;
-    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.fillPrice, entry.fillPriceInt, entry.fillPriceDec));
+    ({ int: priceInt, dec: priceDec } = ensureIntDec(entry.fillPrice, entry.fillPriceInt, entry.fillPriceDec, entry.fillPriceStr));
   }
   const qty = Number(entry.qty) || 0;
 
@@ -159,11 +162,11 @@ function buildDeal(group, sessions = cfg.sessions) {
 
   let takeSetup, stopSetup;
   if (takeOrder && takeOrder.limitPrice != null) {
-    const t = ensureIntDec(takeOrder.limitPrice, takeOrder.limitPriceInt, takeOrder.limitPriceDec);
+    const t = ensureIntDec(takeOrder.limitPrice, takeOrder.limitPriceInt, takeOrder.limitPriceDec, takeOrder.limitPriceStr);
     takeSetup = diffInt(t.int, t.dec, priceInt, priceDec);
   }
   if (stopOrder && stopOrder.stopPrice != null) {
-    const s = ensureIntDec(stopOrder.stopPrice, stopOrder.stopPriceInt, stopOrder.stopPriceDec);
+    const s = ensureIntDec(stopOrder.stopPrice, stopOrder.stopPriceInt, stopOrder.stopPriceDec, stopOrder.stopPriceStr);
     stopSetup = diffInt(s.int, s.dec, priceInt, priceDec);
   }
 
@@ -172,7 +175,7 @@ function buildDeal(group, sessions = cfg.sessions) {
     : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
 
   let takePoints, stopPoints;
-  const c = ensureIntDec(closing.fillPrice, closing.fillPriceInt, closing.fillPriceDec);
+  const c = ensureIntDec(closing.fillPrice, closing.fillPriceInt, closing.fillPriceDec, closing.fillPriceStr);
   const diffPoints = diffInt(c.int, c.dec, priceInt, priceDec);
   if (result === 'take') {
     takePoints = diffPoints;
