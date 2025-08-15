@@ -164,9 +164,14 @@ function buildDeal(group) {
   const profit = Math.round(rawProfit * 100) / 100;
 
   let tradeRisk;
-  if (stopPoints && stopPoints !== 0 && stopSetup != null) {
-    const pricePerPoint = Math.abs(profit) / stopPoints;
-    tradeRisk = Math.round(pricePerPoint * stopSetup * 100) / 100;
+  if (stopSetup != null) {
+    if (result === 'stop' && stopPoints && stopPoints !== 0) {
+      const pricePerPoint = Math.abs(profit) / stopPoints;
+      tradeRisk = Math.round(pricePerPoint * stopSetup * 100) / 100;
+    } else if (result === 'take' && takePoints && takePoints !== 0) {
+      const pricePerPoint = Math.abs(profit) / takePoints;
+      tradeRisk = Math.round(pricePerPoint * stopSetup * 100) / 100;
+    }
   }
 
   return {
