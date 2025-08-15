@@ -163,6 +163,12 @@ function buildDeal(group) {
     : (closing.fillPrice - price) * qty;
   const profit = Math.round(rawProfit * 100) / 100;
 
+  let tradeRisk;
+  if (stopPoints && stopPoints !== 0 && stopSetup != null) {
+    const pricePerPoint = Math.abs(profit) / stopPoints;
+    tradeRisk = Math.round(pricePerPoint * stopSetup * 100) / 100;
+  }
+
   return {
     _key: `${rawSymbol}|${rawPlacingTime}`,
     symbol: ticker,
@@ -177,7 +183,8 @@ function buildDeal(group) {
     takePoints,
     stopPoints,
     commission,
-    profit
+    profit,
+    tradeRisk
   };
 }
 
@@ -216,6 +223,9 @@ function processAll(config = cfg) {
         commission: d.commission,
         takePoints: d.takePoints,
         stopPoints: d.stopPoints,
+        side: d.side,
+        tactic: acc.tactic,
+        tradeRisk: d.tradeRisk,
         _key: d._key
       }, opts);
     }
@@ -256,6 +266,9 @@ function start(config = cfg) {
           commission: d.commission,
           takePoints: d.takePoints,
           stopPoints: d.stopPoints,
+          side: d.side,
+          tactic: acc.tactic,
+          tradeRisk: d.tradeRisk,
           _key: d._key
         }, opts);
       }

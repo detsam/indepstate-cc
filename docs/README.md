@@ -9,7 +9,7 @@ This directory contains high-level notes about the codebase.
 - `app/services/dealTrackers/*` – pluggable trackers invoked when a position closes. See `app/services/dealTrackers/README.md` for configuration.
 - `app/services/tvLogs/*` – parses TradingView CSV order logs, watches for file updates and emits closed trades to deal trackers. See `app/services/tvLogs/README.md` for details.
 - `app/config/deal-trackers.json` – local configuration for deal trackers
-- `app/config/tv-logs.json` – tactic account configuration (with `enabled`, `pollMs` and `skipExisting`) pointing to CSV files with order logs
+ - `app/config/tv-logs.json` – tactic account configuration (with `enabled`, `pollMs`, per‑account `tactic` names and `skipExisting`) pointing to CSV files with order logs
 - `OBSIDIAN_INDEPSTATE_VAULT` and `OBSIDIAN_INDEPSTATE_DEALS_JOURNAL` – environment variables consumed by the Obsidian deal tracker
 - `app/adapters/*` – execution adapters such as the DWX connector, each can provide `listOpenOrders()` and `listClosedPositions()`
 

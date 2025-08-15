@@ -14,7 +14,7 @@ class ObsidianDealTracker extends DealTracker {
   }
 
   onPositionClosed(info = {}, opts = {}) {
-    const { ticker, tp, sp, status, profit, commission, takePoints, stopPoints } = info;
+    const { ticker, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk } = info;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
     if (!vault || !targetDir) return;
@@ -52,7 +52,7 @@ class ObsidianDealTracker extends DealTracker {
 
     let content = template;
     content = content.replace(/^- Date::.*$/m, `- Date:: [[${dateStr}]]`);
-    content = content.replace(/^- Tactics::.*$/m, `- Tactics:: #Tactics/InPlay`);
+    content = content.replace(/^- Tactics::.*$/m, `- Tactics:: ${tactic || '#Tactics/InPlay'}`);
     content = content.replace(/^- Ticker::.*$/m, `-  Ticker:: [[${ticker}]]`);
     if (tp != null) content = content.replace(/^- Take Setup::.*$/m, `- Take Setup:: ${tp}`);
     if (sp != null) content = content.replace(/^- Stop Setup::.*$/m, `- Stop Setup:: ${sp}`);
@@ -69,6 +69,17 @@ class ObsidianDealTracker extends DealTracker {
     }
     if (stopPoints != null && stopPoints !== 0) {
       content = content.replace(/^- Stop Points::.*$/m, `- Stop Points:: ${stopPoints}`);
+    }
+    if (side) {
+      const dir = side === 'long' ? '[[Direction. Long]]' : '[[Direction. Short]]';
+      content = content.replace(/^- Direction::.*$/m, `- Direction:: ${dir}`);
+    }
+    if (tradeRisk != null && tradeRisk !== 0) {
+      const roundedRisk = Math.round(tradeRisk * 100) / 100;
+      content = content.replace(/^- Trade Risk::.*$/m, `- Trade Risk:: ${roundedRisk}`);
+    }
+    if (status === 'take') {
+      content = content.replace(/^- Homework::.*$/m, '- Homework:: [[Analysis. Right Direction]]');
     }
     const statusLine = status === 'take' ? '- Status:: [[Result. Take]]' : '- Status:: [[Result. Stop]]';
     content = content.replace(/^- Status::.*$/m, statusLine);

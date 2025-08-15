@@ -18,3 +18,18 @@ Pass a `skipExisting` array in the `opts` object to request duplicate checks. Ea
 - `prop` – property on the trade object sent to the tracker.
 
 When all listed fields are found with matching values the tracker skips creating a new record. The Obsidian tracker also writes these fields into the note's front matter so future runs can detect duplicates.
+
+### Obsidian tracker fields
+
+The Obsidian deal tracker expects an `info` object with properties describing the trade. When present the tracker substitutes matching lines in the `Template. Deal.md` note:
+
+- `ticker` – injected into `-  Ticker:: [[TICKER]]`
+- `tactic` – fills the `- Tactics::` line
+- `side` – sets `- Direction:: [[Direction. Long]]` or `[[Direction. Short]]`
+- `status` – selects `- Status:: [[Result. Take]]` or `[[Result. Stop]]`
+- `profit` – written to `- Trade Profit::`
+- `commission` – overrides `- Trade Commissions::` when non-zero
+- `tp` / `sp` – replace `- Take Setup::` and `- Stop Setup::`
+- `takePoints` / `stopPoints` – fill `- Take Points::` and `- Stop Points::` when provided
+- `tradeRisk` – replaces `- Trade Risk::` when defined
+- when `status` is `take`, the tracker sets `- Homework:: [[Analysis. Right Direction]]`
