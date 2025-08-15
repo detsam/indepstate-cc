@@ -15,8 +15,15 @@ const execCfg = require('./config/execution.json');
 const orderCardsCfg = require('./config/order-cards.json');
 const dealTrackersCfg = require('./config/deal-trackers.json');
 const dealTrackers = require('./services/dealTrackers');
+const tvLogs = require('./services/tvLogs');
+let tvLogsCfg = {};
+try { tvLogsCfg = require('./config/tv-logs.json'); }
+catch { tvLogsCfg = {}; }
 initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
+if (tvLogsCfg.enabled !== false) {
+  tvLogs.start(tvLogsCfg);
+}
 
 function envBool(name, fallback = false) {
   const v = process.env[name];

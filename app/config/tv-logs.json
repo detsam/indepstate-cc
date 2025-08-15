@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "pollMs": 5000,
+  "accounts": [
+    {
+      "tactic": "example",
+      "path": "${ENV:TV_LOG_EXAMPLE}"
+    }
+  ]
+}

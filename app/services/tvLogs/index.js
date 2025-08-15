@@ -1,0 +1,206 @@
+const fs = require('fs');
+const dealTrackers = require('../dealTrackers');
+let cfg = {};
+try {
+  cfg = require('../../config/tv-logs.json');
+} catch (_) {
+  cfg = {};
+}
+
+function resolveEnvRef(str) {
+  if (typeof str !== 'string') return str;
+  const m = str.match(/^\s*(?:\$\{?ENV:([A-Z0-9_]+)\}?)\s*$/i);
+  if (!m) return str;
+  const v = process.env[m[1]];
+  return v == null ? '' : v;
+}
+function resolveSecrets(obj) {
+  if (!obj || typeof obj !== 'object') return resolveEnvRef(obj);
+  if (Array.isArray(obj)) return obj.map(resolveSecrets);
+  const out = {};
+  for (const k of Object.keys(obj)) out[k] = resolveSecrets(obj[k]);
+  return out;
+}
+
+function parseCsvText(text) {
+  const lines = String(text).split(/\r?\n/);
+  const rows = [];
+  for (const line of lines) {
+    if (!line.trim() || line.startsWith('Symbol')) continue;
+    const parts = line.split(',');
+    if (parts.length < 13) continue;
+    const [
+      symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr,
+      status, commissionStr, _lev, _margin, placingTime, closingTime, orderIdStr
+    ] = parts.map(p => p.trim());
+    const row = {
+      symbol,
+      side,
+      type,
+      qty: Number(qtyStr),
+      limitPrice: limitPriceStr === '' ? undefined : Number(limitPriceStr),
+      stopPrice: stopPriceStr === '' ? undefined : Number(stopPriceStr),
+      fillPrice: fillPriceStr === '' ? undefined : Number(fillPriceStr),
+      status,
+      commission: commissionStr === '' ? 0 : Number(commissionStr),
+      placingTime,
+      closingTime,
+      orderId: Number(orderIdStr)
+    };
+    rows.push(row);
+  }
+  return rows;
+}
+
+function groupOrders(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = `${r.symbol}|${r.placingTime}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(r);
+  }
+  return map;
+}
+
+function buildDeal(group) {
+  if (!Array.isArray(group) || group.length === 0) return null;
+  group.sort((a, b) => a.orderId - b.orderId);
+  const entry = group[0];
+  const filled = group.filter(o => String(o.status).toLowerCase() === 'filled');
+  if (filled.length < 2) return null;
+  const closing = filled.find(o => o !== entry) || filled[1];
+
+  const side = String(entry.side).toLowerCase() === 'sell' ? 'short' : 'long';
+  const type = String(entry.type).toLowerCase();
+  const price = type === 'limit' ? entry.limitPrice : entry.stopPrice;
+  const qty = Number(entry.qty) || 0;
+
+  let takeOrder, stopOrder;
+  for (const o of group.slice(1)) {
+    if (side === 'long') {
+      if (o.limitPrice != null && o.limitPrice > price) takeOrder = o;
+      if (o.stopPrice != null && o.stopPrice < price) stopOrder = o;
+    } else {
+      if (o.limitPrice != null && o.limitPrice < price) takeOrder = o;
+      if (o.stopPrice != null && o.stopPrice > price) stopOrder = o;
+    }
+  }
+
+  const takeSetup = takeOrder && takeOrder.limitPrice != null
+    ? Math.abs(takeOrder.limitPrice - price) * 100
+    : undefined;
+  const stopSetup = stopOrder && stopOrder.stopPrice != null
+    ? Math.abs(stopOrder.stopPrice - price) * 100
+    : undefined;
+
+  const result = side === 'long'
+    ? (closing.fillPrice > entry.fillPrice ? 'take' : 'stop')
+    : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
+
+  let takePoints, stopPoints;
+  if (result === 'take') {
+    takePoints = Math.abs(price - closing.fillPrice) * 100;
+  } else {
+    stopPoints = Math.abs(price - closing.fillPrice) * 100;
+  }
+
+  const commission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
+  const profit = side === 'short'
+    ? (price - closing.fillPrice) * qty
+    : (closing.fillPrice - price) * qty;
+
+  return {
+    symbol: entry.symbol,
+    placingTime: entry.placingTime,
+    side,
+    type,
+    price,
+    qty,
+    takeSetup,
+    stopSetup,
+    result,
+    takePoints,
+    stopPoints,
+    commission,
+    profit
+  };
+}
+
+function processFile(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  const rows = parseCsvText(text);
+  const groups = groupOrders(rows);
+  const deals = [];
+  for (const arr of groups.values()) {
+    const d = buildDeal(arr);
+    if (d) deals.push(d);
+  }
+  return deals;
+}
+
+function processAll(config = cfg) {
+  const resolved = resolveSecrets(config);
+  const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
+  for (const acc of accounts) {
+    const file = acc.path;
+    if (!file) continue;
+    const deals = processFile(file);
+    for (const d of deals) {
+      dealTrackers.notifyPositionClosed({
+        ticker: d.symbol,
+        tp: d.takeSetup,
+        sp: d.stopSetup,
+        status: d.result,
+        profit: d.profit
+      });
+    }
+  }
+}
+
+function start(config = cfg) {
+  const resolved = resolveSecrets(config);
+  const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
+  const pollMs = resolved.pollMs || 5000;
+  const state = new Map(); // file -> { mtime, keys:Set }
+
+  function tick() {
+    for (const acc of accounts) {
+      const file = acc.path;
+      if (!file) continue;
+      let stat;
+      try { stat = fs.statSync(file); } catch { continue; }
+      let info = state.get(file);
+      if (!info) {
+        info = { mtime: 0, keys: new Set() };
+        state.set(file, info);
+      }
+      if (stat.mtimeMs <= info.mtime) continue;
+      info.mtime = stat.mtimeMs;
+      const deals = processFile(file);
+      for (const d of deals) {
+        const key = `${d.symbol}|${d.placingTime}`;
+        if (info.keys.has(key)) continue;
+        info.keys.add(key);
+        dealTrackers.notifyPositionClosed({
+          ticker: d.symbol,
+          tp: d.takeSetup,
+          sp: d.stopSetup,
+          status: d.result,
+          profit: d.profit
+        });
+      }
+    }
+  }
+
+  tick();
+  const timer = setInterval(tick, pollMs);
+  return { stop() { clearInterval(timer); } };
+}
+
+module.exports = { processAll, processFile, buildDeal, start };
+
