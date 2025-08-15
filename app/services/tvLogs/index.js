@@ -22,6 +22,28 @@ function resolveSecrets(obj) {
   return out;
 }
 
+function timeToMinutes(hm) {
+  const [h, m] = hm.split(':').map(n => Number(n) || 0);
+  return h * 60 + m;
+}
+
+function findSession(timeStr, map) {
+  if (!timeStr || !map) return undefined;
+  const hm = timeStr.slice(0, 5);
+  const t = timeToMinutes(hm);
+  for (const [range, val] of Object.entries(map)) {
+    const [startStr, endStr] = range.split('-');
+    const start = timeToMinutes(startStr);
+    const end = timeToMinutes(endStr);
+    if (start <= end) {
+      if (t >= start && t < end) return val;
+    } else {
+      if (t >= start || t < end) return val;
+    }
+  }
+  return undefined;
+}
+
 function parseCsvText(text) {
   function parsePrice(str) {
     if (str === '') return { num: undefined, int: undefined, dec: 0 };
@@ -80,14 +102,16 @@ function groupOrders(rows) {
   return map;
 }
 
-function buildDeal(group) {
+function buildDeal(group, sessions = cfg.sessions) {
   if (!Array.isArray(group) || group.length === 0) return null;
   group.sort((a, b) => a.orderId - b.orderId);
   const entry = group[0];
   const rawSymbol = entry.symbol || '';
   const rawPlacingTime = entry.placingTime || '';
   const ticker = rawSymbol.split(':').pop();
-  const placingDate = rawPlacingTime.split(' ')[0];
+  const placingParts = rawPlacingTime.split(' ');
+  const placingDate = placingParts[0];
+  const placingTime = placingParts[1];
   const filled = group.filter(o => String(o.status).toLowerCase() === 'filled');
   if (filled.length < 2) return null;
   const closing = filled.find(o => o !== entry) || filled[1];
@@ -174,10 +198,13 @@ function buildDeal(group) {
     }
   }
 
+  const tradeSession = findSession(placingTime, sessions);
+
   return {
     _key: `${rawSymbol}|${rawPlacingTime}`,
     symbol: ticker,
     placingTime: placingDate,
+    tradeSession,
     side,
     type,
     price,
@@ -193,7 +220,7 @@ function buildDeal(group) {
   };
 }
 
-function processFile(file) {
+function processFile(file, sessions = cfg.sessions) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
@@ -204,7 +231,7 @@ function processFile(file) {
   const groups = groupOrders(rows);
   const deals = [];
   for (const arr of groups.values()) {
-    const d = buildDeal(arr);
+    const d = buildDeal(arr, sessions);
     if (d) deals.push(d);
   }
   return deals;
@@ -213,11 +240,12 @@ function processFile(file) {
 function processAll(config = cfg) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
+  const sessions = resolved.sessions;
   const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
   for (const acc of accounts) {
     const file = acc.path;
     if (!file) continue;
-    const deals = processFile(file);
+    const deals = processFile(file, sessions);
     for (const d of deals) {
       dealTrackers.notifyPositionClosed({
         ticker: d.symbol,
@@ -231,6 +259,7 @@ function processAll(config = cfg) {
         side: d.side,
         tactic: acc.tactic,
         tradeRisk: d.tradeRisk,
+        tradeSession: d.tradeSession,
         _key: d._key
       }, opts);
     }
@@ -241,6 +270,7 @@ function start(config = cfg) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
   const pollMs = resolved.pollMs || 5000;
+  const sessions = resolved.sessions;
   const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
   const state = new Map(); // file -> { mtime, keys:Set }
 
@@ -257,7 +287,7 @@ function start(config = cfg) {
       }
       if (stat.mtimeMs <= info.mtime) continue;
       info.mtime = stat.mtimeMs;
-      const deals = processFile(file);
+      const deals = processFile(file, sessions);
       for (const d of deals) {
         const key = d._key || `${d.symbol}|${d.placingTime}`;
         if (info.keys.has(key)) continue;
@@ -274,6 +304,7 @@ function start(config = cfg) {
           side: d.side,
           tactic: acc.tactic,
           tradeRisk: d.tradeRisk,
+          tradeSession: d.tradeSession,
           _key: d._key
         }, opts);
       }

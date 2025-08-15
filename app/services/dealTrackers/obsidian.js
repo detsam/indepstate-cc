@@ -14,7 +14,7 @@ class ObsidianDealTracker extends DealTracker {
   }
 
   onPositionClosed(info = {}, opts = {}) {
-    const { ticker, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk } = info;
+    const { ticker, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession } = info;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
     if (!vault || !targetDir) return;
@@ -69,6 +69,9 @@ class ObsidianDealTracker extends DealTracker {
     }
     if (stopPoints != null && stopPoints !== 0) {
       content = content.replace(/^- Stop Points::.*$/m, `- Stop Points:: ${stopPoints}`);
+    }
+    if (tradeSession != null && tradeSession !== 0) {
+      content = content.replace(/^- Trade Session::.*$/m, `- Trade Session:: ${tradeSession}`);
     }
     if (side) {
       const dir = side === 'long' ? '[[Direction. Long]]' : '[[Direction. Short]]';

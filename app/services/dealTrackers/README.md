@@ -33,3 +33,4 @@ The Obsidian deal tracker expects an `info` object with properties describing th
 - `takePoints` / `stopPoints` – fill `- Take Points::` and `- Stop Points::` when provided
 - `tradeRisk` – replaces `- Trade Risk::` when defined
 - when `status` is `take`, the tracker sets `- Homework:: [[Analysis. Right Direction]]`
+- `tradeSession` – fills the `- Trade Session::` line when supplied

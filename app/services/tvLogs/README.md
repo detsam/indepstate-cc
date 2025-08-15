@@ -13,6 +13,11 @@ Settings live in `app/config/tv-logs.json`:
   "skipExisting": [
     { "field": "TV-LOG-KEY", "prop": "_key" }
   ],
+  "sessions": {
+    "02:00-06:00": 1,
+    "06:00-16:30": 2,
+    "16:30-02:00": 3
+  },
   "accounts": [
     { "tactic": "example", "path": "${ENV:TV_LOG_EXAMPLE}" }
   ]
@@ -21,8 +26,9 @@ Settings live in `app/config/tv-logs.json`:
 
 - `enabled` – set `false` to prevent automatic polling from `main.js`.
 - `pollMs` – interval in milliseconds used to check files for changes.
- - `accounts` – list of tactic accounts with a `tactic` name and paths to their CSV logs. Paths may reference environment variables using `${ENV:VAR}`.
+- `accounts` – list of tactic accounts with a `tactic` name and paths to their CSV logs. Paths may reference environment variables using `${ENV:VAR}`.
 - `skipExisting` – array mapping front‑matter fields to trade properties so trackers can detect existing notes.
+- `sessions` – optional mapping of `"HH:MM-HH:MM"` ranges to session numbers used for the `tradeSession` field.
 
 ## Processing rules
 
@@ -35,8 +41,8 @@ For each account the service:
 5. Derives the result (`take` or `stop`), `takePoints`/`stopPoints`, commission total and profit (rounded to two decimals) and calculates `tradeRisk` as:
    - `(profit ÷ takePoints) × stopSetup` when `takePoints` are present
    - `(profit ÷ stopPoints) × stopSetup` when `stopPoints` are present
-6. Strips the exchange prefix from the symbol and the time portion from the placing time.
-7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `ticker`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints`, `side`, `tradeRisk`, `_key` and the account `tactic`, passing along the configured `skipExisting` rules to avoid duplicate notes.
+6. Strips the exchange prefix from the symbol and the time portion from the placing time, then determines `tradeSession` using the configured `sessions` map.
+7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `ticker`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints`, `side`, `tradeRisk`, `tradeSession`, `_key` and the account `tactic`, passing along the configured `skipExisting` rules to avoid duplicate notes.
 
 The `_key` combines the raw symbol and placing time and is suitable for use in `skipExisting`.
 
