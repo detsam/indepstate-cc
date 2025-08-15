@@ -125,6 +125,22 @@ function setCardState(key, state) {
     inputs.forEach(inp => { inp.disabled = true; });
     buttons.forEach(btn => { btn.disabled = true; });
 
+    if (state === 'placed') {
+      status.style.cursor = 'pointer';
+      status.title = 'Вернуть в готово к отправке';
+      status.onclick = () => {
+        for (const [ticket, k] of ticketToKey.entries()) {
+          if (k === key) ticketToKey.delete(ticket);
+        }
+        setCardState(key, null);
+        render();
+      };
+    } else {
+      status.style.cursor = '';
+      status.title = '';
+      status.onclick = null;
+    }
+
     if (state === 'pending') {
       // restore full card for pending state
       card.classList.remove('card--mini');
@@ -164,6 +180,9 @@ function setCardState(key, state) {
     cardStates.delete(key);
     card.classList.remove('card--mini');
     status.style.display = 'none';
+    status.style.cursor = '';
+    status.title = '';
+    status.onclick = null;
     card.classList.remove('card--pending');
     if (close) close.style.display = '';
     inputs.forEach(inp => { inp.disabled = false; });
