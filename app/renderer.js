@@ -81,16 +81,6 @@ function btn(text, className, onClick) {
 
 function cssEsc(s){ try { return CSS.escape(s); } catch { return String(s).replace(/"/g, '\\"'); } }
 function cardByKey(key){ return $grid.querySelector(`.card[data-rowkey="${cssEsc(key)}"]`); }
-function setCardPending(key, pending=true){
-  const card = cardByKey(key);
-  if (!card) return;
-  card.classList.toggle('card--pending', pending);
-  card.querySelectorAll('button.btn').forEach(b=>{
-    if (pending) b.disabled = true;
-  });
-  const r = card.querySelector('.retry-btn');
-  if (r) r.style.display = pending ? 'inline-block' : 'none';
-}
 function shakeCard(key){
   const card = cardByKey(key);
   if (!card) return;
@@ -120,6 +110,7 @@ function setCardState(key, state) {
   if (!card) return;
   const status = card.querySelector('.card__status');
   const close = card.querySelector('.card__close');
+  const retryBtn = card.querySelector('.retry-btn');
   if (!status) return;
 
   const inputs = card.querySelectorAll('input');
@@ -129,6 +120,7 @@ function setCardState(key, state) {
     cardStates.set(key, state);
     status.style.display = 'inline-block';
     status.className = `card__status card__status--${state}`;
+    card.classList.toggle('card--pending', state === 'pending');
     if (close) close.style.display = 'none';
     inputs.forEach(inp => { inp.disabled = true; });
     buttons.forEach(btn => { btn.disabled = true; });
@@ -148,6 +140,11 @@ function setCardState(key, state) {
       }
       card.querySelectorAll('input').forEach(inp => inp.disabled = true);
       card.querySelectorAll('button.btn').forEach(btn => btn.disabled = true);
+      if (retryBtn) {
+        retryBtn.style.display = 'inline-block';
+        const rid = card.dataset.reqId;
+        if (rid && retryCounts.has(rid)) retryBtn.textContent = String(retryCounts.get(rid));
+      }
     } else {
       // shrink card to ticker + status
       card.classList.add('card--mini');
@@ -161,14 +158,18 @@ function setCardState(key, state) {
           }
         });
       }
+      if (retryBtn) retryBtn.style.display = 'none';
     }
   } else {
     cardStates.delete(key);
     card.classList.remove('card--mini');
     status.style.display = 'none';
+    card.classList.remove('card--pending');
     if (close) close.style.display = '';
     inputs.forEach(inp => { inp.disabled = false; });
     buttons.forEach(btn => { btn.disabled = false; });
+
+    if (retryBtn) retryBtn.style.display = 'none';
 
     // restore removed sections
     if (card._removedParts) {
@@ -241,6 +242,10 @@ function render() {
     const key = rowKey(row);
     const card = createCard(row, i);
     $grid.appendChild(card);
+    // restore reqId if order is pending
+    for (const [rid, k] of pendingByReqId.entries()) {
+      if (k === key) card.dataset.reqId = rid;
+    }
     const st = cardStates.get(key);
     if (st) setCardState(key, st);
   }
@@ -539,14 +544,14 @@ async function place(kind, row, v) {
   const key = rowKey(row);
   const requestId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
   pendingByReqId.set(requestId, key);
-  setCardPending(key, true);
+  retryCounts.set(requestId, 0);
+  setCardState(key, 'pending');
   const card = cardByKey(key);
   if (card) {
     card.dataset.reqId = requestId;
     const rb = card.querySelector('.retry-btn');
     if (rb) rb.textContent = '0';
   }
-  retryCounts.set(requestId, 0);
 
   let qtyVal, priceVal, slVal, takeVal, extra = {};
   if (v.type === 'crypto') {
@@ -583,7 +588,6 @@ async function place(kind, row, v) {
       toast(`… ${row.ticker}: sent, waiting confirmation`);
     }
     if (!res || res.status === 'rejected') {
-      setCardPending(key, false);
       setCardState(key, null);
       toast(`✖ ${row.ticker}: ${res?.reason || 'Rejected'}`);
       shakeCard(key);
@@ -593,7 +597,6 @@ async function place(kind, row, v) {
       render();
     }
   }catch(e){
-    setCardPending(key, false);
     setCardState(key, null);
     toast(`✖ ${row.ticker}: ${e.message || e}`);
     shakeCard(key);
@@ -657,14 +660,13 @@ ipcRenderer.on('execution:pending', (_evt, rec) => {
   if (!key) return;
 
   pendingByReqId.set(reqId, key);
-  setCardPending(key, true);
+  retryCounts.set(reqId, 0);
   setCardState(key, 'pending');
-  if (!retryCounts.has(reqId)) retryCounts.set(reqId, 0);
   const card = cardByKey(key);
   if (card) {
     card.dataset.reqId = reqId;
     const rb = card.querySelector('.retry-btn');
-    if (rb) rb.textContent = String(retryCounts.get(reqId));
+    if (rb) rb.textContent = '0';
   }
   toast(`… ${rec.order.symbol}: queued`);
 });
@@ -691,7 +693,6 @@ ipcRenderer.on('execution:retry-stopped', (_evt, rec) => {
     const rb = card.querySelector('.retry-btn');
     if (rb) { rb.textContent = '0'; rb.style.display = 'none'; }
   }
-  setCardPending(key, false);
   setCardState(key, null);
   render();
 });
@@ -770,13 +771,11 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
 
   const ok = rec.status === 'ok' || rec.status === 'simulated';
   if (ok) {
-    setCardPending(key, false);
     setCardState(key, 'placed');
     if (rec.providerOrderId) ticketToKey.set(String(rec.providerOrderId), key);
     toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
     render();
   } else {
-    setCardPending(key, false);
     setCardState(key, null);
     render();
     shakeCard(key);
@@ -796,7 +795,6 @@ ipcRenderer.on('position:closed', (_evt, rec) => {
   const key = ticketToKey.get(String(rec.ticket));
   if (!key) return;
   ticketToKey.delete(String(rec.ticket));
-  setCardPending(key, false);
   if (typeof rec.profit === 'number') {
     setCardState(key, rec.profit >= 0 ? 'profit' : 'loss');
     render();

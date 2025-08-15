@@ -247,8 +247,9 @@ The adapter performs infinite `open_order` retries with exponential backoff. The
 `openOrderRetryDelayMs` and multiplies by `openOrderRetryBackoff` on each failure. The delay will not exceed
 `openOrderRetryMaxDelayMs` (set via the `DWX_MAX_RETRY_DELAY_MS` environment variable).
 
-After every failed attempt the adapter emits `order:retry { pendingId, count }`. Retries can be stopped via
-`stopOpenOrder(pendingId)` which aborts the loop and clears pending state.
+Whenever a confirmation timeout fires, the adapter re-sends the order and emits
+`order:retry { pendingId, count }` (with `count` starting at 1 for each order). Retries can be
+stopped via `stopOpenOrder(pendingId)` which aborts the loop and clears pending state.
 
 ---
 

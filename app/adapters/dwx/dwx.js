@@ -120,10 +120,6 @@ class DWXAdapter extends ExecutionAdapter {
       maxDelay,
       signal: ctrl.signal,
       cid,
-      attempt: 0,
-    }).then((a) => {
-      const p = this.pending.get(cid);
-      if (p) p.retries = a;
     }).catch((e) => {
       if (e?.message !== 'RETRY_STOPPED') this.#rejectPending(cid, e?.message || String(e));
     }).finally(() => {
@@ -140,7 +136,7 @@ class DWXAdapter extends ExecutionAdapter {
   }
 
   /** ---------- внутреннее ---------- */
-  async #openOrderWithRetry(order, order_type, { delayMs = 25, backoff = 2, maxDelay = Infinity, signal, cid, attempt = 0 } = {}) {
+  async #openOrderWithRetry(order, order_type, { delayMs = 25, backoff = 2, maxDelay = Infinity, signal, cid } = {}) {
     let sl = 0.0;
     let tp = 0.0;
 
@@ -153,6 +149,7 @@ class DWXAdapter extends ExecutionAdapter {
     }
 
     let wait = delayMs;
+    let attempt = 0;
     for (;;) {
       if (signal?.aborted) throw new Error('RETRY_STOPPED');
       try {
@@ -167,10 +164,9 @@ class DWXAdapter extends ExecutionAdapter {
           order.commentWithCid ?? order.comment ?? '',
           order.expiration ?? 0
         );
-        return attempt; // успех
+        return; // успех
       } catch (e) {
         attempt++;
-        this.events.emit('order:retry', { pendingId: cid, count: attempt });
         if (this.verbose) console.warn(`[DWXAdapter] open_order failed (attempt ${attempt}), retry in ${Math.min(wait, maxDelay)}ms:`, e?.message || e);
         const pause = Math.min(wait, maxDelay);
         await new Promise(r => setTimeout(r, pause));
@@ -201,23 +197,22 @@ class DWXAdapter extends ExecutionAdapter {
       p.timer = setTimeout(() => this.#retryPending(cid), this.confirmTimeoutMs);
     };
 
-    this.pending.set(cid, { order, order_type, createdAt: Date.now(), timer: null, retries: 0, schedule });
+    this.pending.set(cid, { order, order_type, createdAt: Date.now(), timer: null, cycles: 0, schedule });
     schedule();
   }
 
   #retryPending(cid) {
     const p = this.pending.get(cid);
     if (!p) return;
-    p.retries++;
-    this.events.emit('order:retry', { pendingId: cid, count: p.retries });
+    p.cycles++;
+    this.events.emit('order:retry', { pendingId: cid, count: p.cycles });
 
     const delayMs  = this.cfg.openOrderRetryDelayMs;
     const backoff  = this.cfg.openOrderRetryBackoff;
     const maxDelay = this.cfg.openOrderRetryMaxDelayMs;
     const ctrl = this._retryControllers.get(cid);
 
-    this.#openOrderWithRetry(p.order, p.order_type, { delayMs, backoff, maxDelay, signal: ctrl?.signal, cid, attempt: p.retries })
-      .then((a) => { const rec = this.pending.get(cid); if (rec) rec.retries = a; })
+    this.#openOrderWithRetry(p.order, p.order_type, { delayMs, backoff, maxDelay, signal: ctrl?.signal, cid })
       .catch((e) => {
         if (e?.message !== 'RETRY_STOPPED') this.#rejectPending(cid, e?.message || String(e));
       });
