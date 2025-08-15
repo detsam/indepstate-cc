@@ -13,7 +13,8 @@ class ObsidianDealTracker extends DealTracker {
     this.journalPath = cfg.journalPath || cfg.vaultPath;
   }
 
-  onPositionClosed({ ticker, tp, sp, status, profit }) {
+  onPositionClosed(info = {}, opts = {}) {
+    const { ticker, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession } = info;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
     if (!vault || !targetDir) return;
@@ -31,8 +32,19 @@ class ObsidianDealTracker extends DealTracker {
     const baseName = `${dateStr}. ${sanitizeFileName(ticker)}`;
     let fileName = `${baseName}.md`;
     let filePath = path.join(targetDir, fileName);
+
+    const criteria = Array.isArray(opts?.skipExisting) ? opts.skipExisting : [];
+    const canCheck = criteria.length > 0 && criteria.every(c => info[c.prop] != null && info[c.prop] !== '');
+
     let i = 1;
     while (fs.existsSync(filePath)) {
+      if (canCheck) {
+        try {
+          const existing = fs.readFileSync(filePath, 'utf8');
+          const found = criteria.every(c => existing.includes(`${c.field}: ${info[c.prop]}`));
+          if (found) return;
+        } catch {}
+      }
       fileName = `${baseName} (${i}).md`;
       filePath = path.join(targetDir, fileName);
       i += 1;
@@ -40,13 +52,47 @@ class ObsidianDealTracker extends DealTracker {
 
     let content = template;
     content = content.replace(/^- Date::.*$/m, `- Date:: [[${dateStr}]]`);
-    content = content.replace(/^- Tactics::.*$/m, `- Tactics:: #Tactics/InPlay`);
+    content = content.replace(/^- Tactics::.*$/m, `- Tactics:: ${tactic || '#Tactics/InPlay'}`);
     content = content.replace(/^- Ticker::.*$/m, `-  Ticker:: [[${ticker}]]`);
     if (tp != null) content = content.replace(/^- Take Setup::.*$/m, `- Take Setup:: ${tp}`);
     if (sp != null) content = content.replace(/^- Stop Setup::.*$/m, `- Stop Setup:: ${sp}`);
-    if (profit != null) content = content.replace(/^- Trade Profit::.*$/m, `- Trade Profit:: ${profit}`);
+    if (profit != null) {
+      const rounded = Math.round(profit * 100) / 100;
+      content = content.replace(/^- Trade Profit::.*$/m, `- Trade Profit:: ${rounded}`);
+    }
+    if (commission != null && commission !== 0) {
+      const roundedCommission = Math.round(commission * 100) / 100;
+      content = content.replace(/^- Trade Commissions::.*$/m, `- Trade Commissions:: ${roundedCommission}`);
+    }
+    if (takePoints != null && takePoints !== 0) {
+      content = content.replace(/^- Take Points::.*$/m, `- Take Points:: ${takePoints}`);
+    }
+    if (stopPoints != null && stopPoints !== 0) {
+      content = content.replace(/^- Stop Points::.*$/m, `- Stop Points:: ${stopPoints}`);
+    }
+    if (tradeSession != null && tradeSession !== 0) {
+      content = content.replace(/^- Trade Session::.*$/m, `- Trade Session:: ${tradeSession}`);
+    }
+    if (side) {
+      const dir = side === 'long' ? '[[Direction. Long]]' : '[[Direction. Short]]';
+      content = content.replace(/^- Direction::.*$/m, `- Direction:: ${dir}`);
+    }
+    if (tradeRisk != null && tradeRisk !== 0) {
+      const roundedRisk = Math.round(tradeRisk * 100) / 100;
+      content = content.replace(/^- Trade Risk::.*$/m, `- Trade Risk:: ${roundedRisk}`);
+    }
+    if (status === 'take') {
+      content = content.replace(/^- Homework::.*$/m, '- Homework:: [[Analysis. Right Direction]]');
+    }
     const statusLine = status === 'take' ? '- Status:: [[Result. Take]]' : '- Status:: [[Result. Stop]]';
     content = content.replace(/^- Status::.*$/m, statusLine);
+
+    if (canCheck) {
+      const front = ['---'];
+      for (const c of criteria) front.push(`${c.field}: ${info[c.prop]}`);
+      front.push('---', '');
+      content = front.join('\n') + content;
+    }
 
     try {
       fs.writeFileSync(filePath, content);
