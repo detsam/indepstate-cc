@@ -62,6 +62,7 @@ function calcDealData(data = {}) {
   }
   if (!Number.isFinite(profit)) profit = 0;
 
+
   const status = preStatus || (profit >= 0 ? 'take' : 'stop');
 
   let calcTakePoints; let calcStopPoints;
