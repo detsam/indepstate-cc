@@ -66,6 +66,10 @@ function buildDeal(group) {
   if (!Array.isArray(group) || group.length === 0) return null;
   group.sort((a, b) => a.orderId - b.orderId);
   const entry = group[0];
+  const rawSymbol = entry.symbol || '';
+  const rawPlacingTime = entry.placingTime || '';
+  const ticker = rawSymbol.split(':').pop();
+  const placingDate = rawPlacingTime.split(' ')[0];
   const filled = group.filter(o => String(o.status).toLowerCase() === 'filled');
   if (filled.length < 2) return null;
   const closing = filled.find(o => o !== entry) || filled[1];
@@ -87,10 +91,10 @@ function buildDeal(group) {
   }
 
   const takeSetup = takeOrder && takeOrder.limitPrice != null
-    ? Math.abs(takeOrder.limitPrice - price) * 100
+    ? Math.floor(Math.abs(takeOrder.limitPrice - price) * 100)
     : undefined;
   const stopSetup = stopOrder && stopOrder.stopPrice != null
-    ? Math.abs(stopOrder.stopPrice - price) * 100
+    ? Math.floor(Math.abs(stopOrder.stopPrice - price) * 100)
     : undefined;
 
   const result = side === 'long'
@@ -110,8 +114,9 @@ function buildDeal(group) {
     : (closing.fillPrice - price) * qty;
 
   return {
-    symbol: entry.symbol,
-    placingTime: entry.placingTime,
+    _key: `${rawSymbol}|${rawPlacingTime}`,
+    symbol: ticker,
+    placingTime: placingDate,
     side,
     type,
     price,
@@ -183,7 +188,7 @@ function start(config = cfg) {
       info.mtime = stat.mtimeMs;
       const deals = processFile(file);
       for (const d of deals) {
-        const key = `${d.symbol}|${d.placingTime}`;
+        const key = d._key || `${d.symbol}|${d.placingTime}`;
         if (info.keys.has(key)) continue;
         info.keys.add(key);
         dealTrackers.notifyPositionClosed({
