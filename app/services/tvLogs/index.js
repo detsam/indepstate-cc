@@ -1,5 +1,6 @@
 const fs = require('fs');
 const dealTrackers = require('../dealTrackers');
+const { calcDealData } = require('../dealTrackers/calc');
 let cfg = {};
 try {
   cfg = require('../../config/tv-logs.json');
@@ -20,28 +21,6 @@ function resolveSecrets(obj) {
   const out = {};
   for (const k of Object.keys(obj)) out[k] = resolveSecrets(obj[k]);
   return out;
-}
-
-function timeToMinutes(hm) {
-  const [h, m] = hm.split(':').map(n => Number(n) || 0);
-  return h * 60 + m;
-}
-
-function findSession(timeStr, map) {
-  if (!timeStr || !map) return undefined;
-  const hm = timeStr.slice(0, 5);
-  const t = timeToMinutes(hm);
-  for (const [range, val] of Object.entries(map)) {
-    const [startStr, endStr] = range.split('-');
-    const start = timeToMinutes(startStr);
-    const end = timeToMinutes(endStr);
-    if (start <= end) {
-      if (t >= start && t < end) return val;
-    } else {
-      if (t >= start || t < end) return val;
-    }
-  }
-  return undefined;
 }
 
 function parseCsvText(text) {
@@ -255,56 +234,21 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
     if (stopSetup != null) stopSetup = Math.floor(stopSetup);
   }
 
-  const result = side === 'long'
-    ? (closing.fillPrice > entry.fillPrice ? 'take' : 'stop')
-    : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
-
-  let takePoints, stopPoints;
-  const diffPoints = pricePoints(closing.fillPriceStr, priceStr);
-  if (result === 'take') {
-    takePoints = diffPoints;
-  } else {
-    stopPoints = diffPoints;
-  }
-
   const rawCommission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
-  const commission = Math.round(rawCommission * 100) / 100;
-  const rawProfit = side === 'short'
-    ? (price - closing.fillPrice) * qty
-    : (closing.fillPrice - price) * qty;
-  const profit = Math.round(rawProfit * 100) / 100;
 
-  let tradeRisk;
-  if (stopSetup != null) {
-    if (result === 'stop' && stopPoints && stopPoints !== 0) {
-      const pricePerPoint = Math.abs(profit) / stopPoints;
-      tradeRisk = Math.round(pricePerPoint * stopSetup * 100) / 100;
-    } else if (result === 'take' && takePoints && takePoints !== 0) {
-      const pricePerPoint = Math.abs(profit) / takePoints;
-      tradeRisk = Math.round(pricePerPoint * stopSetup * 100) / 100;
-    }
-  }
-
-  const tradeSession = findSession(placingTime, sessions);
-
-  return {
-    _key: `${rawSymbol}|${rawPlacingTime}`,
-    symbol: ticker,
-    placingTime: placingDate,
-    tradeSession,
+  const base = calcDealData({
+    ticker,
     side,
-    type,
-    price,
+    entryPrice: price,
+    exitPrice: closing.fillPrice,
     qty,
     takeSetup,
     stopSetup,
-    result,
-    takePoints,
-    stopPoints,
-    commission,
-    profit,
-    tradeRisk
-  };
+    commission: rawCommission,
+    placingTime,
+    sessions
+  });
+  return { _key: `${rawSymbol}|${rawPlacingTime}`, symbol: ticker, placingTime: placingDate, ...base };
 }
 
 function processFile(file, sessions = cfg.sessions) {
@@ -325,35 +269,6 @@ function processFile(file, sessions = cfg.sessions) {
     if (d) deals.push(d);
   }
   return deals;
-}
-
-function processAll(config = cfg) {
-  const resolved = resolveSecrets(config);
-  const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
-  const sessions = resolved.sessions;
-  const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
-  for (const acc of accounts) {
-    const file = acc.path;
-    if (!file) continue;
-    const deals = processFile(file, sessions);
-    for (const d of deals) {
-      dealTrackers.notifyPositionClosed({
-        ticker: d.symbol,
-        tp: d.takeSetup,
-        sp: d.stopSetup,
-        status: d.result,
-        profit: d.profit,
-        commission: d.commission,
-        takePoints: d.takePoints,
-        stopPoints: d.stopPoints,
-        side: d.side,
-        tactic: acc.tactic,
-        tradeRisk: d.tradeRisk,
-        tradeSession: d.tradeSession,
-        _key: d._key
-      }, opts);
-    }
-  }
 }
 
 function start(config = cfg) {
@@ -379,14 +294,14 @@ function start(config = cfg) {
       info.mtime = stat.mtimeMs;
       const deals = processFile(file, sessions);
       for (const d of deals) {
-        const key = d._key || `${d.symbol}|${d.placingTime}`;
+        const key = d._key || `${d.ticker}|${d.placingTime}`;
         if (info.keys.has(key)) continue;
         info.keys.add(key);
         dealTrackers.notifyPositionClosed({
-          ticker: d.symbol,
-          tp: d.takeSetup,
-          sp: d.stopSetup,
-          status: d.result,
+          ticker: d.ticker,
+          tp: d.tp,
+          sp: d.sp,
+          status: d.status,
           profit: d.profit,
           commission: d.commission,
           takePoints: d.takePoints,
@@ -406,5 +321,5 @@ function start(config = cfg) {
   return { stop() { clearInterval(timer); } };
 }
 
-module.exports = { processAll, processFile, buildDeal, start };
+module.exports = { processFile, buildDeal, start };
 

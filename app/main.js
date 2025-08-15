@@ -15,6 +15,7 @@ const execCfg = require('./config/execution.json');
 const orderCardsCfg = require('./config/order-cards.json');
 const dealTrackersCfg = require('./config/deal-trackers.json');
 const dealTrackers = require('./services/dealTrackers');
+const { calcDealData } = require('./services/dealTrackers/calc');
 const tvLogs = require('./services/tvLogs');
 let tvLogsCfg = {};
 try { tvLogsCfg = require('./config/tv-logs.json'); }
@@ -137,8 +138,16 @@ function wireAdapter(adapter, adapterName) {
     const profit = trade?.profit;
     const info = trackerIndex.get(String(ticket));
     if (info) {
-      const status = profit >= 0 ? 'take' : 'loss';
-      dealTrackers.notifyPositionClosed({ ...info, status, profit });
+      const payload = calcDealData({
+        ticker: info.ticker,
+        side: info.side,
+        entryPrice: info.price,
+        qty: info.qty,
+        takeSetup: info.tp,
+        stopSetup: info.sp,
+        profit
+      });
+      dealTrackers.notifyPositionClosed(payload);
       trackerIndex.delete(String(ticket));
     }
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -329,10 +338,15 @@ function setupIpc(orderSvc) {
       if (!order.meta) order.meta = {};
       order.meta.requestId = reqId;
 
+        const sideCode = String(order.side || '').toUpperCase();
+        const sideDir = sideCode.startsWith('S') || sideCode === 'SELL' ? 'short' : 'long';
         trackerPending.set(reqId, {
           ticker: order.meta?.ticker || order.symbol,
           tp: order.meta?.takePts,
           sp: order.meta?.stopPts,
+          side: sideDir,
+          price: order.price,
+          qty: order.qty
         });
 
       execOrder = normalizeEquityOrderForExecution(order);

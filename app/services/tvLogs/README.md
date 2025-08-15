@@ -48,4 +48,4 @@ The `_key` combines the raw symbol and placing time and is suitable for use in `
 
 ## Usage
 
-Call `processAll()` to parse files once or `start()` to poll continuously.
+Use `processFile(path)` to parse a single log file once or `start()` to poll continuously.
