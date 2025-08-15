@@ -235,6 +235,17 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
   }
 
   const rawCommission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
+  const result = side === 'long'
+    ? (closing.fillPrice > entry.fillPrice ? 'take' : 'stop')
+    : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
+
+  let takePoints; let stopPoints;
+  const diffPoints = pricePoints(closing.fillPriceStr, priceStr);
+  if (result === 'take') {
+    takePoints = diffPoints;
+  } else {
+    stopPoints = diffPoints;
+  }
 
   const base = calcDealData({
     ticker,
@@ -246,7 +257,10 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
     stopSetup,
     commission: rawCommission,
     placingTime,
-    sessions
+    sessions,
+    takePoints,
+    stopPoints,
+    status: result
   });
   return { _key: `${rawSymbol}|${rawPlacingTime}`, symbol: ticker, placingTime: placingDate, ...base };
 }

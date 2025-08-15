@@ -37,6 +37,9 @@ function calcDealData(data = {}) {
     stopSetup,
     commission = 0,
     profit: rawProfit,
+    takePoints: preTakePoints,
+    stopPoints: preStopPoints,
+    status: preStatus,
     placingTime,
     sessions,
     tradeSession: preSession
@@ -59,19 +62,24 @@ function calcDealData(data = {}) {
   }
   if (!Number.isFinite(profit)) profit = 0;
 
-  const status = profit >= 0 ? 'take' : 'stop';
 
-  let takePoints; let stopPoints;
+  const status = preStatus || (profit >= 0 ? 'take' : 'stop');
+
+  let calcTakePoints; let calcStopPoints;
   if (exitPrice != null && entry != null) {
     const diff = exitPrice - entry;
     const pts = points.toPoints(ticker, diff, undefined, diff);
     if (status === 'take') {
-      takePoints = pts;
+
+      calcTakePoints = pts;
     } else {
-      stopPoints = pts;
+      calcStopPoints = pts;
     }
   }
 
+  const takePoints = preTakePoints != null ? preTakePoints : calcTakePoints;
+  const stopPoints = preStopPoints != null ? preStopPoints : calcStopPoints;
+  
   let tradeRisk;
   if (stopSetup != null) {
     const basePts = status === 'take' ? takePoints : stopPoints;
