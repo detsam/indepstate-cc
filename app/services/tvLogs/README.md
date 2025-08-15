@@ -1,0 +1,39 @@
+# TradingView Log Service
+
+This service converts TradingView order CSV logs into closed trade events consumed by deal trackers.
+
+## Configuration
+
+Settings live in `app/config/tv-logs.json`:
+
+```json
+{
+  "enabled": true,
+  "pollMs": 5000,
+  "accounts": [
+    { "tactic": "example", "path": "${ENV:TV_LOG_EXAMPLE}" }
+  ]
+}
+```
+
+- `enabled` – set `false` to prevent automatic polling from `main.js`.
+- `pollMs` – interval in milliseconds used to check files for changes.
+- `accounts` – list of tactic accounts with paths to their CSV logs. Paths may reference environment variables using `${ENV:VAR}`.
+
+## Processing rules
+
+For each account the service:
+
+1. Reads the TradingView CSV file formatted as `Symbol,Side,Type,Qty,Limit Price,Stop Price,Fill Price,Status,Commission,Leverage,Margin,Placing Time,Closing Time,Order ID`.
+2. Groups orders by symbol and placing time, keeping tuples where two orders are `Filled`.
+3. Determines trade side and entry price from the earliest order.
+4. Calculates `takeSetup` and `stopSetup` by comparing order prices with the entry price and truncates them to integer points.
+5. Derives the result (`take` or `stop`), `takePoints`/`stopPoints`, commission total and profit (rounded to two decimals).
+6. Strips the exchange prefix from the symbol and the time portion from the placing time.
+7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `ticker`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints` and `_key`.
+
+The `_key` combines the raw symbol and placing time and can be used with a deal tracker's `skipExisting` setting to avoid duplicate notes.
+
+## Usage
+
+Call `processAll()` to parse files once or `start()` to poll continuously.
