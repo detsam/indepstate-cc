@@ -37,8 +37,8 @@ For each account the service:
 1. Reads the TradingView CSV file formatted as `Symbol,Side,Type,Qty,Limit Price,Stop Price,Fill Price,Status,Commission,Leverage,Margin,Placing Time,Closing Time,Order ID`.
 2. Groups orders by symbol and placing time, keeping tuples where two orders are `Filled`.
 3. Determines trade side and entry price from the earliest order.
-4. Calculates `takeSetup` and `stopSetup` by comparing raw price strings with the entry price using a decimal scale derived from the longest fractional length, then truncates the result to integer points.
-5. Derives the result (`take` or `stop`), `takePoints`/`stopPoints`, commission total and profit (rounded to two decimals) and calculates `tradeRisk` as:
+4. Detects the minimal tick for each symbol by collecting all price strings and computing the greatest common divisor of their differences. Point distances such as `takeSetup` and `stopSetup` are then derived with this tick size and truncated to integer points.
+5. Derives the result (`take` or `stop`), `takePoints`/`stopPoints` using the same tick metadata, sums commission, rounds profit to two decimals and calculates `tradeRisk` as:
    - `(profit ÷ takePoints) × stopSetup` when `takePoints` are present
    - `(profit ÷ stopPoints) × stopSetup` when `stopPoints` are present
 6. Strips the exchange prefix from the symbol and the time portion from the placing time, then determines `tradeSession` using the configured `sessions` map.
