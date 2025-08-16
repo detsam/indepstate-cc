@@ -11,9 +11,10 @@ class ObsidianDealTracker extends DealTracker {
     super();
     this.vaultPath = cfg.vaultPath;
     this.journalPath = cfg.journalPath || cfg.vaultPath;
+    this.chartComposer = cfg.chartImageComposer;
   }
 
-  onPositionClosed(info = {}, opts = {}) {
+  async onPositionClosed(info = {}, opts = {}) {
     const { ticker, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession } = info;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
@@ -86,6 +87,18 @@ class ObsidianDealTracker extends DealTracker {
     }
     const statusLine = status === 'take' ? '- Status:: [[Result. Take]]' : '- Status:: [[Result. Stop]]';
     content = content.replace(/^- Status::.*$/m, statusLine);
+
+    let chartFile = null;
+    if (this.chartComposer && ticker) {
+      try {
+        chartFile = await this.chartComposer.compose(ticker);
+      } catch (e) {
+        console.error('chart compose failed', e);
+      }
+    }
+    if (chartFile) {
+      content = content.replace(/\t- 1D.*$/m, `\t- 1D ![[${chartFile}]]`);
+    }
 
     if (canCheck) {
       const front = ['---'];

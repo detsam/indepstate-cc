@@ -6,6 +6,10 @@ Deal trackers receive notifications when a position closes and can persist the t
 
 Trackers are configured in `app/config/deal-trackers.json`. Each entry specifies a `type` and tracker specific options. Values may reference environment variables using the `${ENV:VAR}` syntax.
 
+An Obsidian tracker can optionally include a `chartImageComposer` block. When
+present the tracker requests a screenshot for the trade symbol and inserts the
+image file name into the note under the `\t- 1D` line.
+
 ## API
 
 `dealTrackers.notifyPositionClosed(info, opts)` dispatches the `info` object to all configured trackers. Each tracker implements `onPositionClosed(info, opts)` to handle the data.
@@ -34,3 +38,5 @@ The Obsidian deal tracker expects an `info` object with properties describing th
 - `tradeRisk` – replaces `- Trade Risk::` when defined
 - when `status` is `take`, the tracker sets `- Homework:: [[Analysis. Right Direction]]`
 - `tradeSession` – fills the `- Trade Session::` line when supplied
+- when configured with a chart image composer, the tracker writes
+  `\t- 1D ![[filename]]` linking to the generated screenshot

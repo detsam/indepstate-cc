@@ -20,6 +20,19 @@ function resolveSecrets(obj) {
   return out;
 }
 
+function buildChartComposer(cfg = {}) {
+  const type = String(cfg.type || '').toLowerCase();
+  switch (type) {
+    case 'tv': {
+      const { TvChartImageComposer } = require('../chartImages/tv');
+      return new TvChartImageComposer(cfg);
+    }
+    default:
+      console.warn('[dealTrackers] unknown chart composer type', type);
+      return null;
+  }
+}
+
 function init(cfg = {}) {
   trackers.length = 0;
   const list = Array.isArray(cfg.trackers) ? cfg.trackers : [];
@@ -29,6 +42,9 @@ function init(cfg = {}) {
     switch (type) {
       case 'obsidian': {
         const { ObsidianDealTracker } = require('./obsidian');
+        if (resolved.chartImageComposer) {
+          resolved.chartImageComposer = buildChartComposer(resolved.chartImageComposer);
+        }
         trackers.push(new ObsidianDealTracker(resolved));
         break;
       }
@@ -41,7 +57,8 @@ function init(cfg = {}) {
 function notifyPositionClosed(info, opts) {
   for (const t of trackers) {
     try {
-      t.onPositionClosed(info, opts);
+      const res = t.onPositionClosed(info, opts);
+      if (res && typeof res.then === 'function') res.catch(e => console.error('DealTracker error', e));
     } catch (e) {
       console.error('DealTracker error', e);
     }
