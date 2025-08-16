@@ -1,7 +1,8 @@
 // renderer.js — crypto & equities cards, stable UI state, safe layout
-const { ipcRenderer } = require('electron');
+const {ipcRenderer} = require('electron');
 const loadConfig = require('./config/load');
 const tradeRules = require('./services/tradeRules');
+const {detectInstrumentType} = require("./services/instruments");
 const orderCardsCfg = loadConfig('order-cards.json');
 const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
 const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
@@ -9,7 +10,7 @@ const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
 
 // ======= App state =======
-const state = { rows: [], filter: '', autoscroll: true };
+const state = {rows: [], filter: '', autoscroll: true};
 
 // Per-card UI state (persist across renders)
 // Crypto:    { qty, price, sl, tp, tpTouched }
@@ -19,7 +20,7 @@ const uiState = new Map();
 // Per-card execution state (pending/placed/executing/profit/loss)
 const cardStates = new Map();
 // Order for sorting cards by execution state
-const cardStateOrder = { pending: 1, placed: 2, executing: 3, profit: 4, loss: 5 };
+const cardStateOrder = {pending: 1, placed: 2, executing: 3, profit: 4, loss: 5};
 
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
@@ -39,11 +40,15 @@ const $filter = document.getElementById('filter');
 const $autoscroll = document.getElementById('autoscroll');
 
 // ======= Utils =======
-function findKeyByTicker(ticker){
+function findKeyByTicker(ticker) {
   const idx = state.rows.findIndex(r => r.ticker === ticker);
   return idx >= 0 ? rowKey(state.rows[idx]) : null;
 }
-function rowKey(row){ return `${row.ticker}|${row.event}|${row.time}|${row.price}`; }
+
+function rowKey(row) {
+  return `${row.ticker}|${row.event}|${row.time}|${row.price}`;
+}
+
 function _normNum(val) {
   if (val == null) return null;
   const s = String(val).trim().replace(',', '.');
@@ -51,14 +56,19 @@ function _normNum(val) {
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
-function isPos(n) { return typeof n === 'number' && isFinite(n) && n > 0; }
-function isSL(n)  { return typeof n === 'number' && isFinite(n) && n >= 6; }
-function isUpEvent(ev) { return /(up|long)/i.test(String(ev)); }
-// CX: правая часть тикера оканчивается на USDT.P (напр., "HTCUSDT.P")
-function isCrypto(t){
-  const right = String(t||'').split(':').pop();
-  return /USDT\.P$/i.test(right);
+
+function isPos(n) {
+  return typeof n === 'number' && isFinite(n) && n > 0;
 }
+
+function isSL(n) {
+  return typeof n === 'number' && isFinite(n) && n >= 6;
+}
+
+function isUpEvent(ev) {
+  return /(up|long)/i.test(String(ev));
+}
+
 
 function el(tag, className, text, attrs) {
   const node = document.createElement(tag);
@@ -67,6 +77,7 @@ function el(tag, className, text, attrs) {
   if (attrs) for (const k in attrs) node.setAttribute(k, attrs[k]);
   return node;
 }
+
 function inputNumber(ph, cls) {
   const i = document.createElement('input');
   i.type = 'number';
@@ -76,6 +87,7 @@ function inputNumber(ph, cls) {
   i.className = cls ? `num ${cls}` : 'num';
   return i;
 }
+
 function btn(text, className, onClick) {
   const b = document.createElement('button');
   b.className = `btn ${className}`;
@@ -84,30 +96,43 @@ function btn(text, className, onClick) {
   return b;
 }
 
-function cssEsc(s){ try { return CSS.escape(s); } catch { return String(s).replace(/"/g, '\\"'); } }
-function cardByKey(key){ return $grid.querySelector(`.card[data-rowkey="${cssEsc(key)}"]`); }
-function shakeCard(key){
+function cssEsc(s) {
+  try {
+    return CSS.escape(s);
+  } catch {
+    return String(s).replace(/"/g, '\\"');
+  }
+}
+
+function cardByKey(key) {
+  return $grid.querySelector(`.card[data-rowkey="${cssEsc(key)}"]`);
+}
+
+function shakeCard(key) {
   const card = cardByKey(key);
   if (!card) return;
   card.classList.add('card--shake');
-  setTimeout(()=>card.classList.remove('card--shake'), 600);
+  setTimeout(() => card.classList.remove('card--shake'), 600);
 }
-function toast(msg){
+
+function toast(msg) {
   let t = document.getElementById('toast');
-  if (!t){
+  if (!t) {
     t = document.createElement('div');
     t.id = 'toast';
     Object.assign(t.style, {
-      position:'fixed', right:'12px', bottom:'12px',
-      padding:'10px 12px', background:'rgba(0,0,0,.8)', color:'#fff',
-      fontSize:'12px', borderRadius:'8px', zIndex:9999, maxWidth:'60ch'
+      position: 'fixed', right: '12px', bottom: '12px',
+      padding: '10px 12px', background: 'rgba(0,0,0,.8)', color: '#fff',
+      fontSize: '12px', borderRadius: '8px', zIndex: 9999, maxWidth: '60ch'
     });
     document.body.appendChild(t);
   }
   t.textContent = msg;
   t.style.opacity = '1';
   clearTimeout(t._h);
-  t._h = setTimeout(()=>{ t.style.opacity = '0'; }, 2500);
+  t._h = setTimeout(() => {
+    t.style.opacity = '0';
+  }, 2500);
 }
 
 function setCardState(key, state) {
@@ -127,8 +152,12 @@ function setCardState(key, state) {
     status.className = `card__status card__status--${state}`;
     card.classList.toggle('card--pending', state === 'pending');
     if (close) close.style.display = 'none';
-    inputs.forEach(inp => { inp.disabled = true; });
-    buttons.forEach(btn => { btn.disabled = true; });
+    inputs.forEach(inp => {
+      inp.disabled = true;
+    });
+    buttons.forEach(btn => {
+      btn.disabled = true;
+    });
 
     if (state === 'placed') {
       status.style.cursor = 'pointer';
@@ -150,7 +179,7 @@ function setCardState(key, state) {
       // restore full card for pending state
       card.classList.remove('card--mini');
       if (card._removedParts) {
-        for (const { node, next } of card._removedParts) {
+        for (const {node, next} of card._removedParts) {
           if (next && next.parentNode === card) {
             card.insertBefore(node, next);
           } else {
@@ -174,7 +203,7 @@ function setCardState(key, state) {
         ['.meta', '.quad-line', '.extraRow', '.btns', '.card__note'].forEach(sel => {
           const n = card.querySelector(sel);
           if (n) {
-            card._removedParts.push({ node: n, next: n.nextSibling });
+            card._removedParts.push({node: n, next: n.nextSibling});
             n.remove();
           }
         });
@@ -190,14 +219,18 @@ function setCardState(key, state) {
     status.onclick = null;
     card.classList.remove('card--pending');
     if (close) close.style.display = '';
-    inputs.forEach(inp => { inp.disabled = false; });
-    buttons.forEach(btn => { btn.disabled = false; });
+    inputs.forEach(inp => {
+      inp.disabled = false;
+    });
+    buttons.forEach(btn => {
+      btn.disabled = false;
+    });
 
     if (retryBtn) retryBtn.style.display = 'none';
 
     // restore removed sections
     if (card._removedParts) {
-      for (const { node, next } of card._removedParts) {
+      for (const {node, next} of card._removedParts) {
         if (next && next.parentNode === card) {
           card.insertBefore(node, next);
         } else {
@@ -213,12 +246,17 @@ function setCardState(key, state) {
 }
 
 // --- touched helpers ---
-function markTouched(ticker){ if (ticker) userTouchedByTicker.set(ticker, true); }
-function isTouched(ticker){ return !!userTouchedByTicker.get(ticker); }
+function markTouched(ticker) {
+  if (ticker) userTouchedByTicker.set(ticker, true);
+}
+
+function isTouched(ticker) {
+  return !!userTouchedByTicker.get(ticker);
+}
 
 const pendingInstruments = new Set();
 
-function ensureInstrument(ticker){
+function ensureInstrument(ticker) {
   if (!ticker) return;
   if (!state.rows.some(r => r.ticker === ticker)) return; // card removed
   if (instrumentInfo.has(ticker)) return; // already have data
@@ -244,13 +282,13 @@ function ensureInstrument(ticker){
 }
 
 // Миграция ключей (rowKey зависит от полей row)
-function migrateKey(oldKey, newKey, { preserveUi = false, nextUiPatch = null } = {}) {
+function migrateKey(oldKey, newKey, {preserveUi = false, nextUiPatch = null} = {}) {
   if (oldKey === newKey) return;
 
   // uiState
   if (uiState.has(oldKey)) {
     const prev = uiState.get(oldKey);
-    const next = preserveUi ? prev : { ...(prev || {}) };
+    const next = preserveUi ? prev : {...(prev || {})};
     if (typeof nextUiPatch === 'function') Object.assign(next, nextUiPatch(prev));
     uiState.set(newKey, next);
     uiState.delete(oldKey);
@@ -301,13 +339,15 @@ function render() {
     if (st) setCardState(key, st);
   }
   if (state.autoscroll) {
-    try { $wrap.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+    try {
+      $wrap.scrollTo({top: 0, behavior: 'smooth'});
+    } catch {
+    }
   }
 }
 
 function createCard(row, index) {
   const key = rowKey(row);
-  const cx = isCrypto(row.ticker);
 
   // ensure we have a quote for this symbol ASAP
   ensureInstrument(row.ticker);
@@ -319,10 +359,10 @@ function createCard(row, index) {
   const head = el('div', 'row');
 
   // Левая часть: тикер
-  head.appendChild(el('div', null, row.ticker, { style: 'font-weight:600;font-size:13px' }));
+  head.appendChild(el('div', null, row.ticker, {style: 'font-weight:600;font-size:13px'}));
 
   // Правая часть: статус + кнопка удаления
-  const right = el('div', null, null, { style: 'display:flex;align-items:center' });
+  const right = el('div', null, null, {style: 'display:flex;align-items:center'});
   const $status = el('span', 'card__status');
   $status.style.display = 'none';
   right.appendChild($status);
@@ -370,8 +410,26 @@ function createCard(row, index) {
   const meta = el('div', 'meta');
   meta.appendChild(el('span', null, `#${index + 1}`));
 
+
+  const instrumentType = row.instrumentType || detectInstrumentType(row.ticker); // fallback to EQ if not set
+
   // body
-  const body = cx ? createCryptoBody(row, key) : createEquitiesBody(row, key);
+  let body;
+  switch (instrumentType) {
+    case 'EQ':
+      body = createEquitiesBody(row, key);
+      break;
+    case 'FX':
+      body = createFxBody(row, key);
+      break;
+    case 'CX':
+      body = createCryptoBody(row, key);
+      break;
+    default:
+      body = createEquitiesBody(row, key); // fallback
+      break;
+  }
+
 
   // buttons
   const btns = el('div', 'btns');
@@ -379,14 +437,14 @@ function createCard(row, index) {
     const b = btn(label, cls, async () => {
       const v = body.validate();
       if (!v.valid) return;
-      await place(kind, row, v);
+      await place(kind, row, v, instrumentType);
     });
     b.setAttribute('data-kind', kind);
     return b;
   };
-  btns.appendChild(mk('BL',  'bl',  'BL'));
+  btns.appendChild(mk('BL', 'bl', 'BL'));
   btns.appendChild(mk('BSL', 'bsl', 'BSL'));
-  btns.appendChild(mk('SL',  'sl',  'SL'));
+  btns.appendChild(mk('SL', 'sl', 'SL'));
   btns.appendChild(mk('SSL', 'ssl', 'SSL'));
 
   // assemble
@@ -409,38 +467,38 @@ function createCard(row, index) {
 // ======= Crypto body (Qty, Price, SL, TP; TP auto = SL*3) =======
 function createCryptoBody(row, key) {
   const saved = uiState.get(key) || {
-    qty:   row.qty != null ? String(row.qty)   : '',
+    qty: row.qty != null ? String(row.qty) : '',
     price: row.price != null ? String(row.price) : '',
-    sl:    row.sl != null ? String(row.sl)    : '',
-    tp:    row.tp != null ? String(row.tp)    : '',
+    sl: row.sl != null ? String(row.sl) : '',
+    tp: row.tp != null ? String(row.tp) : '',
     tpTouched: row.tp != null, // если TP пришёл с хуком — не перезатираем авто-логикой
   };
   let tpTouched = !!saved.tpTouched;
 
   const line = el('div', 'quad-line');
-  const $qty   = inputNumber('Qty',   'qty');
+  const $qty = inputNumber('Qty', 'qty');
   const $price = inputNumber('Price', 'pr');
-  const $sl    = inputNumber('SL',    'sl');
-  const $tp    = inputNumber('TP',    'tp');
+  const $sl = inputNumber('SL', 'sl');
+  const $tp = inputNumber('TP', 'tp');
 
   // restore
-  $qty.value   = saved.qty;
+  $qty.value = saved.qty;
   $price.value = saved.price;
-  $sl.value    = saved.sl;
-  $tp.value    = saved.tp;
+  $sl.value = saved.sl;
+  $tp.value = saved.tp;
 
   line.appendChild($qty);
   line.appendChild($price);
   line.appendChild($sl);
   line.appendChild($tp);
 
-  const persist = ()=>{
-    uiState.set(key, { qty: $qty.value, price: $price.value, sl: $sl.value, tp: $tp.value, tpTouched });
+  const persist = () => {
+    uiState.set(key, {qty: $qty.value, price: $price.value, sl: $sl.value, tp: $tp.value, tpTouched});
   };
-  const recomputeTP = ()=>{
+  const recomputeTP = () => {
     if (!tpTouched) {
       const slv = _normNum($sl.value);
-      $tp.value = (slv && slv > 0) ? String(slv*3) : '';
+      $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
       persist();
     }
   };
@@ -448,32 +506,36 @@ function createCryptoBody(row, key) {
   const body = {
     type: 'crypto',
     line, $qty, $price, $sl, $tp,
-    setButtons($btns){ this._btns = $btns; },
-    setNote($note){ this._note = $note; },
-    validate(){
+    setButtons($btns) {
+      this._btns = $btns;
+    },
+    setNote($note) {
+      this._note = $note;
+    },
+    validate() {
       const qty = _normNum($qty.value);
-      const pr  = _normNum($price.value);
-      const sl  = _normNum($sl.value);
+      const pr = _normNum($price.value);
+      const sl = _normNum($sl.value);
       const info = instrumentInfo.get(row.ticker);
       const qtyOk = isPos(qty);
       const priceOk = isPos(pr);
       const slOk = isSL(sl);
-      const { ok: quoteOk, reason: quoteReason = '' } = tradeRules.validate({ price: pr, side: row.side }, info);
+      const {ok: quoteOk, reason: quoteReason = ''} = tradeRules.validate({price: pr, side: row.side}, info);
       const valid = qtyOk && priceOk && slOk && quoteOk;
 
       line.classList.toggle('card--invalid', !valid);
 
-      const setErr = (inp,bad)=>inp.classList.toggle('input--error', !!bad);
-      setErr($qty,  !qtyOk);
-      setErr($price,!priceOk || !quoteOk);
-      setErr($sl,   !slOk);
+      const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
+      setErr($qty, !qtyOk);
+      setErr($price, !priceOk || !quoteOk);
+      setErr($sl, !slOk);
 
       const reason = !qtyOk ? 'Qty > 0'
-                   : !priceOk ? 'Price > 0'
-                   : !slOk ? 'SL ≥ 6'
-                   : !quoteOk ? quoteReason
-                   : '';
-      if (this._btns) this._btns.querySelectorAll('button').forEach(b=>{
+        : !priceOk ? 'Price > 0'
+          : !slOk ? 'SL ≥ 6'
+            : !quoteOk ? quoteReason
+              : '';
+      if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
       });
@@ -487,28 +549,44 @@ function createCryptoBody(row, key) {
         }
       }
 
-      return { valid, type:'crypto', qty, pr, sl, tp: _normNum($tp.value) };
+      return {valid, type: 'crypto', qty, pr, sl, tp: _normNum($tp.value)};
     }
   };
 
   // wiring
-  $sl.addEventListener('input',  () => { markTouched(row.ticker); recomputeTP(); body.validate(); });
-  $qty.addEventListener('input', () => { markTouched(row.ticker); persist(); body.validate(); });
-  $price.addEventListener('input',()=> { markTouched(row.ticker); persist(); body.validate(); });
-  $tp.addEventListener('input',   () => { markTouched(row.ticker); tpTouched = true; persist(); });
+  $sl.addEventListener('input', () => {
+    markTouched(row.ticker);
+    recomputeTP();
+    body.validate();
+  });
+  $qty.addEventListener('input', () => {
+    markTouched(row.ticker);
+    persist();
+    body.validate();
+  });
+  $price.addEventListener('input', () => {
+    markTouched(row.ticker);
+    persist();
+    body.validate();
+  });
+  $tp.addEventListener('input', () => {
+    markTouched(row.ticker);
+    tpTouched = true;
+    persist();
+  });
 
   persist();
   return body;
 }
 
 // ======= Equities body (Qty, Price, SL, TP; Risk$ separate line; Qty auto from Risk/SL) =======
-function createEquitiesBody(row, key) {
+function createFxBody(row, key) {
   const saved = uiState.get(key) || {
-    qty:   row.qty != null ? String(row.qty)   : '',
+    qty: row.qty != null ? String(row.qty) : '',
     price: row.price != null ? String(row.price) : '',
-    sl:    row.sl != null ? String(row.sl)    : '',
-    tp:    row.tp != null ? String(row.tp)    : '',
-    risk:  EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига
+    sl: row.sl != null ? String(row.sl) : '',
+    tp: row.tp != null ? String(row.tp) : '',
+    risk: EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига
     tpTouched: row.tp != null,
   };
   let tpTouched = !!saved.tpTouched;
@@ -519,24 +597,175 @@ function createEquitiesBody(row, key) {
   line.style.alignItems = 'center';
   line.style.gap = line.style.gap || '8px';
 
-  const $qty   = inputNumber('Qty',    'qty');
-  const $price = inputNumber('Price',  'pr');
-  const $sl    = inputNumber('SL',     'sl');
-  const $tp    = inputNumber('TP',     'tp');
-  const $risk  = inputNumber('Risk $', 'risk');
+  const $qty = inputNumber('Qty', 'qty');
+  const $price = inputNumber('Price', 'pr');
+  const $sl = inputNumber('SL', 'sl');
+  const $tp = inputNumber('TP', 'tp');
+  const $risk = inputNumber('Risk $', 'risk');
 
   // restore
-  $qty.value   = saved.qty;
+  $qty.value = saved.qty;
   $price.value = saved.price;
-  $sl.value    = saved.sl;
-  $tp.value    = saved.tp;
-  $risk.value  = saved.risk;
+  $sl.value = saved.sl;
+  $tp.value = saved.tp;
+  $risk.value = saved.risk;
 
-  const persist = ()=>{
-    uiState.set(key, { qty:$qty.value, price:$price.value, sl:$sl.value, tp:$tp.value, risk:$risk.value, tpTouched });
+  const persist = () => {
+    uiState.set(key, {
+      qty: $qty.value,
+      price: $price.value,
+      sl: $sl.value,
+      tp: $tp.value,
+      risk: $risk.value,
+      tpTouched
+    });
   };
-  const recomputeQtyFromRisk = ()=>{
-    const r  = _normNum($risk.value);
+  const recomputeQtyFromRisk = () => {
+    const r = _normNum($risk.value);
+    const sl = _normNum($sl.value);
+    // Use lot from row if available and positive
+    const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 100000; //standard lot for FX
+    const tickSize = Number.isFinite(row.tickSize) && row.tickSize > 0 ? row.tickSize : 0.00001; //default FX tick size
+
+    if (isPos(r) && isSL(sl)) {
+      let q = Math.floor((r / tickSize) / sl / lot / 0.01) * 0.01;
+      if (!Number.isFinite(q) || q < 0) q = 0;
+      $qty.value = String(q);
+    }
+    persist();
+  };
+  const recomputeTP = () => {
+    if (!tpTouched) {
+      const slv = _normNum($sl.value);
+      $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      persist();
+    }
+  };
+
+  const body = {
+    type: 'fx',
+    line, $qty, $price, $sl, $tp, $risk,
+    setButtons($btns) {
+      this._btns = $btns;
+    },
+    validate() {
+      const qtyRaw = _normNum($qty.value);
+      const pr = _normNum($price.value);
+      const sl = _normNum($sl.value);
+      const risk = _normNum($risk.value);
+
+      const qtyOk = Number.isFinite(qtyRaw) && qtyRaw > 0;
+      const valid = isPos(risk) && isSL(sl) && isPos(pr) && qtyOk;
+
+      line.classList.toggle('card--invalid', !valid);
+
+      const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
+      setErr($risk, !isPos(risk));
+      setErr($sl, !isSL(sl));
+      setErr($price, !isPos(pr));
+      setErr($qty, !qtyOk);
+
+      const reason = !isPos(risk) ? 'Risk $ > 0'
+        : !isSL(sl) ? 'SL ≥ 6'
+          : !isPos(pr) ? 'Price > 0'
+            : !qtyOk ? 'Qty > 0'
+              : '';
+      if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
+        b.disabled = !valid;
+        if (!valid) b.title = reason; else b.removeAttribute('title');
+      });
+
+      return {
+        valid, type: 'fx',
+        qty: qtyRaw, pr, sl, risk, tp: _normNum($tp.value) //todo normalize to min qty
+      };
+    }
+  };
+
+  // wiring
+  $risk.addEventListener('input', () => {
+    markTouched(row.ticker);
+    recomputeQtyFromRisk();
+    body.validate();
+  });
+  $sl.addEventListener('input', () => {
+    markTouched(row.ticker);
+    recomputeQtyFromRisk();
+    recomputeTP();
+    body.validate();
+  });
+  $qty.addEventListener('input', () => {
+    markTouched(row.ticker);
+    persist();
+    body.validate();
+  });
+  $price.addEventListener('input', () => {
+    markTouched(row.ticker);
+    persist();
+    body.validate();
+  });
+  $tp.addEventListener('input', () => {
+    markTouched(row.ticker);
+    tpTouched = true;
+    persist();
+  });
+
+  // assemble
+  line.appendChild($qty);
+  line.appendChild($price);
+  line.appendChild($sl);
+  line.appendChild($tp);
+  line.appendChild($risk);
+
+  // compute qty from default risk and SL (if provided)
+  recomputeQtyFromRisk();
+  return body;
+}
+
+
+// ======= Equities body (Qty, Price, SL, TP; Risk$ separate line; Qty auto from Risk/SL) =======
+function createEquitiesBody(row, key) {
+  const saved = uiState.get(key) || {
+    qty: row.qty != null ? String(row.qty) : '',
+    price: row.price != null ? String(row.price) : '',
+    sl: row.sl != null ? String(row.sl) : '',
+    tp: row.tp != null ? String(row.tp) : '',
+    risk: EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига
+    tpTouched: row.tp != null,
+  };
+  let tpTouched = !!saved.tpTouched;
+
+  const line = el('div', 'quad-line');
+  line.style.display = 'grid';
+  line.style.gridTemplateColumns = '1fr 1fr 0.8fr 0.8fr 1fr'; // Qty, Price, SL, TP, Risk$
+  line.style.alignItems = 'center';
+  line.style.gap = line.style.gap || '8px';
+
+  const $qty = inputNumber('Qty', 'qty');
+  const $price = inputNumber('Price', 'pr');
+  const $sl = inputNumber('SL', 'sl');
+  const $tp = inputNumber('TP', 'tp');
+  const $risk = inputNumber('Risk $', 'risk');
+
+  // restore
+  $qty.value = saved.qty;
+  $price.value = saved.price;
+  $sl.value = saved.sl;
+  $tp.value = saved.tp;
+  $risk.value = saved.risk;
+
+  const persist = () => {
+    uiState.set(key, {
+      qty: $qty.value,
+      price: $price.value,
+      sl: $sl.value,
+      tp: $tp.value,
+      risk: $risk.value,
+      tpTouched
+    });
+  };
+  const recomputeQtyFromRisk = () => {
+    const r = _normNum($risk.value);
     const sl = _normNum($sl.value);
     if (isPos(r) && isSL(sl)) {
       let q = Math.floor((r * 100) / sl);
@@ -545,49 +774,53 @@ function createEquitiesBody(row, key) {
     }
     persist();
   };
-  const recomputeTP = ()=>{
+  const recomputeTP = () => {
     if (!tpTouched) {
       const slv = _normNum($sl.value);
-      $tp.value = (slv && slv > 0) ? String(slv*3) : '';
+      $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
       persist();
     }
   };
 
   const body = {
-    type:'equities',
+    type: 'equities',
     line, $qty, $price, $sl, $tp, $risk,
-    setButtons($btns){ this._btns = $btns; },
-    setNote($note){ this._note = $note; },
-    validate(){
+    setButtons($btns) {
+      this._btns = $btns;
+    },
+    setNote($note) {
+      this._note = $note;
+    },
+    validate() {
       const qtyRaw = _normNum($qty.value);
-      const pr     = _normNum($price.value);
-      const sl     = _normNum($sl.value);
-      const risk   = _normNum($risk.value);
-      const info   = instrumentInfo.get(row.ticker);
+      const pr = _normNum($price.value);
+      const sl = _normNum($sl.value);
+      const risk = _normNum($risk.value);
+      const info = instrumentInfo.get(row.ticker);
 
-      const qtyOk  = Number.isFinite(qtyRaw) && qtyRaw >= 1 && Math.floor(qtyRaw) === qtyRaw;
+      const qtyOk = Number.isFinite(qtyRaw) && qtyRaw >= 1 && Math.floor(qtyRaw) === qtyRaw;
       const priceOk = isPos(pr);
-      const slOk   = isSL(sl);
+      const slOk = isSL(sl);
       const riskOk = isPos(risk);
-      const { ok: quoteOk, reason: quoteReason = '' } = tradeRules.validate({ price: pr, side: row.side }, info);
+      const {ok: quoteOk, reason: quoteReason = ''} = tradeRules.validate({price: pr, side: row.side}, info);
 
-      const valid  = riskOk && slOk && priceOk && qtyOk && quoteOk;
+      const valid = riskOk && slOk && priceOk && qtyOk && quoteOk;
 
       line.classList.toggle('card--invalid', !valid);
 
-      const setErr = (inp,bad)=>inp.classList.toggle('input--error', !!bad);
-      setErr($risk,  !riskOk);
-      setErr($sl,    !slOk);
+      const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
+      setErr($risk, !riskOk);
+      setErr($sl, !slOk);
       setErr($price, !priceOk || !quoteOk);
-      setErr($qty,   !qtyOk);
+      setErr($qty, !qtyOk);
 
       const reason = !riskOk ? 'Risk $ > 0'
-                   : !slOk    ? 'SL ≥ 6'
-                   : !priceOk ? 'Price > 0'
-                   : !qtyOk   ? 'Qty ≥ 1 (int)'
-                   : !quoteOk ? quoteReason
-                   : '';
-      if (this._btns) this._btns.querySelectorAll('button').forEach(b=>{
+        : !slOk ? 'SL ≥ 6'
+          : !priceOk ? 'Price > 0'
+            : !qtyOk ? 'Qty ≥ 1 (int)'
+              : !quoteOk ? quoteReason
+                : '';
+      if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
       });
@@ -601,7 +834,8 @@ function createEquitiesBody(row, key) {
         }
       }
 
-      return { valid, type:'equities',
+      return {
+        valid, type: 'equities',
         qty: qtyRaw, pr, sl, risk, tp: _normNum($tp.value),
         qtyInt: Number.isFinite(qtyRaw) ? Math.floor(qtyRaw) : 0
       };
@@ -609,11 +843,32 @@ function createEquitiesBody(row, key) {
   };
 
   // wiring
-  $risk.addEventListener('input',  () => { markTouched(row.ticker); recomputeQtyFromRisk(); body.validate(); });
-  $sl.addEventListener('input',    () => { markTouched(row.ticker); recomputeQtyFromRisk(); recomputeTP(); body.validate(); });
-  $qty.addEventListener('input',   () => { markTouched(row.ticker); persist(); body.validate(); });
-  $price.addEventListener('input', () => { markTouched(row.ticker); persist(); body.validate(); });
-  $tp.addEventListener('input',    () => { markTouched(row.ticker); tpTouched = true; persist(); });
+  $risk.addEventListener('input', () => {
+    markTouched(row.ticker);
+    recomputeQtyFromRisk();
+    body.validate();
+  });
+  $sl.addEventListener('input', () => {
+    markTouched(row.ticker);
+    recomputeQtyFromRisk();
+    recomputeTP();
+    body.validate();
+  });
+  $qty.addEventListener('input', () => {
+    markTouched(row.ticker);
+    persist();
+    body.validate();
+  });
+  $price.addEventListener('input', () => {
+    markTouched(row.ticker);
+    persist();
+    body.validate();
+  });
+  $tp.addEventListener('input', () => {
+    markTouched(row.ticker);
+    tpTouched = true;
+    persist();
+  });
 
   // assemble
   line.appendChild($qty);
@@ -628,11 +883,11 @@ function createEquitiesBody(row, key) {
 }
 
 // ======= Order placement (shared) =======
-async function place(kind, row, v) {
+async function place(kind, row, v, instrumentType) {
   if (!v.valid) return;
 
   const key = rowKey(row);
-  const requestId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+  const requestId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   pendingByReqId.set(requestId, key);
   retryCounts.set(requestId, 0);
   setCardState(key, 'pending');
@@ -645,34 +900,42 @@ async function place(kind, row, v) {
 
   let qtyVal, priceVal, slVal, takeVal, extra = {};
   if (v.type === 'crypto') {
-    qtyVal   = v.qty;
+    qtyVal = v.qty;
     priceVal = v.pr;
-    slVal    = v.sl;
-    takeVal  = v.tp ?? null;
+    slVal = v.sl;
+    takeVal = v.tp ?? null;
+  } else if (v.type === 'equities') {
+    qtyVal = v.qtyInt;
+    priceVal = v.pr;
+    slVal = v.sl;
+    takeVal = v.tp ?? null;
+    extra.riskUsd = v.risk;
   } else {
-    qtyVal   = v.qtyInt;
+    qtyVal = v.qty;
     priceVal = v.pr;
-    slVal    = v.sl;
-    takeVal  = v.tp ?? null;
+    slVal = v.sl;
+    takeVal = v.tp ?? null;
     extra.riskUsd = v.risk;
   }
 
   // legacy payload (main поддерживает оба формата)
   const payload = {
     ticker: row.ticker,
-    event:  row.event,
-    price:  Number(priceVal),
+    event: row.event,
+    price: Number(priceVal),
     kind,
+    instrumentType: instrumentType,
+    mintick: (row.tickSize || 0.01), //todo from config
     meta: {
       requestId, // связь с execution:result
       qty: Number(qtyVal),
       stopPts: Number(slVal),
-      takePts: takeVal==null ? null : Number(takeVal),
+      takePts: takeVal == null ? null : Number(takeVal),
       ...extra
     }
   };
 
-  try{
+  try {
     const res = await ipcRenderer.invoke('queue-place-order', payload);
     if (res && typeof res.providerOrderId === 'string' && res.providerOrderId.startsWith('pending:')) {
       toast(`… ${row.ticker}: sent, waiting confirmation`);
@@ -686,7 +949,7 @@ async function place(kind, row, v) {
       setCardState(key, 'pending');
       render();
     }
-  }catch(e){
+  } catch (e) {
     setCardState(key, null);
     toast(`✖ ${row.ticker}: ${e.message || e}`);
     shakeCard(key);
@@ -694,8 +957,8 @@ async function place(kind, row, v) {
   }
 }
 
-function clearPendingByKey(key){
-  for (const [rid, k] of pendingByReqId.entries()){
+function clearPendingByKey(key) {
+  for (const [rid, k] of pendingByReqId.entries()) {
     if (k === key) {
       pendingByReqId.delete(rid);
       retryCounts.delete(rid);
@@ -717,7 +980,7 @@ function removeRow(row) {
   render();
 }
 
-function removeRowByKey(key){
+function removeRowByKey(key) {
   const idx = state.rows.findIndex(r => rowKey(r) === key);
   if (idx >= 0) {
     const row = state.rows[idx];
@@ -734,7 +997,8 @@ function removeRowByKey(key){
 ipcRenderer.invoke('orders:list', 100).then(rows => {
   state.rows = Array.isArray(rows) ? rows : [];
   render();
-}).catch(()=>{});
+}).catch(() => {
+});
 
 // Заявка поставлена в очередь адаптером (ждём подтверждение из DWX)
 ipcRenderer.on('execution:pending', (_evt, rec) => {
@@ -781,7 +1045,10 @@ ipcRenderer.on('execution:retry-stopped', (_evt, rec) => {
   if (card) {
     delete card.dataset.reqId;
     const rb = card.querySelector('.retry-btn');
-    if (rb) { rb.textContent = '0'; rb.style.display = 'none'; }
+    if (rb) {
+      rb.textContent = '0';
+      rb.style.display = 'none';
+    }
   }
   setCardState(key, null);
   render();
@@ -816,7 +1083,7 @@ ipcRenderer.on('orders:new', (_evt, row) => {
   const oldKey = rowKey(oldRow);
 
   // формируем новую запись на основе старой + новые поля из ивента
-  const newRow = { ...oldRow, ...row };
+  const newRow = {...oldRow, ...row};
   const newKey = rowKey(newRow);
 
   // подменяем строку
@@ -827,10 +1094,10 @@ ipcRenderer.on('orders:new', (_evt, row) => {
     preserveUi: false,
     nextUiPatch: (prevUi) => {
       const patch = {};
-      if (row.qty != null)   patch.qty   = String(row.qty);
+      if (row.qty != null) patch.qty = String(row.qty);
       if (row.price != null) patch.price = String(row.price);
-      if (row.sl != null)    patch.sl    = String(row.sl);
-      if (row.tp != null)    patch.tp    = String(row.tp);
+      if (row.sl != null) patch.sl = String(row.sl);
+      if (row.tp != null) patch.tp = String(row.tp);
       return patch;
     }
   });
@@ -902,9 +1169,17 @@ ipcRenderer.on('order:cancelled', (_evt, rec) => {
 });
 
 // ======= UI events =======
-$filter.addEventListener('input', () => { state.filter = $filter.value || ''; render(); });
-$autoscroll.addEventListener('change', () => { state.autoscroll = $autoscroll.checked; });
-$wrap.addEventListener('wheel', () => { state.autoscroll = false; $autoscroll.checked = false; });
+$filter.addEventListener('input', () => {
+  state.filter = $filter.value || '';
+  render();
+});
+$autoscroll.addEventListener('change', () => {
+  state.autoscroll = $autoscroll.checked;
+});
+$wrap.addEventListener('wheel', () => {
+  state.autoscroll = false;
+  $autoscroll.checked = false;
+});
 
 // initial render
 render();

@@ -137,11 +137,11 @@ class DWXAdapter extends ExecutionAdapter {
     let tp = 0.0;
 
     if (order.side === 'buy') {
-      tp = order.price + (order.tp / 100)
-      sl = order.price - (order.sl / 100)
+      tp = order.price + (order.tp * order.mintick);
+      sl = order.price - (order.sl * order.mintick)
     } else {
-      tp = order.price - (order.tp / 100)
-      sl = order.price + (order.sl / 100)
+      tp = order.price - (order.tp * order.mintick)
+      sl = order.price + (order.sl * order.mintick)
     }
 
     let wait = delayMs;
