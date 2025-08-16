@@ -1,9 +1,10 @@
 // app/services/points/index.js
 // Конверсия: priceΔ -> points. Приоритет: tickSize из конфига → цифровой fallback.
 
+const loadConfig = require('../../config/load');
 let cfg = {};
 try {
-  cfg = require('../../config/tick-sizes.json');
+  cfg = loadConfig('tick-sizes.json');
 } catch (_) {
   cfg = {};
 }

@@ -1,6 +1,7 @@
 // renderer.js — crypto & equities cards, stable UI state, safe layout
 const { ipcRenderer } = require('electron');
-const orderCardsCfg = require('./config/order-cards.json');
+const loadConfig = require('./config/load');
+const orderCardsCfg = loadConfig('order-cards.json');
 const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
 const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop

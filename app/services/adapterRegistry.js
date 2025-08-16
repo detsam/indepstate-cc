@@ -2,8 +2,7 @@
 // Creates and caches adapter instances by provider name and injects config
 // from config/execution.json (or via initExecutionConfig).
 
-const path = require('path');
-const fs = require('fs');
+const loadConfig = require('../config/load');
 
 let executionConfig = null; // set via initExecutionConfig() or lazy‑loaded from disk
 const instances = new Map(); // name -> adapter instance
@@ -11,10 +10,8 @@ const instances = new Map(); // name -> adapter instance
 function deepClone(obj){ return obj ? JSON.parse(JSON.stringify(obj)) : obj; }
 
 function loadExecutionConfigFromDisk() {
-  const p = path.join(__dirname, '..', 'config', 'execution.json');
   try {
-    const raw = fs.readFileSync(p, 'utf8');
-    return JSON.parse(raw);
+    return loadConfig('execution.json');
   } catch (e) {
     console.error('[adapterRegistry] cannot read execution.json:', e.message);
     return { providers:{}, byInstrumentType:{}, default:'simulated' };

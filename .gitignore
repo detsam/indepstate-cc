@@ -1,5 +1,6 @@
 logs/
 data/
+/config/
 node_modules/
 .env
 *-lock.json
