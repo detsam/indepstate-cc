@@ -1,9 +1,10 @@
 const fs = require('fs');
 const dealTrackers = require('../dealTrackers');
 const { calcDealData } = require('../dealTrackers/calc');
+const loadConfig = require('../../config/load');
 let cfg = {};
 try {
-  cfg = require('../../config/tv-logs.json');
+  cfg = loadConfig('tv-logs.json');
 } catch (_) {
   cfg = {};
 }

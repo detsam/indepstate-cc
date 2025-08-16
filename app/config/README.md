@@ -1,4 +1,35 @@
-# Order Card Source Configuration
+# Configuration
+
+This directory contains the application's default configuration files. To
+customize any of them, copy the desired file to a `config/` directory in the
+project root and edit it there. Files in `./config` override the defaults in
+this folder; values are deep‑merged onto the bundled configuration.
+
+Example:
+
+```bash
+mkdir -p config
+cp app/config/order-cards.json config/order-cards.json
+```
+
+Changes in `config/order-cards.json` (and other files) take effect on the next
+application start. The `config/` directory is ignored by git so personal
+settings aren't tracked.
+
+## Loading configuration in code
+
+Application modules should load configuration files via the helper in
+`app/config/load.js`:
+
+```js
+const loadConfig = require('./config/load');
+const orderCards = loadConfig('order-cards.json');
+```
+
+`loadConfig()` looks for an override in `./config` and deep‑merges its
+contents onto the defaults bundled in this directory.
+
+## Order Card Source Configuration
 
 The `order-cards.json` file lists every source that can feed order cards into the
 application. The file contains a single object with a `sources` array and optional

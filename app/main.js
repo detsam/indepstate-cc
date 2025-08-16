@@ -11,14 +11,15 @@ const { getAdapter, initExecutionConfig } = require('./services/adapterRegistry'
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
-const execCfg = require('./config/execution.json');
-const orderCardsCfg = require('./config/order-cards.json');
-const dealTrackersCfg = require('./config/deal-trackers.json');
+const loadConfig = require('./config/load');
+const execCfg = loadConfig('execution.json');
+const orderCardsCfg = loadConfig('order-cards.json');
+const dealTrackersCfg = loadConfig('deal-trackers.json');
 const dealTrackers = require('./services/dealTrackers');
 const { calcDealData } = require('./services/dealTrackers/calc');
 const tvLogs = require('./services/tvLogs');
 let tvLogsCfg = {};
-try { tvLogsCfg = require('./config/tv-logs.json'); }
+try { tvLogsCfg = loadConfig('tv-logs.json'); }
 catch { tvLogsCfg = {}; }
 initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
