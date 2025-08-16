@@ -7,10 +7,6 @@ function sanitizeFileName(name) {
   return String(name).replace(/[\\/:*?"<>|]/g, '-');
 }
 
-function sleep(ms) {
-  return new Promise(res => setTimeout(res, ms));
-}
-
 class TvChartImageComposer extends ChartImageComposer {
   constructor(cfg = {}) {
     super();
@@ -20,27 +16,36 @@ class TvChartImageComposer extends ChartImageComposer {
     this.outputDir = cfg.outputDir || process.cwd();
     const rps = Number(cfg.throttlePerSecond) || 9;
     this._interval = 1000 / rps;
-    this._chain = Promise.resolve();
-    this._last = 0;
+    this._queue = [];
+    this._timer = null;
   }
 
   compose(symbol) {
-    this._chain = this._chain.then(() => this._throttledCompose(symbol));
-    return this._chain;
-  }
-
-  async _throttledCompose(symbol) {
-    const now = Date.now();
-    const wait = Math.max(0, this._interval - (now - this._last));
-    if (wait > 0) await sleep(wait);
-    this._last = Date.now();
-    return this._fetchAndSave(symbol);
-  }
-
-  async _fetchAndSave(symbol) {
     if (!this.apiDomain || !this.apiKey || !this.layoutId) {
       throw new Error('TvChartImageComposer misconfigured');
     }
+    const safe = sanitizeFileName(symbol);
+    const name = `${Date.now()}-${safe}.png`;
+    this._queue.push({ symbol, name });
+    this._schedule();
+    return name;
+  }
+
+  _schedule() {
+    if (this._timer) return;
+    const run = () => {
+      if (this._queue.length === 0) {
+        this._timer = null;
+        return;
+      }
+      const { symbol, name } = this._queue.shift();
+      this._fetchAndSave(symbol, name).catch(e => console.error('TV chart request failed', e));
+      this._timer = setTimeout(run, this._interval);
+    };
+    this._timer = setTimeout(run, 0);
+  }
+
+  async _fetchAndSave(symbol, name) {
     const url = `https://${this.apiDomain}/v2/tradingview/layout-chart/${this.layoutId}`;
     const res = await fetch(url, {
       method: 'POST',
@@ -52,11 +57,8 @@ class TvChartImageComposer extends ChartImageComposer {
     });
     if (!res.ok) throw new Error(`TV chart request failed: ${res.status}`);
     const buf = await res.buffer();
-    const safe = sanitizeFileName(symbol);
-    const name = `${Date.now()}-${safe}.png`;
     const filePath = path.join(this.outputDir, name);
     await fs.promises.writeFile(filePath, buf);
-    return name;
   }
 }
 

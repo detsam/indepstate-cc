@@ -1,5 +1,5 @@
 class ChartImageComposer {
-  async compose(symbol) {
+  compose(symbol) {
     throw new Error('compose() not implemented');
   }
 }

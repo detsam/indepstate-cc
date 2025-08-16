@@ -98,7 +98,7 @@ class ObsidianDealTracker extends DealTracker {
     let chartFile = null;
     if (this.chartComposer && symbol && symbol.exchange && ticker && canCheck) {
       try {
-        chartFile = await this.chartComposer.compose(`${symbol.exchange}:${ticker}`);
+        chartFile = this.chartComposer.compose(`${symbol.exchange}:${ticker}`);
       } catch (e) {
         console.error('chart compose failed', e);
       }
