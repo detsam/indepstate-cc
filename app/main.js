@@ -50,6 +50,7 @@ const PORT = envInt("TV_WEBHOOK_PORT");
 const IS_ELECTRON_MENU_ENABLED = envBool("IS_ELECTRON_MENU_ENABLED");
 const LOG_DIR = path.join(__dirname, 'logs');
 const EXEC_LOG = path.join(LOG_DIR, 'executions.jsonl');
+const MAX_PRICE_DEVIATION = envFloat('MAX_PRICE_DEVIATION_PCT', 0.5) / 100;
 
 // ----------------- FS utils -----------------
 function ensureLogs({ truncateExecutionsOnStart = false } = {}) {
@@ -352,11 +353,28 @@ function setupIpc(orderSvc) {
 
       execOrder = normalizeEquityOrderForExecution(order);
 
-      console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price });
-
-      const adapter = getAdapter(adapterName);      
+      const adapter = getAdapter(adapterName);
       // разово подключим слушатели подтверждений (если адаптер их поддерживает)
       wireAdapter(adapter, adapterName);
+
+      const quote = await adapter.getQuote?.(execOrder.symbol);
+      if (!quote || !Number.isFinite(quote.price)) {
+        const rej = { status: 'rejected', provider: adapterName, reason: 'No quote' };
+        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, adapter: adapterName, order: execOrder, result: rej });
+        return rej;
+      }
+      const marketPrice = execOrder.side === 'sell'
+        ? (Number.isFinite(quote.bid) ? quote.bid : quote.price)
+        : (execOrder.side === 'buy' ? (Number.isFinite(quote.ask) ? quote.ask : quote.price) : quote.price);
+      const diff = Math.abs(execOrder.price - marketPrice) / marketPrice;
+      if (diff > MAX_PRICE_DEVIATION) {
+        const reason = `price diff ${(diff*100).toFixed(3)}%`;
+        const rej = { status: 'rejected', provider: adapterName, reason };
+        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, adapter: adapterName, order: execOrder, result: rej });
+        return rej;
+      }
+
+      console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price });
 
       const result = await adapter.placeOrder(execOrder);
 
@@ -460,6 +478,18 @@ function setupIpc(orderSvc) {
         }
         break;
       }
+    }
+  });
+
+  ipcMain.handle('instrument:get', async (_evt, symbol) => {
+    try {
+      const instrumentType = detectInstrumentType(String(symbol || ''));
+      const adapterName = pickAdapterName(instrumentType);
+      const adapter = getAdapter(adapterName);
+      const q = await adapter.getQuote?.(String(symbol || ''));
+      return q || null;
+    } catch {
+      return null;
     }
   });
 

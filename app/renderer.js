@@ -6,6 +6,8 @@ const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
 const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
+const MAX_PRICE_DEVIATION_PCT = Number(process.env.MAX_PRICE_DEVIATION_PCT) || 0.5;
+const PRICE_LIMIT = MAX_PRICE_DEVIATION_PCT / 100;
 
 // ======= App state =======
 const state = { rows: [], filter: '', autoscroll: true };
@@ -27,6 +29,9 @@ const retryCounts = new Map(); // reqId -> retry count
 
 // --- пользователь вручную менял поля карточки для этого тикера?
 const userTouchedByTicker = new Map(); // ticker -> boolean
+
+// котировки по тикерам
+const instrumentInfo = new Map(); // ticker -> {price,bid,ask}
 
 // ======= DOM =======
 const $wrap = document.getElementById('wrap');
@@ -211,6 +216,15 @@ function setCardState(key, state) {
 // --- touched helpers ---
 function markTouched(ticker){ if (ticker) userTouchedByTicker.set(ticker, true); }
 function isTouched(ticker){ return !!userTouchedByTicker.get(ticker); }
+
+function ensureInstrument(ticker){
+  if (!ticker || instrumentInfo.has(ticker)) return;
+  instrumentInfo.set(ticker, null);
+  ipcRenderer.invoke('instrument:get', ticker).then(info => {
+    instrumentInfo.set(ticker, info || null);
+    render();
+  }).catch(() => { instrumentInfo.set(ticker, null); });
+}
 
 // Миграция ключей (rowKey зависит от полей row)
 function migrateKey(oldKey, newKey, { preserveUi = false, nextUiPatch = null } = {}) {
@@ -416,18 +430,35 @@ function createCryptoBody(row, key) {
       const qty = _normNum($qty.value);
       const pr  = _normNum($price.value);
       const sl  = _normNum($sl.value);
-      const valid = isPos(qty) && isPos(pr) && isSL(sl);
+      const info = instrumentInfo.get(row.ticker);
+      const qtyOk = isPos(qty);
+      const priceOk = isPos(pr);
+      const slOk = isSL(sl);
+      let quoteOk = true;
+      let quoteReason = '';
+      if (!info || !isPos(info?.price)) {
+        quoteOk = false;
+        quoteReason = 'No quote';
+      } else if (priceOk) {
+        const diff = Math.abs(pr - info.price) / info.price;
+        if (diff > PRICE_LIMIT) {
+          quoteOk = false;
+          quoteReason = `Δ>${MAX_PRICE_DEVIATION_PCT}%`;
+        }
+      }
+      const valid = qtyOk && priceOk && slOk && quoteOk;
 
       line.classList.toggle('card--invalid', !valid);
 
       const setErr = (inp,bad)=>inp.classList.toggle('input--error', !!bad);
-      setErr($qty,  !isPos(qty));
-      setErr($price,!isPos(pr));
-      setErr($sl,   !isSL(sl));
+      setErr($qty,  !qtyOk);
+      setErr($price,!priceOk || !quoteOk);
+      setErr($sl,   !slOk);
 
-      const reason = !isPos(qty) ? 'Qty > 0'
-                   : !isPos(pr)  ? 'Price > 0'
-                   : !isSL(sl)   ? 'SL ≥ 6'
+      const reason = !qtyOk ? 'Qty > 0'
+                   : !priceOk ? 'Price > 0'
+                   : !slOk ? 'SL ≥ 6'
+                   : !quoteOk ? quoteReason
                    : '';
       if (this._btns) this._btns.querySelectorAll('button').forEach(b=>{
         b.disabled = !valid;
@@ -509,22 +540,40 @@ function createEquitiesBody(row, key) {
       const pr     = _normNum($price.value);
       const sl     = _normNum($sl.value);
       const risk   = _normNum($risk.value);
+      const info   = instrumentInfo.get(row.ticker);
 
       const qtyOk  = Number.isFinite(qtyRaw) && qtyRaw >= 1 && Math.floor(qtyRaw) === qtyRaw;
-      const valid  = isPos(risk) && isSL(sl) && isPos(pr) && qtyOk;
+      const priceOk = isPos(pr);
+      const slOk   = isSL(sl);
+      const riskOk = isPos(risk);
+      let quoteOk  = true;
+      let quoteReason = '';
+      if (!info || !isPos(info?.price)) {
+        quoteOk = false;
+        quoteReason = 'No quote';
+      } else if (priceOk) {
+        const diff = Math.abs(pr - info.price) / info.price;
+        if (diff > PRICE_LIMIT) {
+          quoteOk = false;
+          quoteReason = `Δ>${MAX_PRICE_DEVIATION_PCT}%`;
+        }
+      }
+
+      const valid  = riskOk && slOk && priceOk && qtyOk && quoteOk;
 
       line.classList.toggle('card--invalid', !valid);
 
       const setErr = (inp,bad)=>inp.classList.toggle('input--error', !!bad);
-      setErr($risk,  !isPos(risk));
-      setErr($sl,    !isSL(sl));
-      setErr($price, !isPos(pr));
+      setErr($risk,  !riskOk);
+      setErr($sl,    !slOk);
+      setErr($price, !priceOk || !quoteOk);
       setErr($qty,   !qtyOk);
 
-      const reason = !isPos(risk) ? 'Risk $ > 0'
-                   : !isSL(sl)    ? 'SL ≥ 6'
-                   : !isPos(pr)   ? 'Price > 0'
-                   : !qtyOk       ? 'Qty ≥ 1 (int)'
+      const reason = !riskOk ? 'Risk $ > 0'
+                   : !slOk    ? 'SL ≥ 6'
+                   : !priceOk ? 'Price > 0'
+                   : !qtyOk   ? 'Qty ≥ 1 (int)'
+                   : !quoteOk ? quoteReason
                    : '';
       if (this._btns) this._btns.querySelectorAll('button').forEach(b=>{
         b.disabled = !valid;
@@ -719,6 +768,7 @@ ipcRenderer.on('execution:retry-stopped', (_evt, rec) => {
 
 // Обновлённая логика получения ивента
 ipcRenderer.on('orders:new', (_evt, row) => {
+  ensureInstrument(row.ticker);
   // ищем существующую карточку по ТИКЕРУ
   const idx = state.rows.findIndex(r => r.ticker === row.ticker);
 

@@ -25,5 +25,10 @@ class SimulatedAdapter extends ExecutionAdapter {
       raw: { echo: order }
     };
   }
+
+  async getQuote(_symbol) {
+    // для симуляции вернём фиксированную цену
+    return { bid: 100, ask: 100, price: 100 };
+  }
 }
 module.exports = { SimulatedAdapter };
