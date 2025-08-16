@@ -22,6 +22,9 @@ The application uses environment variables to supply credentials for execution p
 - `J2T_TOKEN` – API token
 
 ### DWX provider
+
+https://github.com/darwinex/dwxconnect
+
 - `DWX_HOST` – DWX bridge host
 - `DWX_PORT` – port for the bridge
 - `DWX_ACCOUNT` – trading account number
