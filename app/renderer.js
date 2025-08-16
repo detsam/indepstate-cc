@@ -292,6 +292,9 @@ function createCard(row, index) {
   const key = rowKey(row);
   const cx = isCrypto(row.ticker);
 
+  // ensure we have a quote for this symbol ASAP
+  ensureInstrument(row.ticker);
+
   const card = el('div', 'card');
   card.setAttribute('data-rowkey', key);
 
@@ -768,7 +771,6 @@ ipcRenderer.on('execution:retry-stopped', (_evt, rec) => {
 
 // Обновлённая логика получения ивента
 ipcRenderer.on('orders:new', (_evt, row) => {
-  ensureInstrument(row.ticker);
   // ищем существующую карточку по ТИКЕРУ
   const idx = state.rows.findIndex(r => r.ticker === row.ticker);
 
