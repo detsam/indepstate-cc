@@ -12,5 +12,12 @@ class ExecutionAdapter {
 
   /** @returns {Promise<any[]>} история закрытых позиций */
   async listClosedPositions() { return []; }
+
+  /**
+   * Получить котировку/информацию по инструменту.
+   * @param {string} symbol
+   * @returns {Promise<{bid?:number, ask?:number, price?:number}|null>}
+   */
+  async getQuote(_symbol) { return null; }
 }
 module.exports = { ExecutionAdapter };

@@ -11,6 +11,7 @@ const { getAdapter, initExecutionConfig } = require('./services/adapterRegistry'
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
+const tradeRules = require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const execCfg = loadConfig('execution.json');
 const orderCardsCfg = loadConfig('order-cards.json');
@@ -40,11 +41,6 @@ function envInt(name, fallback = 0) {
   const n = parseInt(process.env[name] ?? '', 10);
   return Number.isFinite(n) ? n : fallback;
 }
-function envFloat(name, fallback = 0) {
-  const n = parseFloat(process.env[name] ?? '');
-  return Number.isFinite(n) ? n : fallback;
-}
-
 // ----------------- CONSTS -----------------
 const PORT = envInt("TV_WEBHOOK_PORT");
 const IS_ELECTRON_MENU_ENABLED = envBool("IS_ELECTRON_MENU_ENABLED");
@@ -352,11 +348,24 @@ function setupIpc(orderSvc) {
 
       execOrder = normalizeEquityOrderForExecution(order);
 
-      console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price });
-
-      const adapter = getAdapter(adapterName);      
+      const adapter = getAdapter(adapterName);
       // разово подключим слушатели подтверждений (если адаптер их поддерживает)
       wireAdapter(adapter, adapterName);
+
+      const quote = await adapter.getQuote?.(execOrder.symbol);
+      if (!quote || !Number.isFinite(quote.price)) {
+        const rej = { status: 'rejected', provider: adapterName, reason: 'No quote' };
+        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, adapter: adapterName, order: execOrder, result: rej });
+        return rej;
+      }
+      const rule = tradeRules.validate(execOrder, quote);
+      if (!rule.ok) {
+        const rej = { status: 'rejected', provider: adapterName, reason: rule.reason };
+        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, adapter: adapterName, order: execOrder, result: rej });
+        return rej;
+      }
+
+      console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price });
 
       const result = await adapter.placeOrder(execOrder);
 
@@ -460,6 +469,18 @@ function setupIpc(orderSvc) {
         }
         break;
       }
+    }
+  });
+
+  ipcMain.handle('instrument:get', async (_evt, symbol) => {
+    try {
+      const instrumentType = detectInstrumentType(String(symbol || ''));
+      const adapterName = pickAdapterName(instrumentType);
+      const adapter = getAdapter(adapterName);
+      const q = await adapter.getQuote?.(String(symbol || ''));
+      return q || null;
+    } catch {
+      return null;
     }
   });
 

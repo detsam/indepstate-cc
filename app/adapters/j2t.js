@@ -140,6 +140,10 @@ class J2TExecutionAdapter extends ExecutionAdapter {
     }
   }
 
+  async getQuote(_symbol) {
+    return null;
+  }
+
   // на вырост:
   // async cancelOrder(id) { ... /accounts/{accountId}/orders/{orderId} DELETE ... }
   // async getOrderStatus(id) { ... /accounts/{accountId}/orders ... }

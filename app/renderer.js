@@ -1,6 +1,7 @@
 // renderer.js — crypto & equities cards, stable UI state, safe layout
 const { ipcRenderer } = require('electron');
 const loadConfig = require('./config/load');
+const tradeRules = require('./services/tradeRules');
 const orderCardsCfg = loadConfig('order-cards.json');
 const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
 const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
@@ -27,6 +28,9 @@ const retryCounts = new Map(); // reqId -> retry count
 
 // --- пользователь вручную менял поля карточки для этого тикера?
 const userTouchedByTicker = new Map(); // ticker -> boolean
+
+// котировки по тикерам
+const instrumentInfo = new Map(); // ticker -> {price,bid,ask}
 
 // ======= DOM =======
 const $wrap = document.getElementById('wrap');
@@ -167,7 +171,7 @@ function setCardState(key, state) {
       card.classList.add('card--mini');
       if (!card._removedParts) {
         card._removedParts = [];
-        ['.meta', '.quad-line', '.extraRow', '.btns'].forEach(sel => {
+        ['.meta', '.quad-line', '.extraRow', '.btns', '.card__note'].forEach(sel => {
           const n = card.querySelector(sel);
           if (n) {
             card._removedParts.push({ node: n, next: n.nextSibling });
@@ -211,6 +215,33 @@ function setCardState(key, state) {
 // --- touched helpers ---
 function markTouched(ticker){ if (ticker) userTouchedByTicker.set(ticker, true); }
 function isTouched(ticker){ return !!userTouchedByTicker.get(ticker); }
+
+const pendingInstruments = new Set();
+
+function ensureInstrument(ticker){
+  if (!ticker) return;
+  if (!state.rows.some(r => r.ticker === ticker)) return; // card removed
+  if (instrumentInfo.has(ticker)) return; // already have data
+  if (pendingInstruments.has(ticker)) return; // request in-flight
+  pendingInstruments.add(ticker);
+  ipcRenderer.invoke('instrument:get', ticker).then(info => {
+    if (info) {
+      pendingInstruments.delete(ticker);
+      instrumentInfo.set(ticker, info);
+      render();
+    } else {
+      setTimeout(() => {
+        pendingInstruments.delete(ticker);
+        ensureInstrument(ticker);
+      }, 1000);
+    }
+  }).catch(() => {
+    setTimeout(() => {
+      pendingInstruments.delete(ticker);
+      ensureInstrument(ticker);
+    }, 1000);
+  });
+}
 
 // Миграция ключей (rowKey зависит от полей row)
 function migrateKey(oldKey, newKey, { preserveUi = false, nextUiPatch = null } = {}) {
@@ -277,6 +308,9 @@ function render() {
 function createCard(row, index) {
   const key = rowKey(row);
   const cx = isCrypto(row.ticker);
+
+  // ensure we have a quote for this symbol ASAP
+  ensureInstrument(row.ticker);
 
   const card = el('div', 'card');
   card.setAttribute('data-rowkey', key);
@@ -361,9 +395,12 @@ function createCard(row, index) {
   card.appendChild(body.line);
   if (body.extraRow) card.appendChild(body.extraRow); // Risk$ line for equities
   card.appendChild(btns);
+  const note = el('div', 'card__note');
+  card.appendChild(note);
 
   // let validator manage buttons state
   body.setButtons(btns);
+  if (body.setNote) body.setNote(note);
   body.validate();
 
   return card;
@@ -412,27 +449,43 @@ function createCryptoBody(row, key) {
     type: 'crypto',
     line, $qty, $price, $sl, $tp,
     setButtons($btns){ this._btns = $btns; },
+    setNote($note){ this._note = $note; },
     validate(){
       const qty = _normNum($qty.value);
       const pr  = _normNum($price.value);
       const sl  = _normNum($sl.value);
-      const valid = isPos(qty) && isPos(pr) && isSL(sl);
+      const info = instrumentInfo.get(row.ticker);
+      const qtyOk = isPos(qty);
+      const priceOk = isPos(pr);
+      const slOk = isSL(sl);
+      const { ok: quoteOk, reason: quoteReason = '' } = tradeRules.validate({ price: pr, side: row.side }, info);
+      const valid = qtyOk && priceOk && slOk && quoteOk;
 
       line.classList.toggle('card--invalid', !valid);
 
       const setErr = (inp,bad)=>inp.classList.toggle('input--error', !!bad);
-      setErr($qty,  !isPos(qty));
-      setErr($price,!isPos(pr));
-      setErr($sl,   !isSL(sl));
+      setErr($qty,  !qtyOk);
+      setErr($price,!priceOk || !quoteOk);
+      setErr($sl,   !slOk);
 
-      const reason = !isPos(qty) ? 'Qty > 0'
-                   : !isPos(pr)  ? 'Price > 0'
-                   : !isSL(sl)   ? 'SL ≥ 6'
+      const reason = !qtyOk ? 'Qty > 0'
+                   : !priceOk ? 'Price > 0'
+                   : !slOk ? 'SL ≥ 6'
+                   : !quoteOk ? quoteReason
                    : '';
       if (this._btns) this._btns.querySelectorAll('button').forEach(b=>{
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
       });
+      if (this._note) {
+        if (!valid && reason) {
+          this._note.textContent = reason;
+          this._note.style.display = 'block';
+        } else {
+          this._note.textContent = '';
+          this._note.style.display = 'none';
+        }
+      }
 
       return { valid, type:'crypto', qty, pr, sl, tp: _normNum($tp.value) };
     }
@@ -504,32 +557,49 @@ function createEquitiesBody(row, key) {
     type:'equities',
     line, $qty, $price, $sl, $tp, $risk,
     setButtons($btns){ this._btns = $btns; },
+    setNote($note){ this._note = $note; },
     validate(){
       const qtyRaw = _normNum($qty.value);
       const pr     = _normNum($price.value);
       const sl     = _normNum($sl.value);
       const risk   = _normNum($risk.value);
+      const info   = instrumentInfo.get(row.ticker);
 
       const qtyOk  = Number.isFinite(qtyRaw) && qtyRaw >= 1 && Math.floor(qtyRaw) === qtyRaw;
-      const valid  = isPos(risk) && isSL(sl) && isPos(pr) && qtyOk;
+      const priceOk = isPos(pr);
+      const slOk   = isSL(sl);
+      const riskOk = isPos(risk);
+      const { ok: quoteOk, reason: quoteReason = '' } = tradeRules.validate({ price: pr, side: row.side }, info);
+
+      const valid  = riskOk && slOk && priceOk && qtyOk && quoteOk;
 
       line.classList.toggle('card--invalid', !valid);
 
       const setErr = (inp,bad)=>inp.classList.toggle('input--error', !!bad);
-      setErr($risk,  !isPos(risk));
-      setErr($sl,    !isSL(sl));
-      setErr($price, !isPos(pr));
+      setErr($risk,  !riskOk);
+      setErr($sl,    !slOk);
+      setErr($price, !priceOk || !quoteOk);
       setErr($qty,   !qtyOk);
 
-      const reason = !isPos(risk) ? 'Risk $ > 0'
-                   : !isSL(sl)    ? 'SL ≥ 6'
-                   : !isPos(pr)   ? 'Price > 0'
-                   : !qtyOk       ? 'Qty ≥ 1 (int)'
+      const reason = !riskOk ? 'Risk $ > 0'
+                   : !slOk    ? 'SL ≥ 6'
+                   : !priceOk ? 'Price > 0'
+                   : !qtyOk   ? 'Qty ≥ 1 (int)'
+                   : !quoteOk ? quoteReason
                    : '';
       if (this._btns) this._btns.querySelectorAll('button').forEach(b=>{
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
       });
+      if (this._note) {
+        if (!valid && reason) {
+          this._note.textContent = reason;
+          this._note.style.display = 'block';
+        } else {
+          this._note.textContent = '';
+          this._note.style.display = 'none';
+        }
+      }
 
       return { valid, type:'equities',
         qty: qtyRaw, pr, sl, risk, tp: _normNum($tp.value),

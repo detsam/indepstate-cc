@@ -73,6 +73,8 @@ class DWXAdapter extends ExecutionAdapter {
     this._lastTickets = new Set();
     // мета-информация по тикетам: open_time, profit и т.п.
     this._ticketMeta = new Map();
+    // symbols we have subscribed to for market data
+    this._subscribedSymbols = new Set();
   }
 
   /**
@@ -300,6 +302,24 @@ class DWXAdapter extends ExecutionAdapter {
     }
 
     this._lastTickets = nowTickets;
+  }
+
+  async getQuote(symbol) {
+    symbol = String(symbol || '').trim();
+    if (!symbol) return null;
+    if (!this._subscribedSymbols.has(symbol)) {
+      this._subscribedSymbols.add(symbol);
+      try { await this.client.subscribe_symbols([...this._subscribedSymbols]); } catch {}
+    }
+    const md = this.client.market_data?.[symbol];
+    if (!md) return null;
+    const bid = Number(md.bid);
+    const ask = Number(md.ask);
+    let price;
+    if (Number.isFinite(bid) && Number.isFinite(ask)) price = (bid + ask) / 2;
+    else if (Number.isFinite(bid)) price = bid;
+    else if (Number.isFinite(ask)) price = ask;
+    return { bid, ask, price };
   }
 
   async listOpenOrders() {
