@@ -171,7 +171,9 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
   const entry = group[0];
   const rawSymbol = entry.symbol || '';
   const rawPlacingTime = entry.placingTime || '';
-  const ticker = rawSymbol.split(':').pop();
+  const symParts = rawSymbol.split(':');
+  const ticker = symParts.pop();
+  const exchange = symParts.length ? symParts[0] : undefined;
   const placingParts = rawPlacingTime.split(' ');
   const placingDate = placingParts[0];
   const placingTime = placingParts[1];
@@ -248,7 +250,7 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
   }
 
   const base = calcDealData({
-    ticker,
+    symbol: { exchange, ticker },
     side,
     entryPrice: price,
     exitPrice: closing.fillPrice,
@@ -262,7 +264,7 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
     stopPoints,
     status: result
   });
-  return { _key: `${rawSymbol}|${rawPlacingTime}`, symbol: ticker, placingTime: placingDate, ...base };
+  return { _key: `${rawSymbol}|${rawPlacingTime}`, placingTime: placingDate, ...base };
 }
 
 function processFile(file, sessions = cfg.sessions) {
@@ -308,11 +310,12 @@ function start(config = cfg) {
       info.mtime = stat.mtimeMs;
       const deals = processFile(file, sessions);
       for (const d of deals) {
-        const key = d._key || `${d.ticker}|${d.placingTime}`;
+        const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
+        const key = d._key || `${symKey}|${d.placingTime}`;
         if (info.keys.has(key)) continue;
         info.keys.add(key);
         dealTrackers.notifyPositionClosed({
-          ticker: d.ticker,
+          symbol: d.symbol,
           tp: d.tp,
           sp: d.sp,
           status: d.status,

@@ -20,7 +20,7 @@ after duplicate checks confirm a new note will be created.
 Pass a `skipExisting` array in the `opts` object to request duplicate checks. Each element has:
 
 - `field` – key written to the destination (for the Obsidian tracker this is a front‑matter field).
-- `prop` – property on the trade object sent to the tracker.
+- `prop` – property path on the trade object sent to the tracker (dot notation supported).
 
 When all listed fields are found with matching values the tracker skips creating a new record. The Obsidian tracker also writes these fields into the note's front matter so future runs can detect duplicates.
 
@@ -28,7 +28,7 @@ When all listed fields are found with matching values the tracker skips creating
 
 The Obsidian deal tracker expects an `info` object with properties describing the trade. When present the tracker substitutes matching lines in the `Template. Deal.md` note:
 
-- `ticker` – injected into `- Ticker:: [[Ticker. TICKER]]`
+- `symbol` – object `{ exchange?, ticker }`; `ticker` is injected into `- Ticker:: [[Ticker. TICKER]]`
 - `tactic` – fills the `- Tactics::` line
 - `side` – sets `- Direction:: [[Direction. Long]]` or `[[Direction. Short]]`
 - `status` – selects `- Status:: [[Result. Take]]` or `[[Result. Stop]]`

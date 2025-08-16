@@ -41,8 +41,8 @@ For each account the service:
 5. Derives the result (`take` or `stop`), `takePoints`/`stopPoints` using the same tick metadata, sums commission, rounds profit to two decimals and calculates `tradeRisk` as:
    - `(profit ÷ takePoints) × stopSetup` when `takePoints` are present
    - `(profit ÷ stopPoints) × stopSetup` when `stopPoints` are present
-6. Strips the exchange prefix from the symbol and the time portion from the placing time, then determines `tradeSession` using the configured `sessions` map.
-7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `ticker`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints`, `side`, `tradeRisk`, `tradeSession`, `_key` and the account `tactic`, passing along the configured `skipExisting` rules to avoid duplicate notes.
+6. Splits the symbol into `exchange` and `ticker` parts and the placing time into date and time, then determines `tradeSession` using the configured `sessions` map.
+7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `symbol`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints`, `side`, `tradeRisk`, `tradeSession`, `_key` and the account `tactic`, passing along the configured `skipExisting` rules to avoid duplicate notes.
 
 The `_key` combines the raw symbol and placing time and is suitable for use in `skipExisting`.
 
