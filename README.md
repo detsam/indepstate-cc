@@ -35,6 +35,9 @@ https://github.com/darwinex/dwxconnect
 - `OBSIDIAN_INDEPSTATE_DEALS_JOURNAL` – directory within the vault where notes are written
 
 #### Chart images
+
+https://chart-img.com/
+
 - `TV_IMGS_API_DOMAIN` – domain of the TradingView screenshot API
 - `TV_IMGS_API_KEY` – API key for the screenshot service
 - `TV_IMGS_LAYOUT_ID` – public TradingView layout identifier
