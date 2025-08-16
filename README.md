@@ -31,7 +31,7 @@ The application uses environment variables to supply credentials for execution p
 - `OBSIDIAN_INDEPSTATE_VAULT` – path to the Obsidian vault used for deal notes
 - `OBSIDIAN_INDEPSTATE_DEALS_JOURNAL` – directory within the vault where notes are written
 
-### Chart images
+#### Chart images
 - `TV_IMGS_API_DOMAIN` – domain of the TradingView screenshot API
 - `TV_IMGS_API_KEY` – API key for the screenshot service
 - `TV_IMGS_LAYOUT_ID` – public TradingView layout identifier
