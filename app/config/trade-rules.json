@@ -1,3 +1,7 @@
 {
-  "maxPriceDeviationPct": 0.5
+  "rules": {
+    "maxOrderPriceDeviation": {
+      "maxPriceDeviationPct": 0.5
+    }
+  }
 }

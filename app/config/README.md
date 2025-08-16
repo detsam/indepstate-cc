@@ -85,14 +85,24 @@ MSFT 325
 
 ## Trade Rules
 
-The `trade-rules.json` file defines limits for order placement.  The default
-configuration sets `maxPriceDeviationPct` which caps how far an order's price
-may deviate from the latest quote:
+`trade-rules.json` enables and configures validation rules that guard order
+placement. The file contains a `rules` object; each key corresponds to a rule
+name and its value holds that rule's options. Clients invoke the aggregated
+`TradeRules` service without needing to know which concrete rules are enabled.
+
+### `maxOrderPriceDeviation`
+Limits how far an order's price may deviate from the latest quote:
 
 ```json
 {
-  "maxPriceDeviationPct": 0.5
+  "rules": {
+    "maxOrderPriceDeviation": {
+      "maxPriceDeviationPct": 0.5
+    }
+  }
 }
 ```
 
+Additional rules can be added over time and wired up in `trade-rules.json`
+without requiring changes to callers.
 

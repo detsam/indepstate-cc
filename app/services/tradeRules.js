@@ -1,8 +1,19 @@
 const loadConfig = require('../config/load');
 
-class TradeRules {
+class TradeRule {
   constructor(cfg = {}) {
-    const { maxPriceDeviationPct = 0.5 } = cfg || {};
+    this.cfg = cfg;
+  }
+
+  validate() {
+    return { ok: true };
+  }
+}
+
+class MaxOrderPriceDeviationRule extends TradeRule {
+  constructor(cfg = {}) {
+    super(cfg);
+    const { maxPriceDeviationPct = 0.5 } = cfg;
     this.maxDeviation = Number(maxPriceDeviationPct) / 100;
   }
 
@@ -30,9 +41,38 @@ class TradeRules {
   }
 }
 
+class TradeRules {
+  constructor(rules = []) {
+    this.rules = rules;
+  }
+
+  validate(card = {}, quote) {
+    for (const rule of this.rules) {
+      const res = rule.validate(card, quote);
+      if (!res.ok) return res;
+    }
+    return { ok: true };
+  }
+}
+
+function buildTradeRules(cfg = {}) {
+  const rules = [];
+  const { rules: ruleCfgs = {} } = cfg;
+
+  if (ruleCfgs.maxOrderPriceDeviation && ruleCfgs.maxOrderPriceDeviation.enabled !== false) {
+    rules.push(new MaxOrderPriceDeviationRule(ruleCfgs.maxOrderPriceDeviation));
+  }
+
+  return new TradeRules(rules);
+}
+
 let cfg = {};
 try { cfg = loadConfig('trade-rules.json'); }
 catch { cfg = {}; }
 
-module.exports = new TradeRules(cfg);
+module.exports = buildTradeRules(cfg);
 module.exports.TradeRules = TradeRules;
+module.exports.TradeRule = TradeRule;
+module.exports.MaxOrderPriceDeviationRule = MaxOrderPriceDeviationRule;
+module.exports.buildTradeRules = buildTradeRules;
+
