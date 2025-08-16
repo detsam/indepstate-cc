@@ -1,13 +1,12 @@
 // renderer.js — crypto & equities cards, stable UI state, safe layout
 const { ipcRenderer } = require('electron');
 const loadConfig = require('./config/load');
+const tradeRules = require('./services/tradeRules');
 const orderCardsCfg = loadConfig('order-cards.json');
 const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
 const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
-const MAX_PRICE_DEVIATION_PCT = Number(process.env.MAX_PRICE_DEVIATION_PCT) || 0.5;
-const PRICE_LIMIT = MAX_PRICE_DEVIATION_PCT / 100;
 
 // ======= App state =======
 const state = { rows: [], filter: '', autoscroll: true };
@@ -459,18 +458,7 @@ function createCryptoBody(row, key) {
       const qtyOk = isPos(qty);
       const priceOk = isPos(pr);
       const slOk = isSL(sl);
-      let quoteOk = true;
-      let quoteReason = '';
-      if (!info || !isPos(info?.price)) {
-        quoteOk = false;
-        quoteReason = 'No quote';
-      } else if (priceOk) {
-        const diff = Math.abs(pr - info.price) / info.price;
-        if (diff > PRICE_LIMIT) {
-          quoteOk = false;
-          quoteReason = 'Actual price gap restriction';
-        }
-      }
+      const { ok: quoteOk, reason: quoteReason = '' } = tradeRules.validate({ price: pr, side: row.side }, info);
       const valid = qtyOk && priceOk && slOk && quoteOk;
 
       line.classList.toggle('card--invalid', !valid);
@@ -581,18 +569,7 @@ function createEquitiesBody(row, key) {
       const priceOk = isPos(pr);
       const slOk   = isSL(sl);
       const riskOk = isPos(risk);
-      let quoteOk  = true;
-      let quoteReason = '';
-      if (!info || !isPos(info?.price)) {
-        quoteOk = false;
-        quoteReason = 'No quote';
-      } else if (priceOk) {
-        const diff = Math.abs(pr - info.price) / info.price;
-        if (diff > PRICE_LIMIT) {
-          quoteOk = false;
-          quoteReason = 'Actual price gap restriction';
-        }
-      }
+      const { ok: quoteOk, reason: quoteReason = '' } = tradeRules.validate({ price: pr, side: row.side }, info);
 
       const valid  = riskOk && slOk && priceOk && qtyOk && quoteOk;
 

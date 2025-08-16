@@ -11,6 +11,7 @@ const { getAdapter, initExecutionConfig } = require('./services/adapterRegistry'
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
+const tradeRules = require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const execCfg = loadConfig('execution.json');
 const orderCardsCfg = loadConfig('order-cards.json');
@@ -40,17 +41,11 @@ function envInt(name, fallback = 0) {
   const n = parseInt(process.env[name] ?? '', 10);
   return Number.isFinite(n) ? n : fallback;
 }
-function envFloat(name, fallback = 0) {
-  const n = parseFloat(process.env[name] ?? '');
-  return Number.isFinite(n) ? n : fallback;
-}
-
 // ----------------- CONSTS -----------------
 const PORT = envInt("TV_WEBHOOK_PORT");
 const IS_ELECTRON_MENU_ENABLED = envBool("IS_ELECTRON_MENU_ENABLED");
 const LOG_DIR = path.join(__dirname, 'logs');
 const EXEC_LOG = path.join(LOG_DIR, 'executions.jsonl');
-const MAX_PRICE_DEVIATION = envFloat('MAX_PRICE_DEVIATION_PCT', 0.5) / 100;
 
 // ----------------- FS utils -----------------
 function ensureLogs({ truncateExecutionsOnStart = false } = {}) {
@@ -363,13 +358,9 @@ function setupIpc(orderSvc) {
         appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, adapter: adapterName, order: execOrder, result: rej });
         return rej;
       }
-      const marketPrice = execOrder.side === 'sell'
-        ? (Number.isFinite(quote.bid) ? quote.bid : quote.price)
-        : (execOrder.side === 'buy' ? (Number.isFinite(quote.ask) ? quote.ask : quote.price) : quote.price);
-      const diff = Math.abs(execOrder.price - marketPrice) / marketPrice;
-      if (diff > MAX_PRICE_DEVIATION) {
-        const reason = `price diff ${(diff*100).toFixed(3)}%`;
-        const rej = { status: 'rejected', provider: adapterName, reason };
+      const rule = tradeRules.validate(execOrder, quote);
+      if (!rule.ok) {
+        const rej = { status: 'rejected', provider: adapterName, reason: rule.reason };
         appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, adapter: adapterName, order: execOrder, result: rej });
         return rej;
       }
