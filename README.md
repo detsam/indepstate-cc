@@ -38,6 +38,8 @@ The application uses environment variables to supply credentials for execution p
 - `TV_CHART_OUTPUT_DIR` – directory where chart images are saved
 - `TV_CHART_THROTTLE` – optional requests per second limit (defaults to 9)
 
+When used by the Obsidian deal tracker, chart images are requested only when a new trade note is created to avoid unnecessary API calls.
+
 ### Order cards
 - `DEFAULT_EQUITY_STOP_USD` – default dollar amount to pre-fill the Risk $ field on equity cards
 - Pending cards display a round button with the retry count; clicking it stops further retries and returns the card to an editable state.

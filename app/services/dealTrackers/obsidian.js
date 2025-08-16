@@ -89,7 +89,7 @@ class ObsidianDealTracker extends DealTracker {
     content = content.replace(/^- Status::.*$/m, statusLine);
 
     let chartFile = null;
-    if (this.chartComposer && ticker) {
+    if (this.chartComposer && ticker && canCheck) {
       try {
         chartFile = await this.chartComposer.compose(ticker);
       } catch (e) {
