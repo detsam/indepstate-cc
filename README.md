@@ -32,11 +32,11 @@ The application uses environment variables to supply credentials for execution p
 - `OBSIDIAN_INDEPSTATE_DEALS_JOURNAL` – directory within the vault where notes are written
 
 ### Chart images
-- `TV_API_DOMAIN` – domain of the TradingView screenshot API
-- `TV_API_KEY` – API key for the screenshot service
-- `TV_LAYOUT_ID` – public TradingView layout identifier
-- `TV_CHART_OUTPUT_DIR` – directory where chart images are saved
-- `TV_CHART_THROTTLE` – optional requests per second limit (defaults to 9)
+- `TV_IMGS_API_DOMAIN` – domain of the TradingView screenshot API
+- `TV_IMGS_API_KEY` – API key for the screenshot service
+- `TV_IMGS_LAYOUT_ID` – public TradingView layout identifier
+- `TV_IMGS_OUTPUT_DIR` – directory where chart images are saved
+- `TV_IMGS_THROTTLE` – optional requests per second limit (defaults to 9)
 
 When used by the Obsidian deal tracker, chart images are requested only when a new trade note is created to avoid unnecessary API calls.
 

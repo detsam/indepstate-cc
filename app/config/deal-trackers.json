@@ -6,11 +6,11 @@
       "journalPath": "${ENV:OBSIDIAN_INDEPSTATE_DEALS_JOURNAL}",
       "chartImageComposer": {
         "type": "tv",
-        "apiDomain": "${ENV:TV_API_DOMAIN}",
-        "apiKey": "${ENV:TV_API_KEY}",
-        "layoutId": "${ENV:TV_LAYOUT_ID}",
-        "outputDir": "${ENV:TV_CHART_OUTPUT_DIR}",
-        "throttlePerSecond": "${ENV:TV_CHART_THROTTLE}"
+        "apiDomain": "${ENV:TV_IMGS_API_DOMAIN}",
+        "apiKey": "${ENV:TV_IMGS_API_KEY}",
+        "layoutId": "${ENV:TV_IMGS_LAYOUT_ID}",
+        "outputDir": "${ENV:TV_IMGS_OUTPUT_DIR}",
+        "throttlePerSecond": "${ENV:TV_IMGS_THROTTLE}"
       }
     }
   ]
