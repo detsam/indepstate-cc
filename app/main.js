@@ -239,11 +239,14 @@ function normalizeOrderPayload(payload) {
   const legacy = payload && payload.ticker && payload.meta;
   if (legacy) {
     const symbol = String(payload.ticker || '');
-    const instrumentType = detectInstrumentType(symbol);
+   // const instrumentType = detectInstrumentType(symbol);
+    const instrumentType =  payload.instrumentType  === undefined? 
+        detectInstrumentType(symbol) : payload.instrumentType;  
     return {
       instrumentType,                // 'CX' | 'EQ'
       symbol,                        // 'BTCUSDT.P' | 'AAPL'
       side: payload.kind,            // 'BL'|'BSL'|'SL'|'SSL'
+      mintick: payload.mintick,
       qty: instrumentType === 'EQ'
         ? Math.floor(Number(payload.meta.qty || 0))
         : Number(payload.meta.qty || 0),
@@ -256,12 +259,13 @@ function normalizeOrderPayload(payload) {
 
   // новый формат
   const symbol = String(payload.symbol || payload.ticker || '');
-  const instrumentType = detectInstrumentType(symbol);
-
+  const instrumentType =  payload.instrumentType  === undefined? 
+      detectInstrumentType(symbol) : payload.instrumentType;  
   return {
     instrumentType,
     symbol,
     side: payload.side || payload.action, // 'BL'|'BSL'|'SL'|'SSL'
+    mintick: payload.mintick,
     qty: instrumentType === 'EQ'
       ? Math.floor(Number(payload.qty || 0))
       : Number(payload.qty || 0),
@@ -276,9 +280,13 @@ function validateOrder(order) {
   if (order.instrumentType === 'CX') {
     const ok = order.qty > 0 && order.price > 0 && order.sl >= 6;
     return ok ? { ok: true } : { ok: false, reason: 'CX: qty>0, price>0, sl>=6 required' };
+  } else if (order.instrumentType === 'FX') {
+    const sideCodeOk = ['BL','BSL','SL','SSL'].includes(String(order.side || '').toUpperCase());
+    const ok = (order.meta?.riskUsd > 0) && order.sl >= 6 && order.price > 0 && order.qty > 0 && sideCodeOk;
+    return ok ? { ok: true } : { ok: false, reason: 'EQ: riskUsd>0, sl>=6, price>0, qty>0 and side in BL/BSL/SL/SSL' };
   } else {
     const sideCodeOk = ['BL','BSL','SL','SSL'].includes(String(order.side || '').toUpperCase());
-    const ok = (order.meta?.riskUsd > 0) && order.sl >= 6 && order.price > 0 && order.qty >= 1 && sideCodeOk;
+    const ok = (order.meta?.riskUsd > 0) && order.sl >= 6 && order.price > 0 && (order.qty >= 1) && sideCodeOk;
     return ok ? { ok: true } : { ok: false, reason: 'EQ: riskUsd>0, sl>=6, price>0, qty>=1 and side in BL/BSL/SL/SSL' };
   }
 }
@@ -289,7 +297,7 @@ function pickAdapterName(instrumentType) {
 
 // --- EQ normalization: BL/BSL/SL/SSL -> buy/sell + limit/stoplimit (для адаптеров типа J2T)
 function normalizeEquityOrderForExecution(order) {
-  if (order.instrumentType !== 'EQ') return order;
+  if (order.instrumentType !== 'EQ' && order.instrumentType !== 'FX' ) return order;
 
   const action = String(order.side || '').toUpperCase();
   let side, type, limitPrice, stopPrice;

@@ -370,8 +370,26 @@ function createCard(row, index) {
   const meta = el('div', 'meta');
   meta.appendChild(el('span', null, `#${index + 1}`));
 
+
+  const instrumentType = row.instrumentType ||( isCrypto(row, key) ? 'CX' : 'EQ'); // fallback to EQ if not set
+  
   // body
-  const body = cx ? createCryptoBody(row, key) : createEquitiesBody(row, key);
+  let body;
+  switch (instrumentType) {
+    case 'EQ':
+      body = createEquitiesBody(row, key);
+      break;
+    case 'FX':
+      body = createFxBody(row, key);
+      break;
+    case 'CX':
+      body = createCryptoBody(row, key);
+      break;
+    default:
+      body = createEquitiesBody(row, key); // fallback
+      break;
+  }
+
 
   // buttons
   const btns = el('div', 'btns');
@@ -379,7 +397,7 @@ function createCard(row, index) {
     const b = btn(label, cls, async () => {
       const v = body.validate();
       if (!v.valid) return;
-      await place(kind, row, v);
+      await place(kind, row, v, instrumentType);
     });
     b.setAttribute('data-kind', kind);
     return b;
@@ -500,6 +518,119 @@ function createCryptoBody(row, key) {
   persist();
   return body;
 }
+
+// ======= Equities body (Qty, Price, SL, TP; Risk$ separate line; Qty auto from Risk/SL) =======
+function createFxBody(row, key) {
+  const saved = uiState.get(key) || {
+    qty:   row.qty != null ? String(row.qty)   : '',
+    price: row.price != null ? String(row.price) : '',
+    sl:    row.sl != null ? String(row.sl)    : '',
+    tp:    row.tp != null ? String(row.tp)    : '',
+    risk:  EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига
+    tpTouched: row.tp != null,
+  };
+  let tpTouched = !!saved.tpTouched;
+
+  const line = el('div', 'quad-line');
+  line.style.display = 'grid';
+  line.style.gridTemplateColumns = '1fr 1fr 0.8fr 0.8fr 1fr'; // Qty, Price, SL, TP, Risk$
+  line.style.alignItems = 'center';
+  line.style.gap = line.style.gap || '8px';
+
+  const $qty   = inputNumber('Qty',    'qty');
+  const $price = inputNumber('Price',  'pr');
+  const $sl    = inputNumber('SL',     'sl');
+  const $tp    = inputNumber('TP',     'tp');
+  const $risk  = inputNumber('Risk $', 'risk');
+
+  // restore
+  $qty.value   = saved.qty;
+  $price.value = saved.price;
+  $sl.value    = saved.sl;
+  $tp.value    = saved.tp;
+  $risk.value  = saved.risk;
+
+  const persist = ()=>{
+    uiState.set(key, { qty:$qty.value, price:$price.value, sl:$sl.value, tp:$tp.value, risk:$risk.value, tpTouched });
+  };
+  const recomputeQtyFromRisk = ()=>{
+    const r  = _normNum($risk.value);
+    const sl = _normNum($sl.value);
+    // Use lot from row if available and positive
+    const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 1;
+    const tickSize = Number.isFinite(row.tickSize) && row.tickSize > 0 ? row.tickSize : 0.01;
+
+    if (isPos(r) && isSL(sl)) {
+      let q = Math.floor((r / tickSize) / sl / lot/ 0.01) * 0.01;
+      if (!Number.isFinite(q) || q < 0) q = 0;
+      $qty.value = String(q);
+    }
+    persist();
+  };
+  const recomputeTP = ()=>{
+    if (!tpTouched) {
+      const slv = _normNum($sl.value);
+      $tp.value = (slv && slv > 0) ? String(slv*3) : '';
+      persist();
+    }
+  };
+
+  const body = {
+    type:'fx',
+    line, $qty, $price, $sl, $tp, $risk,
+    setButtons($btns){ this._btns = $btns; },
+    validate(){
+      const qtyRaw = _normNum($qty.value);
+      const pr     = _normNum($price.value);
+      const sl     = _normNum($sl.value);
+      const risk   = _normNum($risk.value);
+
+      const qtyOk  = Number.isFinite(qtyRaw) && qtyRaw > 0;
+      const valid  = isPos(risk) && isSL(sl) && isPos(pr) && qtyOk;
+
+      line.classList.toggle('card--invalid', !valid);
+
+      const setErr = (inp,bad)=>inp.classList.toggle('input--error', !!bad);
+      setErr($risk,  !isPos(risk));
+      setErr($sl,    !isSL(sl));
+      setErr($price, !isPos(pr));
+      setErr($qty,   !qtyOk);
+
+      const reason = !isPos(risk) ? 'Risk $ > 0'
+                   : !isSL(sl)    ? 'SL ≥ 6'
+                   : !isPos(pr)   ? 'Price > 0'
+                   : !qtyOk       ? 'Qty > 0'
+                   : '';
+      if (this._btns) this._btns.querySelectorAll('button').forEach(b=>{
+        b.disabled = !valid;
+        if (!valid) b.title = reason; else b.removeAttribute('title');
+      });
+
+      return { valid, type:'fx',
+        qty: qtyRaw, pr, sl, risk, tp: _normNum($tp.value) //todo normalize to min qty
+      };
+    }
+  };
+
+  // wiring
+  $risk.addEventListener('input',  () => { markTouched(row.ticker); recomputeQtyFromRisk(); body.validate(); });
+  $sl.addEventListener('input',    () => { markTouched(row.ticker); recomputeQtyFromRisk(); recomputeTP(); body.validate(); });
+  $qty.addEventListener('input',   () => { markTouched(row.ticker); persist(); body.validate(); });
+  $price.addEventListener('input', () => { markTouched(row.ticker); persist(); body.validate(); });
+  $tp.addEventListener('input',    () => { markTouched(row.ticker); tpTouched = true; persist(); });
+
+  // assemble
+  line.appendChild($qty);
+  line.appendChild($price);
+  line.appendChild($sl);
+  line.appendChild($tp);
+  line.appendChild($risk);
+
+  // compute qty from default risk and SL (if provided)
+  recomputeQtyFromRisk();
+  return body;
+}
+
 
 // ======= Equities body (Qty, Price, SL, TP; Risk$ separate line; Qty auto from Risk/SL) =======
 function createEquitiesBody(row, key) {
@@ -628,7 +759,7 @@ function createEquitiesBody(row, key) {
 }
 
 // ======= Order placement (shared) =======
-async function place(kind, row, v) {
+async function place(kind, row, v, instrumentType) {
   if (!v.valid) return;
 
   const key = rowKey(row);
@@ -649,8 +780,14 @@ async function place(kind, row, v) {
     priceVal = v.pr;
     slVal    = v.sl;
     takeVal  = v.tp ?? null;
-  } else {
+  } else if (v.type === 'equities') {
     qtyVal   = v.qtyInt;
+    priceVal = v.pr;
+    slVal    = v.sl;
+    takeVal  = v.tp ?? null;
+    extra.riskUsd = v.risk;
+  } else {
+    qtyVal   = v.qty;
     priceVal = v.pr;
     slVal    = v.sl;
     takeVal  = v.tp ?? null;
@@ -663,6 +800,8 @@ async function place(kind, row, v) {
     event:  row.event,
     price:  Number(priceVal),
     kind,
+    instrumentType: instrumentType,
+    mintick: (row.tickSize || 0.01), //todo from config
     meta: {
       requestId, // связь с execution:result
       qty: Number(qtyVal),
