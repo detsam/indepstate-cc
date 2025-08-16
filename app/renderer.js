@@ -217,13 +217,31 @@ function setCardState(key, state) {
 function markTouched(ticker){ if (ticker) userTouchedByTicker.set(ticker, true); }
 function isTouched(ticker){ return !!userTouchedByTicker.get(ticker); }
 
+const pendingInstruments = new Set();
+
 function ensureInstrument(ticker){
-  if (!ticker || instrumentInfo.has(ticker)) return;
-  instrumentInfo.set(ticker, null);
+  if (!ticker) return;
+  if (!state.rows.some(r => r.ticker === ticker)) return; // card removed
+  if (instrumentInfo.has(ticker)) return; // already have data
+  if (pendingInstruments.has(ticker)) return; // request in-flight
+  pendingInstruments.add(ticker);
   ipcRenderer.invoke('instrument:get', ticker).then(info => {
-    instrumentInfo.set(ticker, info || null);
-    render();
-  }).catch(() => { instrumentInfo.set(ticker, null); });
+    if (info) {
+      pendingInstruments.delete(ticker);
+      instrumentInfo.set(ticker, info);
+      render();
+    } else {
+      setTimeout(() => {
+        pendingInstruments.delete(ticker);
+        ensureInstrument(ticker);
+      }, 1000);
+    }
+  }).catch(() => {
+    setTimeout(() => {
+      pendingInstruments.delete(ticker);
+      ensureInstrument(ticker);
+    }, 1000);
+  });
 }
 
 // Миграция ключей (rowKey зависит от полей row)
