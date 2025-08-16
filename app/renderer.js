@@ -172,7 +172,7 @@ function setCardState(key, state) {
       card.classList.add('card--mini');
       if (!card._removedParts) {
         card._removedParts = [];
-        ['.meta', '.quad-line', '.extraRow', '.btns'].forEach(sel => {
+        ['.meta', '.quad-line', '.extraRow', '.btns', '.card__note'].forEach(sel => {
           const n = card.querySelector(sel);
           if (n) {
             card._removedParts.push({ node: n, next: n.nextSibling });
@@ -396,9 +396,12 @@ function createCard(row, index) {
   card.appendChild(body.line);
   if (body.extraRow) card.appendChild(body.extraRow); // Risk$ line for equities
   card.appendChild(btns);
+  const note = el('div', 'card__note');
+  card.appendChild(note);
 
   // let validator manage buttons state
   body.setButtons(btns);
+  if (body.setNote) body.setNote(note);
   body.validate();
 
   return card;
@@ -447,6 +450,7 @@ function createCryptoBody(row, key) {
     type: 'crypto',
     line, $qty, $price, $sl, $tp,
     setButtons($btns){ this._btns = $btns; },
+    setNote($note){ this._note = $note; },
     validate(){
       const qty = _normNum($qty.value);
       const pr  = _normNum($price.value);
@@ -464,7 +468,7 @@ function createCryptoBody(row, key) {
         const diff = Math.abs(pr - info.price) / info.price;
         if (diff > PRICE_LIMIT) {
           quoteOk = false;
-          quoteReason = `Δ>${MAX_PRICE_DEVIATION_PCT}%`;
+          quoteReason = 'Actual price gap restriction';
         }
       }
       const valid = qtyOk && priceOk && slOk && quoteOk;
@@ -485,6 +489,15 @@ function createCryptoBody(row, key) {
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
       });
+      if (this._note) {
+        if (!valid && reason) {
+          this._note.textContent = reason;
+          this._note.style.display = 'block';
+        } else {
+          this._note.textContent = '';
+          this._note.style.display = 'none';
+        }
+      }
 
       return { valid, type:'crypto', qty, pr, sl, tp: _normNum($tp.value) };
     }
@@ -556,6 +569,7 @@ function createEquitiesBody(row, key) {
     type:'equities',
     line, $qty, $price, $sl, $tp, $risk,
     setButtons($btns){ this._btns = $btns; },
+    setNote($note){ this._note = $note; },
     validate(){
       const qtyRaw = _normNum($qty.value);
       const pr     = _normNum($price.value);
@@ -576,7 +590,7 @@ function createEquitiesBody(row, key) {
         const diff = Math.abs(pr - info.price) / info.price;
         if (diff > PRICE_LIMIT) {
           quoteOk = false;
-          quoteReason = `Δ>${MAX_PRICE_DEVIATION_PCT}%`;
+          quoteReason = 'Actual price gap restriction';
         }
       }
 
@@ -600,6 +614,15 @@ function createEquitiesBody(row, key) {
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
       });
+      if (this._note) {
+        if (!valid && reason) {
+          this._note.textContent = reason;
+          this._note.style.display = 'block';
+        } else {
+          this._note.textContent = '';
+          this._note.style.display = 'none';
+        }
+      }
 
       return { valid, type:'equities',
         qty: qtyRaw, pr, sl, risk, tp: _normNum($tp.value),
