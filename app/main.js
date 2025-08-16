@@ -239,11 +239,10 @@ function normalizeOrderPayload(payload) {
   const legacy = payload && payload.ticker && payload.meta;
   if (legacy) {
     const symbol = String(payload.ticker || '');
-   // const instrumentType = detectInstrumentType(symbol);
-    const instrumentType =  payload.instrumentType  === undefined? 
-        detectInstrumentType(symbol) : payload.instrumentType;  
+
+    const instrumentType =  payload.instrumentType;
     return {
-      instrumentType,                // 'CX' | 'EQ'
+        instrumentType ,                // 'CX' | 'EQ' | 'FX'
       symbol,                        // 'BTCUSDT.P' | 'AAPL'
       side: payload.kind,            // 'BL'|'BSL'|'SL'|'SSL'
       mintick: payload.mintick,
@@ -259,8 +258,7 @@ function normalizeOrderPayload(payload) {
 
   // новый формат
   const symbol = String(payload.symbol || payload.ticker || '');
-  const instrumentType =  payload.instrumentType  === undefined? 
-      detectInstrumentType(symbol) : payload.instrumentType;  
+  const instrumentType =  payload.instrumentType;
   return {
     instrumentType,
     symbol,
