@@ -1,0 +1,22 @@
+# Chart Image Composers
+
+A chart image composer creates a screenshot for a given fully qualified symbol
+(e.g. `NYSE:AAPL`) and stores it on disk. The `compose(symbol)` method queues a
+request and immediately returns the file name that will be written once the
+image downloads.
+
+## TV composer
+
+`TvChartImageComposer` posts requests to a screenshot service based on a
+public TradingView layout. Requests start in the background and the composer
+ensures no more than `throttlePerSecond` are launched per second. Configuration
+options:
+
+- `apiDomain` – API domain for requests
+- `apiKey` – API key to authorize requests
+- `layoutId` – public layout identifier
+- `outputDir` – directory where images are written
+- `throttlePerSecond` – maximum number of requests started per second (defaults to 9)
+
+Environment variables can supply these values via `${ENV:VAR}` references in the
+config.

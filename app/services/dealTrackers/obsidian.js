@@ -11,10 +11,12 @@ class ObsidianDealTracker extends DealTracker {
     super();
     this.vaultPath = cfg.vaultPath;
     this.journalPath = cfg.journalPath || cfg.vaultPath;
+    this.chartComposer = cfg.chartImageComposer;
   }
 
-  onPositionClosed(info = {}, opts = {}) {
-    const { ticker, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession } = info;
+  async onPositionClosed(info = {}, opts = {}) {
+    const { symbol, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession } = info;
+    const ticker = symbol && symbol.ticker;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
     if (!vault || !targetDir) return;
@@ -29,19 +31,23 @@ class ObsidianDealTracker extends DealTracker {
     }
 
     const dateStr = new Date().toISOString().slice(0, 10);
-    const baseName = `${dateStr}. ${sanitizeFileName(ticker)}`;
+    const baseName = `${dateStr}. ${sanitizeFileName(ticker || '')}`;
     let fileName = `${baseName}.md`;
     let filePath = path.join(targetDir, fileName);
 
     const criteria = Array.isArray(opts?.skipExisting) ? opts.skipExisting : [];
-    const canCheck = criteria.length > 0 && criteria.every(c => info[c.prop] != null && info[c.prop] !== '');
+    const getProp = (obj, path) => path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
+    const canCheck = criteria.length > 0 && criteria.every(c => {
+      const v = getProp(info, c.prop);
+      return v != null && v !== '';
+    });
 
     let i = 1;
     while (fs.existsSync(filePath)) {
       if (canCheck) {
         try {
           const existing = fs.readFileSync(filePath, 'utf8');
-          const found = criteria.every(c => existing.includes(`${c.field}: ${info[c.prop]}`));
+          const found = criteria.every(c => existing.includes(`${c.field}: ${getProp(info, c.prop)}`));
           if (found) return;
         } catch {}
       }
@@ -53,7 +59,9 @@ class ObsidianDealTracker extends DealTracker {
     let content = template;
     content = content.replace(/^- Date::.*$/m, `- Date:: [[${dateStr}]]`);
     content = content.replace(/^- Tactics::.*$/m, `- Tactics:: ${tactic || '#Tactics/InPlay'}`);
-    content = content.replace(/^- Ticker::.*$/m, `- Ticker:: [[Ticker. ${ticker}]]`);
+    if (ticker) {
+      content = content.replace(/^- Ticker::.*$/m, `- Ticker:: [[Ticker. ${ticker}]]`);
+    }
     if (tp != null) content = content.replace(/^- Take Setup::.*$/m, `- Take Setup:: ${tp}`);
     if (sp != null) content = content.replace(/^- Stop Setup::.*$/m, `- Stop Setup:: ${sp}`);
     if (profit != null) {
@@ -87,9 +95,21 @@ class ObsidianDealTracker extends DealTracker {
     const statusLine = status === 'take' ? '- Status:: [[Result. Take]]' : '- Status:: [[Result. Stop]]';
     content = content.replace(/^- Status::.*$/m, statusLine);
 
+    let chartFile = null;
+    if (this.chartComposer && symbol && symbol.exchange && ticker && canCheck) {
+      try {
+        chartFile = this.chartComposer.compose(`${symbol.exchange}:${ticker}`);
+      } catch (e) {
+        console.error('chart compose failed', e);
+      }
+    }
+    if (chartFile) {
+      content = content.replace(/\t- 1D.*$/m, `\t- 1D ![[${chartFile}]]`);
+    }
+
     if (canCheck) {
       const front = ['---'];
-      for (const c of criteria) front.push(`${c.field}: ${info[c.prop]}`);
+      for (const c of criteria) front.push(`${c.field}: ${getProp(info, c.prop)}`);
       front.push('---', '');
       content = front.join('\n') + content;
     }

@@ -31,6 +31,18 @@ The application uses environment variables to supply credentials for execution p
 - `OBSIDIAN_INDEPSTATE_VAULT` – path to the Obsidian vault used for deal notes
 - `OBSIDIAN_INDEPSTATE_DEALS_JOURNAL` – directory within the vault where notes are written
 
+#### Chart images
+- `TV_IMGS_API_DOMAIN` – domain of the TradingView screenshot API
+- `TV_IMGS_API_KEY` – API key for the screenshot service
+- `TV_IMGS_LAYOUT_ID` – public TradingView layout identifier
+- `TV_IMGS_OUTPUT_DIR` – directory where chart images are saved
+- `TV_IMGS_THROTTLE` – optional requests per second limit (defaults to 9)
+
+When used by the Obsidian deal tracker, chart images are requested only when a
+new trade note is created. Screenshot downloads run asynchronously and are
+rate-limited to `TV_IMGS_THROTTLE` per second, so images may appear shortly
+after notes are written.
+
 ### Order cards
 - `DEFAULT_EQUITY_STOP_USD` – default dollar amount to pre-fill the Risk $ field on equity cards
 - Pending cards display a round button with the retry count; clicking it stops further retries and returns the card to an editable state.

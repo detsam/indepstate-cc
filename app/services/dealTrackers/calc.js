@@ -28,7 +28,7 @@ function findSession(timeStr, map) {
 
 function calcDealData(data = {}) {
   const {
-    ticker,
+    symbol = {},
     side,
     entryPrice,
     exitPrice: rawExit,
@@ -44,6 +44,7 @@ function calcDealData(data = {}) {
     sessions,
     tradeSession: preSession
   } = data;
+  const ticker = symbol.ticker;
 
   let exitPrice = Number(rawExit);
   let profit = rawProfit != null ? Number(rawProfit) : undefined;
@@ -94,7 +95,7 @@ function calcDealData(data = {}) {
   }
 
   const out = {
-    ticker,
+    symbol,
     tp: takeSetup,
     sp: stopSetup,
     status,

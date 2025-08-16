@@ -139,7 +139,7 @@ function wireAdapter(adapter, adapterName) {
     const info = trackerIndex.get(String(ticket));
     if (info) {
       const payload = calcDealData({
-        ticker: info.ticker,
+        symbol: { ticker: info.ticker },
         side: info.side,
         entryPrice: info.price,
         qty: info.qty,
