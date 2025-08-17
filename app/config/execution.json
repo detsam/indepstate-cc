@@ -22,7 +22,7 @@
           "exchangeId": "binance",
           "apiKey": "${ENV:BINANCE_API_KEY}",
           "secret": "${ENV:BINANCE_API_SECRET}",
-          "sandbox": false,
+          "sandbox": "${ENV:BINANCE_API_TESTNET}",
           "enableRateLimit": true,
           "options": {
             "defaultType": "future"

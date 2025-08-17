@@ -40,11 +40,65 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     }
 
     this.defaultParams = cfg.params || {};
+    // Автопобудова мапи символів з біржі (можна вимкнути через cfg.autoBuildSymbolMap=false)
+    this.autoBuildSymbolMap = cfg.autoBuildSymbolMap !== false;
+    this._marketsLoaded = false;
+    this._readyPromise = null;
+  }
+
+  async ensureReady() {
+    if (this._marketsLoaded) return;
+    if (!this._readyPromise) {
+      this._readyPromise = (async () => {
+        try {
+          const markets = await this.exchange.loadMarkets();
+          if (this.autoBuildSymbolMap) this._buildSymbolMapFromMarkets(markets);
+        } finally {
+          this._marketsLoaded = true;
+        }
+      })();
+    }
+    return this._readyPromise;
+  }
+
+  _buildSymbolMapFromMarkets(markets) {
+    try {
+      const list = Array.isArray(markets) ? markets : Object.values(markets || {});
+      for (const m of list) {
+        if (!m) continue;
+        const ccxtSymbol = m.symbol || '';
+        const base = String(m.base || '').toUpperCase();
+        const quote = String(m.quote || '').toUpperCase();
+        const id = String(m.id || '');
+        const idKey = id.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
+        const add = (k) => {
+          if (!k) return;
+          if (!this.symbolMap[k]) this.symbolMap[k] = ccxtSymbol;
+          const up = k.toUpperCase();
+          if (!this.symbolMap[up]) this.symbolMap[up] = ccxtSymbol;
+        };
+
+        // Канонічний ключ, наприклад BTCUSDT
+        if (base && quote) {
+          const k = (base + quote).toUpperCase();
+          add(k);
+          // Поширені аліаси для ф'ючерсів/свопів
+          if (m.contract || m.swap || m.future) {
+            add(`${k}.P`);
+            add(`${k}-PERP`);
+            add(`${k}_PERP`);
+          }
+        }
+        // Додаємо нормалізований id
+        if (idKey) add(idKey);
+      }
+    } catch {}
   }
 
   mapSymbol(symbol) {
     if (!symbol) return symbol;
-    return this.symbolMap[symbol] || symbol;
+    return this.symbolMap[symbol] || this.symbolMap[String(symbol).toUpperCase()] || symbol;
   }
 
   /**
@@ -62,6 +116,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
    */
   async placeOrder(order) {
     try {
+      await this.ensureReady();
       if (!order || !order.symbol || !order.side || !order.type) {
         return { status: 'rejected', provider: this.provider, reason: 'Missing required fields: symbol, side, type' };
       }
@@ -157,6 +212,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
    */
   async getQuote(symbol) {
     try {
+      await this.ensureReady();
       const mapped = this.mapSymbol(symbol);
       if (!mapped) return null;
       const t = await this.exchange.fetchTicker(mapped);
