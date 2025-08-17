@@ -47,6 +47,16 @@ function resolveSecrets(obj){
 
 function buildAdapter(name, cfg){
   const n = String(name || '').toLowerCase();
+
+  // CCXT сімейство: дозволяємо імена 'ccxt', 'ccxt:binance', 'ccxt-binance-futures' тощо
+  if (n === 'ccxt' || n.startsWith('ccxt:') || n.startsWith('ccxt-')) {
+    const { CCXTExecutionAdapter } = require('../adapters/ccxt');
+    const inst = new CCXTExecutionAdapter(cfg || {});
+    // зберігаємо оригінальну назву провайдера (корисно для логів/подій)
+    inst.provider = name;
+    return inst;
+  }
+
   switch (n) {
     case 'j2t': {
       const { J2TExecutionAdapter } = require('../adapters/j2t');
