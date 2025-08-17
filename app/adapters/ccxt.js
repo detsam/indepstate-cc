@@ -1,6 +1,7 @@
 // app/adapters/ccxt.js
 const { ExecutionAdapter } = require('./base');
 const ccxt = require('ccxt');
+const crypto = require('crypto');
 
 class CCXTExecutionAdapter extends ExecutionAdapter {
   /**
@@ -48,6 +49,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     // Зв'язки батьківського ордера з дочірніми (SL/TP) та вотчери для скасування
     this._childOrdersByParent = new Map(); // parentId -> { symbol, children: string[] }
     this._parentWatchers = new Map(); // parentId -> NodeJS.Timer
+
+    // Pending та події підтвердження/відхилення (для UI)
+    this.events = new (require('events').EventEmitter)();
+    this.pending = new Map(); // cid -> { order, createdAt }
   }
 
   async ensureReady() {
@@ -103,6 +108,22 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   mapSymbol(symbol) {
     if (!symbol) return symbol;
     return this.symbolMap[symbol] || this.symbolMap[String(symbol).toUpperCase()] || symbol;
+  }
+
+  // Підписка на внутрішні події адаптера (сумісно з wireAdapter)
+  on(event, fn) { this.events.on(event, fn); return () => this.events.off(event, fn); }
+
+  // Зупинка очікування відкриття основного ордера (до моменту підтвердження)
+  stopOpenOrder(cid) {
+    const rec = this.pending.get(cid);
+    if (!rec) return;
+    this.pending.delete(cid);
+    // Емітимо відмову, щоб UI зняв "pending"
+    this.events.emit('order:rejected', {
+      pendingId: cid,
+      reason: 'RETRY_STOPPED',
+      origOrder: rec.order
+    });
   }
 
   /**
@@ -267,44 +288,73 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         }
       }
 
-      const result = await this.exchange.createOrder(symbol, ccxtType, side, amount, price, params);
+      // --- Pending: повертаємо відразу, а виконання — асинхронно ---
+      const cid = crypto.randomBytes(6).toString('hex');
+      this.pending.set(cid, { order, createdAt: Date.now() });
 
-      const providerOrderId = String(result?.id ?? result?.clientOrderId ?? '');
+      (async () => {
+        try {
+          const result = await this.exchange.createOrder(symbol, ccxtType, side, amount, price, params);
+          const providerOrderId = String(result?.id ?? result?.clientOrderId ?? '');
 
-      // --- Брекет-логіка: reduce-only SL/TP ---
-      try {
-        const entry = Number.isFinite(order.price) ? Number(order.price)
-                    : Number.isFinite(order.limitPrice) ? Number(order.limitPrice)
-                    : undefined;
-        const slPts = Number(order.sl);
-        const tpPts = Number(order.tp);
-        const mintick = Number(order.mintick);
+          // Після створення — ставимо reduce‑only SL/TP та запускаємо вотчер скасування
+          try {
+            const entry = Number.isFinite(order.price) ? Number(order.price)
+                        : Number.isFinite(order.limitPrice) ? Number(order.limitPrice)
+                        : undefined;
+            const slPts = Number(order.sl);
+            const tpPts = Number(order.tp);
+            const mintick = Number(order.mintick);
 
-        if (providerOrderId && Number.isFinite(entry)) {
-          const children = await this._placeProtectiveOrders({
-            mappedSymbol: symbol,
-            side,
-            amount,
-            entryPrice: entry,
-            slPts,
-            tpPts,
-            mintick,
-            baseParams: this.defaultParams || {}
-          });
-          if (children && children.length) {
-            this._childOrdersByParent.set(providerOrderId, { symbol, children });
-            this._startParentWatcher(providerOrderId, symbol);
+            if (providerOrderId && Number.isFinite(entry)) {
+              const children = await this._placeProtectiveOrders({
+                mappedSymbol: symbol,
+                side,
+                amount,
+                entryPrice: entry,
+                slPts,
+                tpPts,
+                mintick,
+                baseParams: this.defaultParams || {}
+              });
+              if (children && children.length) {
+                this._childOrdersByParent.set(providerOrderId, { symbol, children });
+                this._startParentWatcher(providerOrderId, symbol);
+              }
+            }
+          } catch {
+            // не блокуємо підтвердження у разі помилок брекетів
           }
+
+          // Підтвердження для UI
+          if (this.pending.has(cid)) {
+            this.pending.delete(cid);
+            this.events.emit('order:confirmed', {
+              pendingId: cid,
+              ticket: providerOrderId,
+              mtOrder: result,
+              origOrder: order
+            });
+          } else {
+            // pending вже знятий (наприклад, stopOpenOrder) — можна спробувати відмінити ордер
+            try { if (providerOrderId) await this.exchange.cancelOrder(providerOrderId, symbol); } catch {}
+          }
+        } catch (e) {
+          const rec = this.pending.get(cid);
+          this.pending.delete(cid);
+          this.events.emit('order:rejected', {
+            pendingId: cid,
+            reason: e?.message || String(e),
+            origOrder: (rec && rec.order) || order
+          });
         }
-      } catch {
-        // не блокуємо основний флоу у разі помилок брекетів
-      }
+      })();
 
       return {
         status: 'ok',
         provider: this.provider,
-        providerOrderId,
-        raw: result,
+        providerOrderId: `pending:${cid}`,
+        raw: { enqueued: true, cid },
       };
     } catch (err) {
       return {
