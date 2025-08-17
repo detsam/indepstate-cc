@@ -2,6 +2,7 @@ const fs = require('fs');
 const dealTrackers = require('../dealTrackers');
 const { calcDealData } = require('../dealTrackers/calc');
 const loadConfig = require('../../config/load');
+const DEFAULT_MAX_AGE_DAYS = 2;
 let cfg = {};
 try {
   cfg = loadConfig('tv-logs.json');
@@ -268,7 +269,7 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
   return { _key: `${rawSymbol}|${rawPlacingTime}`, placingTime: placingDate, ...base };
 }
 
-function processFile(file, sessions = cfg.sessions) {
+function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
@@ -284,6 +285,13 @@ function processFile(file, sessions = cfg.sessions) {
     const meta = metas.get(sym);
     const d = buildDeal(arr, sessions, meta);
     if (d) deals.push(d);
+  }
+  if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {
+    const cutoff = Date.now() - maxAgeDays * 86400000;
+    return deals.filter(d => {
+      const t = Date.parse(d.placingTime);
+      return isNaN(t) ? true : t >= cutoff;
+    });
   }
   return deals;
 }
@@ -309,7 +317,8 @@ function start(config = cfg) {
       }
       if (stat.mtimeMs <= info.mtime) continue;
       info.mtime = stat.mtimeMs;
-      const deals = processFile(file, sessions);
+      const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
+      const deals = processFile(file, sessions, maxAgeDays);
       for (const d of deals) {
         const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
         const key = d._key || `${symKey}|${d.placingTime}`;

@@ -12,7 +12,8 @@
   "accounts": [
     {
       "tactic": "example",
-      "path": "${ENV:TV_LOG_EXAMPLE}"
+      "path": "${ENV:TV_LOG_EXAMPLE}",
+      "maxAgeDays": 2
     }
   ]
 }
