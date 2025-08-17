@@ -2,6 +2,22 @@
   "rules": {
     "maxOrderPriceDeviation": {
       "maxPriceDeviationPct": 0.5
+    },
+    "minStopPoints": {
+      "default": 6,
+      "byInstrumentType": {
+        "CX": 6,
+        "FX": 6,
+        "EQ": 6
+      }
+    },
+    "maxQty": {
+      "default": 1000,
+      "byInstrumentType": {
+        "CX": 10,
+        "FX": 100,
+        "EQ": 1000
+      }
     }
   }
 }

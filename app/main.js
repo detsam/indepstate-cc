@@ -276,16 +276,16 @@ function normalizeOrderPayload(payload) {
 
 function validateOrder(order) {
   if (order.instrumentType === 'CX') {
-    const ok = order.qty > 0 && order.price > 0 && order.sl >= 6;
-    return ok ? { ok: true } : { ok: false, reason: 'CX: qty>0, price>0, sl>=6 required' };
+    const ok = order.qty > 0 && order.price > 0 && order.sl > 0;
+    return ok ? { ok: true } : { ok: false, reason: 'CX: qty>0, price>0, sl>0 required' };
   } else if (order.instrumentType === 'FX') {
     const sideCodeOk = ['BL','BSL','SL','SSL'].includes(String(order.side || '').toUpperCase());
-    const ok = (order.meta?.riskUsd > 0) && order.sl >= 6 && order.price > 0 && order.qty > 0 && sideCodeOk;
-    return ok ? { ok: true } : { ok: false, reason: 'EQ: riskUsd>0, sl>=6, price>0, qty>0 and side in BL/BSL/SL/SSL' };
+    const ok = (order.meta?.riskUsd > 0) && order.sl > 0 && order.price > 0 && order.qty > 0 && sideCodeOk;
+    return ok ? { ok: true } : { ok: false, reason: 'FX: riskUsd>0, sl>0, price>0, qty>0 and side in BL/BSL/SL/SSL' };
   } else {
     const sideCodeOk = ['BL','BSL','SL','SSL'].includes(String(order.side || '').toUpperCase());
-    const ok = (order.meta?.riskUsd > 0) && order.sl >= 6 && order.price > 0 && (order.qty >= 1) && sideCodeOk;
-    return ok ? { ok: true } : { ok: false, reason: 'EQ: riskUsd>0, sl>=6, price>0, qty>=1 and side in BL/BSL/SL/SSL' };
+    const ok = (order.meta?.riskUsd > 0) && order.sl > 0 && order.price > 0 && (order.qty >= 1) && sideCodeOk;
+    return ok ? { ok: true } : { ok: false, reason: 'EQ: riskUsd>0, sl>0, price>0, qty>=1 and side in BL/BSL/SL/SSL' };
   }
 }
 
