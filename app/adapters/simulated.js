@@ -11,10 +11,10 @@ class SimulatedAdapter extends ExecutionAdapter {
     const rand = (a,b)=>Math.floor(a+Math.random()*(b-a+1));
     await wait(rand(this.latencyMs[0], this.latencyMs[1]));
     // простая серверная проверка на всякий случай
-    if (order.instrumentType === 'EQ' && (!(order.meta?.riskUsd > 0) || !(order.sl >= 6))) {
+    if (order.instrumentType === 'EQ' && (!(order.meta?.riskUsd > 0) || !(order.sl > 0))) {
       return { status:'rejected', provider:this.provider, reason:'Server validation failed (EQ)' };
     }
-    if (order.instrumentType === 'CX' && (!(order.qty > 0) || !(order.price > 0) || !(order.sl >= 6))) {
+    if (order.instrumentType === 'CX' && (!(order.qty > 0) || !(order.price > 0) || !(order.sl > 0))) {
       return { status:'rejected', provider:this.provider, reason:'Server validation failed (CX)' };
     }
     console.log(`[Adapter:${this.provider}] placing`, order);

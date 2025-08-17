@@ -103,6 +103,41 @@ Limits how far an order's price may deviate from the latest quote:
 }
 ```
 
+### `minStopPoints`
+Ensures a stop-loss is not set too close to the entry price. The rule can be
+configured with a global default, per‑instrument overrides and even a custom
+function evaluated for each order:
+
+```json
+{
+  "rules": {
+    "minStopPoints": {
+      "default": 6,
+      "byInstrumentType": { "FX": 4 },
+      "fn": "if(card.sl < 10) return {ok:false, reason:'SL \u2265 10'}; return {ok:true};"
+    }
+  }
+}
+```
+
+If `fn` is supplied it receives the order `card` and current `quote` and should
+return either a boolean or an object with an `ok` flag and optional `reason`.
+
+### `maxQty`
+Restricts the maximum quantity allowed per order. A global default can be
+overridden for specific instrument types:
+
+```json
+{
+  "rules": {
+    "maxQty": {
+      "default": 1000,
+      "byInstrumentType": { "CX": 10, "FX": 100, "EQ": 1000 }
+    }
+  }
+}
+```
+
 Additional rules can be added over time and wired up in `trade-rules.json`
 without requiring changes to callers.
 

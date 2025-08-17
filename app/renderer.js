@@ -62,7 +62,7 @@ function isPos(n) {
 }
 
 function isSL(n) {
-  return typeof n === 'number' && isFinite(n) && n >= 6;
+  return typeof n === 'number' && isFinite(n) && n > 0;
 }
 
 function isUpEvent(ev) {
@@ -512,29 +512,30 @@ function createCryptoBody(row, key) {
     setNote($note) {
       this._note = $note;
     },
-    validate() {
-      const qty = _normNum($qty.value);
-      const pr = _normNum($price.value);
-      const sl = _normNum($sl.value);
-      const info = instrumentInfo.get(row.ticker);
-      const qtyOk = isPos(qty);
-      const priceOk = isPos(pr);
-      const slOk = isSL(sl);
-      const {ok: quoteOk, reason: quoteReason = ''} = tradeRules.validate({price: pr, side: row.side}, info);
-      const valid = qtyOk && priceOk && slOk && quoteOk;
+      validate() {
+        const qty = _normNum($qty.value);
+        const pr = _normNum($price.value);
+        const sl = _normNum($sl.value);
+        const info = instrumentInfo.get(row.ticker);
+        const instrumentType = row.instrumentType || detectInstrumentType(row.ticker);
+        const qtyOk = isPos(qty);
+        const priceOk = isPos(pr);
+        const slOk = isSL(sl);
+        const {ok: rulesOk, reason: ruleReason = ''} = tradeRules.validate({price: pr, side: row.side, sl, instrumentType, qty}, info);
+        const valid = qtyOk && priceOk && slOk && rulesOk;
 
       line.classList.toggle('card--invalid', !valid);
 
       const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
-      setErr($qty, !qtyOk);
-      setErr($price, !priceOk || !quoteOk);
-      setErr($sl, !slOk);
+      setErr($qty, !qtyOk || (!rulesOk && ruleReason.toLowerCase().includes('qty')));
+        setErr($price, !priceOk || (!rulesOk && !ruleReason.toLowerCase().includes('sl')));
+        setErr($sl, !slOk || (!rulesOk && ruleReason.toLowerCase().includes('sl')));
 
-      const reason = !qtyOk ? 'Qty > 0'
-        : !priceOk ? 'Price > 0'
-          : !slOk ? 'SL ≥ 6'
-            : !quoteOk ? quoteReason
-              : '';
+        const reason = !qtyOk ? 'Qty > 0'
+          : !priceOk ? 'Price > 0'
+            : !slOk ? 'SL > 0'
+              : !rulesOk ? ruleReason
+                : '';
       if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
@@ -620,20 +621,20 @@ function createFxBody(row, key) {
       tpTouched
     });
   };
-  const recomputeQtyFromRisk = () => {
-    const r = _normNum($risk.value);
-    const sl = _normNum($sl.value);
-    // Use lot from row if available and positive
-    const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 100000; //standard lot for FX
-    const tickSize = Number.isFinite(row.tickSize) && row.tickSize > 0 ? row.tickSize : 0.00001; //default FX tick size
+    const recomputeQtyFromRisk = () => {
+      const r = _normNum($risk.value);
+      const sl = _normNum($sl.value);
+      // Use lot from row if available and positive
+      const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 100000; //standard lot for FX
+      const tickSize = Number.isFinite(row.tickSize) && row.tickSize > 0 ? row.tickSize : 0.00001; //default FX tick size
 
-    if (isPos(r) && isSL(sl)) {
-      let q = Math.floor((r / tickSize) / sl / lot / 0.01) * 0.01;
-      if (!Number.isFinite(q) || q < 0) q = 0;
-      $qty.value = String(q);
-    }
-    persist();
-  };
+      if (isPos(r) && isSL(sl)) {
+        let q = Math.floor((r / tickSize) / sl / lot / 0.01) * 0.01;
+        if (!Number.isFinite(q) || q < 0) q = 0;
+        $qty.value = String(q);
+      }
+      persist();
+    };
   const recomputeTP = () => {
     if (!tpTouched) {
       const slv = _normNum($sl.value);
@@ -648,39 +649,43 @@ function createFxBody(row, key) {
     setButtons($btns) {
       this._btns = $btns;
     },
-    validate() {
-      const qtyRaw = _normNum($qty.value);
-      const pr = _normNum($price.value);
-      const sl = _normNum($sl.value);
-      const risk = _normNum($risk.value);
+      validate() {
+        const qtyRaw = _normNum($qty.value);
+        const pr = _normNum($price.value);
+        const sl = _normNum($sl.value);
+        const risk = _normNum($risk.value);
+        const info = instrumentInfo.get(row.ticker);
+        const instrumentType = row.instrumentType || 'FX';
 
-      const qtyOk = Number.isFinite(qtyRaw) && qtyRaw > 0;
-      const valid = isPos(risk) && isSL(sl) && isPos(pr) && qtyOk;
+        const qtyOk = Number.isFinite(qtyRaw) && qtyRaw > 0;
+        const { ok: rulesOk, reason: ruleReason = '' } = tradeRules.validate({ price: pr, side: row.side, sl, instrumentType, qty: qtyRaw }, info);
+        const valid = isPos(risk) && isSL(sl) && isPos(pr) && qtyOk && rulesOk;
 
-      line.classList.toggle('card--invalid', !valid);
+        line.classList.toggle('card--invalid', !valid);
 
-      const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
-      setErr($risk, !isPos(risk));
-      setErr($sl, !isSL(sl));
-      setErr($price, !isPos(pr));
-      setErr($qty, !qtyOk);
+        const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
+        setErr($risk, !isPos(risk));
+        setErr($sl, !isSL(sl) || (!rulesOk && ruleReason.toLowerCase().includes('sl')));
+        setErr($price, !isPos(pr) || (!rulesOk && !ruleReason.toLowerCase().includes('sl')));
+        setErr($qty, !qtyOk || (!rulesOk && ruleReason.toLowerCase().includes('qty')));
 
-      const reason = !isPos(risk) ? 'Risk $ > 0'
-        : !isSL(sl) ? 'SL ≥ 6'
-          : !isPos(pr) ? 'Price > 0'
-            : !qtyOk ? 'Qty > 0'
-              : '';
-      if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
-        b.disabled = !valid;
-        if (!valid) b.title = reason; else b.removeAttribute('title');
-      });
+        const reason = !isPos(risk) ? 'Risk $ > 0'
+          : !isSL(sl) ? 'SL > 0'
+            : !isPos(pr) ? 'Price > 0'
+              : !qtyOk ? 'Qty > 0'
+                : !rulesOk ? ruleReason
+                  : '';
+        if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
+          b.disabled = !valid;
+          if (!valid) b.title = reason; else b.removeAttribute('title');
+        });
 
-      return {
-        valid, type: 'fx',
-        qty: qtyRaw, pr, sl, risk, tp: _normNum($tp.value) //todo normalize to min qty
-      };
-    }
-  };
+        return {
+          valid, type: 'fx',
+          qty: qtyRaw, pr, sl, risk, tp: _normNum($tp.value) //todo normalize to min qty
+        };
+      }
+    };
 
   // wiring
   $risk.addEventListener('input', () => {
@@ -791,35 +796,36 @@ function createEquitiesBody(row, key) {
     setNote($note) {
       this._note = $note;
     },
-    validate() {
-      const qtyRaw = _normNum($qty.value);
-      const pr = _normNum($price.value);
-      const sl = _normNum($sl.value);
-      const risk = _normNum($risk.value);
-      const info = instrumentInfo.get(row.ticker);
+      validate() {
+        const qtyRaw = _normNum($qty.value);
+        const pr = _normNum($price.value);
+        const sl = _normNum($sl.value);
+        const risk = _normNum($risk.value);
+        const info = instrumentInfo.get(row.ticker);
+        const instrumentType = row.instrumentType || detectInstrumentType(row.ticker);
 
-      const qtyOk = Number.isFinite(qtyRaw) && qtyRaw >= 1 && Math.floor(qtyRaw) === qtyRaw;
-      const priceOk = isPos(pr);
-      const slOk = isSL(sl);
-      const riskOk = isPos(risk);
-      const {ok: quoteOk, reason: quoteReason = ''} = tradeRules.validate({price: pr, side: row.side}, info);
+        const qtyOk = Number.isFinite(qtyRaw) && qtyRaw >= 1 && Math.floor(qtyRaw) === qtyRaw;
+        const priceOk = isPos(pr);
+        const slOk = isSL(sl);
+        const riskOk = isPos(risk);
+        const {ok: rulesOk, reason: ruleReason = ''} = tradeRules.validate({price: pr, side: row.side, sl, instrumentType, qty: qtyRaw}, info);
 
-      const valid = riskOk && slOk && priceOk && qtyOk && quoteOk;
+        const valid = riskOk && slOk && priceOk && qtyOk && rulesOk;
 
       line.classList.toggle('card--invalid', !valid);
 
       const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
       setErr($risk, !riskOk);
-      setErr($sl, !slOk);
-      setErr($price, !priceOk || !quoteOk);
-      setErr($qty, !qtyOk);
+        setErr($sl, !slOk || (!rulesOk && ruleReason.toLowerCase().includes('sl')));
+        setErr($price, !priceOk || (!rulesOk && !ruleReason.toLowerCase().includes('sl')));
+      setErr($qty, !qtyOk || (!rulesOk && ruleReason.toLowerCase().includes('qty')));
 
-      const reason = !riskOk ? 'Risk $ > 0'
-        : !slOk ? 'SL ≥ 6'
-          : !priceOk ? 'Price > 0'
-            : !qtyOk ? 'Qty ≥ 1 (int)'
-              : !quoteOk ? quoteReason
-                : '';
+        const reason = !riskOk ? 'Risk $ > 0'
+          : !slOk ? 'SL > 0'
+            : !priceOk ? 'Price > 0'
+              : !qtyOk ? 'Qty ≥ 1 (int)'
+                : !rulesOk ? ruleReason
+                  : '';
       if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
