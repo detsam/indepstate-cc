@@ -44,6 +44,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this.autoBuildSymbolMap = cfg.autoBuildSymbolMap !== false;
     this._marketsLoaded = false;
     this._readyPromise = null;
+
+    // Зв'язки батьківського ордера з дочірніми (SL/TP) та вотчери для скасування
+    this._childOrdersByParent = new Map(); // parentId -> { symbol, children: string[] }
+    this._parentWatchers = new Map(); // parentId -> NodeJS.Timer
   }
 
   async ensureReady() {
@@ -99,6 +103,106 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   mapSymbol(symbol) {
     if (!symbol) return symbol;
     return this.symbolMap[symbol] || this.symbolMap[String(symbol).toUpperCase()] || symbol;
+  }
+
+  /**
+   * Створення reduce-only SL/TP захисних ордерів.
+   * - SL: stop-market з тригером stopPrice (reduceOnly)
+   * - TP: limit ордер на протилежну сторону за tpPrice (reduceOnly)
+   * Повертає масив id дочірніх ордерів (може бути порожнім/частковим).
+   */
+  async _placeProtectiveOrders({ mappedSymbol, side, amount, entryPrice, slPts, tpPts, mintick, baseParams = {} }) {
+    const childIds = [];
+    const opposite = side === 'buy' ? 'sell' : 'buy';
+    const tick = Number(mintick) > 0 ? Number(mintick) : 1;
+
+    const reduceParams = { ...baseParams };
+    // популярний ключ у ccxt
+    reduceParams.reduceOnly = true;
+    // інколи біржі сприймають альтернативний snake_case
+    reduceParams.reduce_only = true;
+    // Дефолт для багатьох бірж (зокрема Binance Futures)
+    if (!reduceParams.timeInForce) reduceParams.timeInForce = 'GTC';
+
+    // Розрахунок рівнів
+    const hasSL = Number.isFinite(slPts) && Number(slPts) > 0 && Number.isFinite(entryPrice);
+    const hasTP = Number.isFinite(tpPts) && Number(tpPts) > 0 && Number.isFinite(entryPrice);
+
+    const slPrice = hasSL
+      ? (side === 'buy' ? (entryPrice - Number(slPts) * tick) : (entryPrice + Number(slPts) * tick))
+      : undefined;
+
+    const tpPrice = hasTP
+      ? (side === 'buy' ? (entryPrice + Number(tpPts) * tick) : (entryPrice - Number(tpPts) * tick))
+      : undefined;
+
+    // SL: stop-limit (для сумісності з біржами, які вимагають price у 'stop', напр. Binance)
+    if (hasSL && Number.isFinite(slPrice) && slPrice > 0) {
+      const slParams = { ...reduceParams, stopPrice: slPrice };
+      try {
+        // Для ccxt/binance 'stop' потребує і price, і stopPrice (STOP/STOP_LIMIT)
+        const slOrder = await this.exchange.createOrder(mappedSymbol, 'stop', opposite, amount, slPrice, slParams);
+        if (slOrder?.id) childIds.push(String(slOrder.id));
+      } catch (e) {
+        console.error(`[${this.provider}] Failed to place SL order:`, e?.message || String(e));
+      }
+    }
+
+    // TP: як ліміт ордер (sell-limit для long / buy-limit для short). Reduce-only не дозволить відкрити нову позицію
+    if (hasTP && Number.isFinite(tpPrice) && tpPrice > 0) {
+      try {
+        const tpOrder = await this.exchange.createOrder(mappedSymbol, 'limit', opposite, amount, tpPrice, reduceParams);
+        if (tpOrder?.id) childIds.push(String(tpOrder.id));
+      } catch (e) {
+        console.error(`[${this.provider}] Failed to place TP order:`, e?.message || String(e));
+      }
+    }
+
+    return childIds;
+  }
+
+  /**
+   * Вотчер батьківського ордера: якщо основний ордер буде скасований — скасувати дочірні SL/TP.
+   * Перевіряємо статус раз на 2 секунди до 5 хвилин або до завершення (canceled/closed).
+   */
+  _startParentWatcher(parentId, mappedSymbol) {
+    if (!parentId || this._parentWatchers.has(parentId)) return;
+
+    const startedAt = Date.now();
+    const timer = setInterval(async () => {
+      try {
+        const age = Date.now() - startedAt;
+        if (age > 5 * 60 * 1000) { // 5 хв — зупинимо вотчер
+          clearInterval(timer);
+          this._parentWatchers.delete(parentId);
+          return;
+        }
+        const ord = await this.exchange.fetchOrder(parentId, mappedSymbol);
+        const st = String(ord?.status || '').toLowerCase();
+        if (st === 'canceled') {
+          clearInterval(timer);
+          this._parentWatchers.delete(parentId);
+          await this._cancelChildOrders(parentId);
+        } else if (st === 'closed') {
+          clearInterval(timer);
+          this._parentWatchers.delete(parentId);
+        }
+      } catch {
+        // ігноруємо, спробуємо наступного разу
+      }
+    }, 2000);
+
+    this._parentWatchers.set(parentId, timer);
+  }
+
+  async _cancelChildOrders(parentId) {
+    const link = this._childOrdersByParent.get(parentId);
+    if (!link) return;
+    const { symbol: mappedSymbol, children } = link;
+    for (const cid of children || []) {
+      try { await this.exchange.cancelOrder(cid, mappedSymbol); } catch {}
+    }
+    this._childOrdersByParent.delete(parentId);
   }
 
   /**
@@ -166,6 +270,36 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       const result = await this.exchange.createOrder(symbol, ccxtType, side, amount, price, params);
 
       const providerOrderId = String(result?.id ?? result?.clientOrderId ?? '');
+
+      // --- Брекет-логіка: reduce-only SL/TP ---
+      try {
+        const entry = Number.isFinite(order.price) ? Number(order.price)
+                    : Number.isFinite(order.limitPrice) ? Number(order.limitPrice)
+                    : undefined;
+        const slPts = Number(order.sl);
+        const tpPts = Number(order.tp);
+        const mintick = Number(order.mintick);
+
+        if (providerOrderId && Number.isFinite(entry)) {
+          const children = await this._placeProtectiveOrders({
+            mappedSymbol: symbol,
+            side,
+            amount,
+            entryPrice: entry,
+            slPts,
+            tpPts,
+            mintick,
+            baseParams: this.defaultParams || {}
+          });
+          if (children && children.length) {
+            this._childOrdersByParent.set(providerOrderId, { symbol, children });
+            this._startParentWatcher(providerOrderId, symbol);
+          }
+        }
+      } catch {
+        // не блокуємо основний флоу у разі помилок брекетів
+      }
+
       return {
         status: 'ok',
         provider: this.provider,
