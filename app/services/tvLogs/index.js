@@ -177,9 +177,7 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
   const symParts = rawSymbol.split(':');
   const ticker = symParts.pop();
   const exchange = symParts.length ? symParts[0] : undefined;
-  const placingParts = rawPlacingTime.split(' ');
-  const placingDate = placingParts[0];
-  const placingTime = placingParts[1];
+  const [placingDate, placingTime] = String(rawPlacingTime).split(/\s+/);
   const filled = group.filter(o => String(o.status).toLowerCase() === 'filled');
   if (filled.length < 2) return null;
   const closing = filled.find(o => o !== entry) || filled[1];
@@ -267,7 +265,7 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
     stopPoints,
     status: result
   });
-  return { _key: `${rawSymbol}|${rawPlacingTime}`, placingTime: placingDate, ...base };
+  return { _key: `${rawSymbol}|${rawPlacingTime}`, placingDate, placingTime, ...base };
 }
 
 function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS) {
@@ -290,7 +288,7 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
   if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {
     const cutoff = Date.now() - maxAgeDays * 86400000;
     return deals.filter(d => {
-      const t = Date.parse(d.placingTime);
+      const t = Date.parse(d.placingDate);
       return isNaN(t) ? true : t >= cutoff;
     });
   }
@@ -310,7 +308,7 @@ function start(config = cfg) {
     const deals = processFile(file, sessions, maxAgeDays);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
-      const key = d._key || `${symKey}|${d.placingTime}`;
+      const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
       info.keys.add(key);
       dealTrackers.notifyPositionClosed({
@@ -326,6 +324,7 @@ function start(config = cfg) {
         tactic: acc.tactic,
         tradeRisk: d.tradeRisk,
         tradeSession: d.tradeSession,
+        placingDate: d.placingDate,
         _key: d._key
       }, opts);
     }

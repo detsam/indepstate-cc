@@ -45,7 +45,7 @@ For each account the service:
    - `(profit ÷ takePoints) × stopSetup` when `takePoints` are present
    - `(profit ÷ stopPoints) × stopSetup` when `stopPoints` are present
 6. Splits the symbol into `exchange` and `ticker` parts and the placing time into date and time, then determines `tradeSession` using the configured `sessions` map.
-7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `symbol`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints`, `side`, `tradeRisk`, `tradeSession`, `_key` and the account `tactic`, passing along the configured `skipExisting` rules to avoid duplicate notes.
+7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `symbol`, `placingDate`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints`, `side`, `tradeRisk`, `tradeSession`, `_key` and the account `tactic`, passing along the configured `skipExisting` rules to avoid duplicate notes.
 
 The `_key` combines the raw symbol and placing time and is suitable for use in `skipExisting`.
 

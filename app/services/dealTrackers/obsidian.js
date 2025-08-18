@@ -15,7 +15,7 @@ class ObsidianDealTracker extends DealTracker {
   }
 
   async onPositionClosed(info = {}, opts = {}) {
-    const { symbol, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession } = info;
+    const { symbol, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession, placingDate } = info;
     const ticker = symbol && symbol.ticker;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
@@ -30,7 +30,7 @@ class ObsidianDealTracker extends DealTracker {
       return;
     }
 
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = placingDate || new Date().toISOString().slice(0, 10);
     const baseName = `${dateStr}. ${sanitizeFileName(ticker || '')}`;
     let fileName = `${baseName}.md`;
     let filePath = path.join(targetDir, fileName);
