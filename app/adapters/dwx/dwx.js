@@ -10,7 +10,6 @@ class DWXAdapter extends ExecutionAdapter {
    *   provider?: 'dwx-mt5',
    *   metatraderDirPath: string,
    *   verbose?: boolean,
-   *   confirmTimeoutMs?: number, // время ожидания подтверждения
    *   event_handler?: { ... }    // ваши внешние колбэки (необязательно)
    * }
    */
@@ -19,7 +18,6 @@ class DWXAdapter extends ExecutionAdapter {
     if (!cfg?.metatraderDirPath) throw new Error('[DWXAdapter] metatraderDirPath is required');
 
     this.provider = cfg.provider || 'dwx-mt5';
-    this.confirmTimeoutMs = cfg.confirmTimeoutMs ?? 7000;
     this.verbose = !!cfg.verbose;
 
     // Внутренний эмиттер для подтверждений
@@ -60,7 +58,7 @@ class DWXAdapter extends ExecutionAdapter {
     // Python-логика: при наличии handler надо дернуть start()
     this.client.start();
 
-    // pending: cid -> { order, order_type, timer, createdAt, cycles, schedule, lastMsgKey }
+    // pending: cid -> { order, order_type, createdAt, cycles }
     this.pending = new Map();
     // для дельты открытых ордеров
     this._lastTickets = new Set();
@@ -74,7 +72,6 @@ class DWXAdapter extends ExecutionAdapter {
    * Подписка на внутренние события адаптера (подтверждения для UI)
    * - 'order:confirmed' ({pendingId, ticket, mtOrder, origOrder})
    * - 'order:rejected'  ({pendingId, reason, msg, origOrder})
-   * - 'order:timeout'   ({pendingId, origOrder})
    */
   on(event, fn) { this.events.on(event, fn); return () => this.events.off(event, fn); }
 
@@ -151,75 +148,28 @@ class DWXAdapter extends ExecutionAdapter {
   #cancelPending(cid) {
     const p = this.pending.get(cid);
     if (!p) return;
-    clearTimeout(p.timer);
     this.pending.delete(cid);
   }
 
   #trackPending(cid, order, order_type) {
-    const schedule = () => {
-      const p = this.pending.get(cid);
-      if (!p) return;
-      clearTimeout(p.timer);
-      p.timer = setTimeout(() => this.#onTimeout(cid), this.confirmTimeoutMs);
-    };
-
-    this.pending.set(cid, { order, order_type, createdAt: Date.now(), timer: null, cycles: 0, schedule, lastMsgKey: this.client._last_messages_millis || 0 });
-    schedule();
+    this.pending.set(cid, { order, order_type, createdAt: Date.now(), cycles: 0 });
   }
 
   async #retryOrder(cid) {
     const p = this.pending.get(cid);
     if (!p) return;
     try {
-      clearTimeout(p.timer);
       p.cycles++;
       this.events.emit('order:retry', { pendingId: cid, count: p.cycles });
       await this.#sendOrder(p.order, p.order_type);
-      p.schedule();
     } catch (e) {
       this.#rejectPending(cid, e?.message || String(e));
-    }
-  }
-
-  async #onTimeout(cid) {
-    const p = this.pending.get(cid);
-    if (!p) return;
-    const { found, lastKey } = await this.#findOpenOrderError(cid, p.lastMsgKey);
-    p.lastMsgKey = lastKey;
-    if (found) {
-      await this.#retryOrder(cid);
-    } else {
-      this.#rejectPending(cid, 'UNEXPECTED_STATE', "unexpected state - can't get either confirmation or error");
-    }
-  }
-
-  async #findOpenOrderError(cid, afterKey = 0) {
-    try {
-      const text = await this.client.try_read_file(this.client.path_messages);
-      if (!text.trim()) return { found: false, lastKey: afterKey };
-      const data = JSON.parse(text);
-      const keys = Object.keys(data).map(k => parseInt(k, 10)).filter(Number.isFinite).sort((a, b) => a - b);
-      let found = false;
-      let lastKey = afterKey;
-      for (const k of keys) {
-        if (k > lastKey) lastKey = k;
-        if (k <= afterKey) continue;
-        const m = data[String(k)];
-        const desc = m?.description || '';
-        if (m?.type === 'ERROR' && m?.error_type === 'OPEN_ORDER' && desc.includes(`cid:${cid}`)) {
-          found = true;
-        }
-      }
-      return { found, lastKey };
-    } catch {
-      return { found: false, lastKey: afterKey };
     }
   }
 
   #confirmPending(cid, ticket, mtOrder) {
     const p = this.pending.get(cid);
     if (!p) return;
-    clearTimeout(p.timer);
     this.pending.delete(cid);
     this.events.emit('order:confirmed', { pendingId: cid, ticket: String(ticket ?? ''), mtOrder, origOrder: p.order });
   }
@@ -227,7 +177,6 @@ class DWXAdapter extends ExecutionAdapter {
   #rejectPending(cid, reason, msg) {
     const p = this.pending.get(cid);
     if (!p) return;
-    clearTimeout(p.timer);
     this.pending.delete(cid);
     this.events.emit('order:rejected', { pendingId: cid, reason: reason || 'Unknown', msg, origOrder: p.order });
   }
@@ -237,11 +186,8 @@ class DWXAdapter extends ExecutionAdapter {
     const asStr = typeof msg === 'string' ? msg : JSON.stringify(msg);
     const cid = extractCid(asStr);
     if (cid && this.pending.has(cid)) {
-      // Ошибка → ретрай; INFO/OK → попробуем вытащить ticket и подтвердить.
-      const isError = (msg?.type === 'ERROR') || /error|failed/i.test(asStr);
-      const p = this.pending.get(cid);
-      if (!p) return;
-      p.lastMsgKey = this.client._last_messages_millis || p.lastMsgKey;
+      // Ошибка OPEN_ORDER → ретрай; INFO/OK → попробуем вытащить ticket и подтвердить.
+      const isError = msg?.type === 'ERROR' && msg?.error_type === 'OPEN_ORDER';
       if (isError) {
         this.#retryOrder(cid);
       } else {

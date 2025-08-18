@@ -15,8 +15,7 @@
             "defaultDuration": "gtc"
         },
         "dwx": {
-            "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}",
-            "confirmTimeoutMs" : "${ENV:DWX_CONFIRM_TIMEOUT}"
+            "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}"
         }
     }
 }
