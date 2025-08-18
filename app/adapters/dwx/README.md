@@ -218,8 +218,6 @@ Configuration options (constructor):
 - `metatrader_dir_path` (required)
 - `verbose` (default `false`)
 - `confirmTimeoutMs` (default `7000`)
-- `openOrderRetryDelayMs` (default `25`)
-- `openOrderRetryBackoff` (default `2`)
 - `event_handler` (optional; proxied into `dwx_client`)
 
 ---
@@ -242,12 +240,15 @@ Configuration options (constructor):
 
 ## Retries (`open_order`)
 
-The adapter performs infinite `open_order` retries with exponential backoff. The delay starts from
-`openOrderRetryDelayMs` and multiplies by `openOrderRetryBackoff` on each failure.
-
-Whenever a confirmation timeout fires, the adapter re-sends the order and emits
-`order:retry { pendingId, count }` (with `count` starting at 1 for each order). Retries can be
-stopped via `stopOpenOrder(pendingId)` which aborts the loop and clears pending state.
+The adapter retries placement **only** when the DWX client reports an `OPEN_ORDER`
+error containing the order's CID. After each attempt it waits up to
+`confirmTimeoutMs` for confirmation. When the timeout fires, `DWX_Messages.txt`
+is inspected: if a matching error entry is found, the order is sent again and
+`order:retry { pendingId, count }` is emitted (with `count` starting at 1 for
+each order). If neither a confirmation nor an error appears, the pending order
+is rejected with reason `unexpected state - can't get either confirmation or
+error`. Retries can be stopped via `stopOpenOrder(pendingId)` which clears the
+pending state.
 
 ---
 
