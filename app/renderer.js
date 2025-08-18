@@ -296,7 +296,6 @@ function ensureInstrument(ticker) {
       const tickers = Array.from(new Set((state.rows || []).map(r => r.ticker).filter(Boolean)));
       if (!tickers.length) return;
 
-      let changed = false;
       await Promise.all(tickers.map(async (t) => {
         // пропускаємо, якщо картки вже немає
         if (!state.rows.some(r => r.ticker === t)) return;
@@ -309,9 +308,6 @@ function ensureInstrument(ticker) {
           if (info) {
             const prev = instrumentInfo.get(t);
             instrumentInfo.set(t, info);
-            if (!prev || prev.bid !== info.bid || prev.ask !== info.ask || prev.price !== info.price) {
-              changed = true;
-            }
           }
         } catch {
           // ігноруємо помилку; наступна ітерація спробує знову
@@ -319,8 +315,6 @@ function ensureInstrument(ticker) {
           pendingInstruments.delete(t);
         }
       }));
-
-      if (changed) render();
     } finally {
       running = false;
     }

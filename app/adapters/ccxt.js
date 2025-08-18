@@ -181,14 +181,45 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       }
     }
 
-    // TP: як ліміт ордер (sell-limit для long / buy-limit для short). Reduce-only не дозволить відкрити нову позицію
+    // TP: спочатку умовний ордер (уникнути миттєвого матчу без позиції):
+    // 1) TAKE_PROFIT_MARKET зі stopPrice (reduceOnly)
+    // 2) TAKE_PROFIT (limit) з price=tpPrice і stopPrice
+    // 3) fallback: звичайний limit (може бути відхилений на деяких біржах)
     if (hasTP && Number.isFinite(tpPrice) && tpPrice > 0) {
+      let placed = false;
+      // 1) TP market on trigger
       try {
-        const tpOrder = await this.exchange.createOrder(mappedSymbol, 'limit', opposite, amount, tpPrice, reduceParams);
+        const p = { ...reduceParams, stopPrice: tpPrice };
+        const tpOrder = await this.exchange.createOrder(mappedSymbol, 'take_profit_market', opposite, amount, undefined, p);
         const tpId = this._resolveOrderId(tpOrder);
-        if (tpId) childIds.push(tpId);
-      } catch (e) {
-        console.error(`[${this.provider}] Failed to place TP order:`, e?.message || String(e));
+        if (tpId) {
+          childIds.push(tpId);
+          placed = true;
+        }
+      } catch (_) {}
+
+      // 2) TP limit on trigger
+      if (!placed) {
+        try {
+          const p = { ...reduceParams, stopPrice: tpPrice };
+          const tpOrder = await this.exchange.createOrder(mappedSymbol, 'take_profit', opposite, amount, tpPrice, p);
+          const tpId = this._resolveOrderId(tpOrder);
+          if (tpId) {
+            childIds.push(tpId);
+            placed = true;
+          }
+        } catch (_) {}
+      }
+
+      // 3) Fallback: plain limit (reduceOnly). Може бути відхилений біржею — логируем і йдемо далі.
+      if (!placed) {
+        try {
+          const tpOrder = await this.exchange.createOrder(mappedSymbol, 'limit', opposite, amount, tpPrice, reduceParams);
+          const tpId = this._resolveOrderId(tpOrder);
+          if (tpId) childIds.push(tpId);
+        } catch (e) {
+          console.error(`[${this.provider}] Failed to place TP order:`, e?.message || String(e));
+        }
       }
     }
 
@@ -327,7 +358,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
             const slPts = Number(order.sl);
             const tpPts = Number(order.tp);
             const mintick = Number(order.mintick);
-
+            console.log('entry', entry, 'slPts', slPts, 'tpPts', tpPts, 'mintick', mintick);
             if (providerOrderId && Number.isFinite(entry)) {
               const children = await this._placeProtectiveOrders({
                 mappedSymbol: symbol,
