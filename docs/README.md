@@ -7,9 +7,9 @@ This directory contains high-level notes about the codebase.
 - `app/renderer.js` – UI layer showing order cards and status indicators
 - `app/services/events.js` – lightweight event bus for `order:placed`, `position:opened`, `position:closed` and `order:cancelled`
 - `app/services/dealTrackers/*` – pluggable trackers invoked when a position closes. See `app/services/dealTrackers/README.md` for configuration.
-- `app/services/tvLogs/*` – parses TradingView CSV order logs, watches for file updates and emits closed trades to deal trackers. See `app/services/tvLogs/README.md` for details.
+ - `app/services/tvLogs/*` – parses TradingView CSV order logs, watches account directories for new log files and emits closed trades to deal trackers. See `app/services/tvLogs/README.md` for details.
 - `app/config/deal-trackers.json` – local configuration for deal trackers
-- `app/config/tv-logs.json` – tactic account configuration (with `enabled`, `pollMs`, `sessions`, per‑account `tactic` names and `skipExisting`) pointing to CSV files with order logs
+ - `app/config/tv-logs.json` – tactic account configuration (with `enabled`, `pollMs`, `sessions`, per‑account `tactic` names and `skipExisting`) pointing to directories with order log CSV files
 - `OBSIDIAN_INDEPSTATE_VAULT` and `OBSIDIAN_INDEPSTATE_DEALS_JOURNAL` – environment variables consumed by the Obsidian deal tracker
 - `app/adapters/*` – execution adapters such as the DWX connector, each can provide `listOpenOrders()` and `listClosedPositions()`
 

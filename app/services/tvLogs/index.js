@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const dealTrackers = require('../dealTrackers');
 const { calcDealData } = require('../dealTrackers/calc');
 const loadConfig = require('../../config/load');
@@ -302,43 +303,72 @@ function start(config = cfg) {
   const pollMs = resolved.pollMs || 5000;
   const sessions = resolved.sessions;
   const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
-  const state = new Map(); // file -> { mtime, keys:Set }
+  const state = new Map(); // dir -> { files:Set, keys:Set, initialized:bool }
+
+  function processAndNotify(file, acc, info) {
+    const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
+    const deals = processFile(file, sessions, maxAgeDays);
+    for (const d of deals) {
+      const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
+      const key = d._key || `${symKey}|${d.placingTime}`;
+      if (info.keys.has(key)) continue;
+      info.keys.add(key);
+      dealTrackers.notifyPositionClosed({
+        symbol: d.symbol,
+        tp: d.tp,
+        sp: d.sp,
+        status: d.status,
+        profit: d.profit,
+        commission: d.commission,
+        takePoints: d.takePoints,
+        stopPoints: d.stopPoints,
+        side: d.side,
+        tactic: acc.tactic,
+        tradeRisk: d.tradeRisk,
+        tradeSession: d.tradeSession,
+        _key: d._key
+      }, opts);
+    }
+  }
+
+  function listFiles(dir) {
+    let names;
+    try { names = fs.readdirSync(dir); } catch { return []; }
+    const out = [];
+    for (const name of names) {
+      const full = path.join(dir, name);
+      let stat;
+      try { stat = fs.statSync(full); } catch { continue; }
+      if (!stat.isFile()) continue;
+      const t = stat.birthtimeMs || stat.mtimeMs || 0;
+      out.push({ file: full, time: t });
+    }
+    out.sort((a, b) => a.time - b.time);
+    return out;
+  }
 
   function tick() {
     for (const acc of accounts) {
-      const file = acc.path;
-      if (!file) continue;
-      let stat;
-      try { stat = fs.statSync(file); } catch { continue; }
-      let info = state.get(file);
+      const dir = acc.dir || acc.path;
+      if (!dir) continue;
+      const files = listFiles(dir);
+      if (!files.length) continue;
+      let info = state.get(dir);
       if (!info) {
-        info = { mtime: 0, keys: new Set() };
-        state.set(file, info);
+        info = { files: new Set(), keys: new Set(), initialized: false };
+        state.set(dir, info);
       }
-      if (stat.mtimeMs <= info.mtime) continue;
-      info.mtime = stat.mtimeMs;
-      const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
-      const deals = processFile(file, sessions, maxAgeDays);
-      for (const d of deals) {
-        const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
-        const key = d._key || `${symKey}|${d.placingTime}`;
-        if (info.keys.has(key)) continue;
-        info.keys.add(key);
-        dealTrackers.notifyPositionClosed({
-          symbol: d.symbol,
-          tp: d.tp,
-          sp: d.sp,
-          status: d.status,
-          profit: d.profit,
-          commission: d.commission,
-          takePoints: d.takePoints,
-          stopPoints: d.stopPoints,
-          side: d.side,
-          tactic: acc.tactic,
-          tradeRisk: d.tradeRisk,
-          tradeSession: d.tradeSession,
-          _key: d._key
-        }, opts);
+      if (!info.initialized) {
+        const latest = files[files.length - 1].file;
+        processAndNotify(latest, acc, info);
+        info.files.add(latest);
+        info.initialized = true;
+      } else {
+        for (const { file } of files) {
+          if (info.files.has(file)) continue;
+          processAndNotify(file, acc, info);
+          info.files.add(file);
+        }
       }
     }
   }

@@ -19,17 +19,19 @@ Settings live in `app/config/tv-logs.json`:
     "16:30-02:00": 3
   },
   "accounts": [
-    { "tactic": "example", "path": "${ENV:TV_LOG_EXAMPLE}", "maxAgeDays": 2 }
+    { "tactic": "example", "dir": "${ENV:TV_LOG_EXAMPLE}", "maxAgeDays": 2 }
   ]
 }
 ```
 
 - `enabled` – set `false` to prevent automatic polling from `main.js`.
-- `pollMs` – interval in milliseconds used to check files for changes.
-- `accounts` – list of tactic accounts with a `tactic` name and paths to their CSV logs. Paths may reference environment variables using `${ENV:VAR}`.
+- `pollMs` – interval in milliseconds used to check directories for new files.
+- `accounts` – list of tactic accounts with a `tactic` name and directories containing their CSV logs. Paths may reference environment variables using `${ENV:VAR}`.
 - `accounts[n].maxAgeDays` – only emit deals with a placing date within this many days for the given account. Set to `0` to allow all deals (default `2`).
 - `skipExisting` – array mapping front‑matter fields to trade properties so trackers can detect existing notes.
 - `sessions` – optional mapping of `"HH:MM-HH:MM"` ranges to session numbers used for the `tradeSession` field.
+
+On startup the service processes the most recently created file in each directory; any newly created files are processed as they appear.
 
 ## Processing rules
 
@@ -49,4 +51,4 @@ The `_key` combines the raw symbol and placing time and is suitable for use in `
 
 ## Usage
 
-Use `processFile(path)` to parse a single log file once or `start()` to poll continuously.
+Use `processFile(path)` to parse a single log file once or `start()` to poll directories for new files.
