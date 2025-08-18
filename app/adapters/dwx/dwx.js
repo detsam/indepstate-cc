@@ -160,6 +160,9 @@ class DWXAdapter extends ExecutionAdapter {
           order.commentWithCid ?? order.comment ?? '',
           order.expiration ?? 0
         );
+        // пометим, что первая отправка прошла — больше не делаем повторные open_order
+        const p = this.pending.get(cid);
+        if (p) p.openSent = true;
         return; // успех
       } catch (e) {
         attempt++;
@@ -192,13 +195,25 @@ class DWXAdapter extends ExecutionAdapter {
       p.timer = setTimeout(() => this.#retryPending(cid), this.confirmTimeoutMs);
     };
 
-    this.pending.set(cid, { order, order_type, createdAt: Date.now(), timer: null, cycles: 0, schedule });
+    // openSent: перша відправка в MT5 відбулася (успішний виклик open_order)
+    this.pending.set(cid, { order, order_type, createdAt: Date.now(), timer: null, cycles: 0, schedule, openSent: false });
     schedule();
   }
 
   #retryPending(cid) {
     const p = this.pending.get(cid);
     if (!p) return;
+
+    // Якщо перша відправка вже була — не робимо повторний open_order (щоб уникнути дублей)
+    if (p.openSent) {
+      // спробуємо підтвердити через сверку відкритих ордерів і переплануємо перевірку
+      this.#reconcilePendingWithOpenOrders();
+      p.cycles++;
+      this.events.emit('order:retry', { pendingId: cid, count: p.cycles });
+      p.schedule();
+      return;
+    }
+
     p.cycles++;
     this.events.emit('order:retry', { pendingId: cid, count: p.cycles });
 
