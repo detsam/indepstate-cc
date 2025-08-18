@@ -61,13 +61,13 @@ class dwx_client {
 
     this.num_command_files = 50;
 
-    this._last_messages_millis = 0;
     this._last_open_orders_str = '';
     this._last_messages_str = '';
     this._last_market_data_str = '';
     this._last_bar_data_str = '';
     this._last_historic_data_str = '';
     this._last_historic_trades_str = '';
+    this._seen_message_keys = new Set();
 
     this.open_orders = {};
     this.account_info = {};
@@ -193,14 +193,12 @@ class dwx_client {
       this._last_messages_str = text;
       let data; try { data = JSON.parse(text); } catch { continue; }
 
-      const keys = Object.keys(data).map(k => parseInt(k, 10)).sort((a, b) => a - b);
-      for (const millis of keys) {
-        if (Number.isFinite(millis) && millis > this._last_messages_millis) {
-          this._last_messages_millis = millis;
-          const message = data[String(millis)];
-          if (this.event_handler && typeof this.event_handler.on_message === 'function') {
-            try { this.event_handler.on_message(message); } catch {}
-          }
+      const entries = Object.entries(data);
+      for (const [key, message] of entries) {
+        if (this._seen_message_keys.has(key)) continue;
+        this._seen_message_keys.add(key);
+        if (this.event_handler && typeof this.event_handler.on_message === 'function') {
+          try { this.event_handler.on_message(message, key); } catch {}
         }
       }
 
@@ -333,10 +331,7 @@ class dwx_client {
       this._last_messages_str = text;
       try {
         const data = JSON.parse(text);
-        for (const k of Object.keys(data)) {
-          const millis = parseInt(k, 10);
-          if (Number.isFinite(millis) && millis > this._last_messages_millis) this._last_messages_millis = millis;
-        }
+        for (const k of Object.keys(data)) this._seen_message_keys.add(k);
       } catch {}
     }
   }

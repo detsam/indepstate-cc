@@ -41,10 +41,10 @@ class DWXAdapter extends ExecutionAdapter {
         // Пробросим наружу
         userHandler.on_order_event?.();
       },
-      on_message(msg) {
+      on_message(msg, orderId) {
         // Попробуем вытащить cid из message/comment и подтвердить/завернуть
-        self.#consumeMessage(msg);
-        userHandler.on_message?.(msg);
+        self.#consumeMessage(msg, orderId);
+        userHandler.on_message?.(msg, orderId);
       },
       on_tick: (...a) => userHandler.on_tick?.(...a),
       on_bar_data: (...a) => userHandler.on_bar_data?.(...a),
@@ -185,15 +185,15 @@ class DWXAdapter extends ExecutionAdapter {
   }
 
   #trackPending(cid, order, order_type) {
-    const schedule = () => {
+    const restart = () => {
       const p = this.pending.get(cid);
       if (!p) return;
       clearTimeout(p.timer);
-      p.timer = setTimeout(() => this.#retryPending(cid), this.confirmTimeoutMs);
+      p.timer = setTimeout(() => this.#timeoutPending(cid), this.confirmTimeoutMs);
     };
 
-    this.pending.set(cid, { order, order_type, createdAt: Date.now(), timer: null, cycles: 0, schedule });
-    schedule();
+    this.pending.set(cid, { order, order_type, createdAt: Date.now(), timer: null, cycles: 0, restart });
+    restart();
   }
 
   #retryPending(cid) {
@@ -211,7 +211,15 @@ class DWXAdapter extends ExecutionAdapter {
         if (e?.message !== 'RETRY_STOPPED') this.#rejectPending(cid, e?.message || String(e));
       });
 
-    p.schedule();
+    p.restart();
+  }
+
+  #timeoutPending(cid) {
+    const p = this.pending.get(cid);
+    if (!p) return;
+    clearTimeout(p.timer);
+    this.pending.delete(cid);
+    this.events.emit('order:timeout', { pendingId: cid, origOrder: p.order });
   }
 
   #confirmPending(cid, ticket, mtOrder) {
@@ -230,15 +238,17 @@ class DWXAdapter extends ExecutionAdapter {
     this.events.emit('order:rejected', { pendingId: cid, reason: reason || 'Unknown', msg, origOrder: p.order });
   }
 
-  #consumeMessage(msg) {
-    // Форматы на MQL стороне бывают разные. Ищем cid в явном поле или в comment/строке.
+  #consumeMessage(msg, orderId) {
+    // Форматы на MQL стороне бывают разные. Ищем cid в явном поле, в comment/строке или берём ключ сообщения.
     const asStr = typeof msg === 'string' ? msg : JSON.stringify(msg);
-    const cid = extractCid(asStr);
+    const cid = extractCid(asStr) || orderId;
     if (cid && this.pending.has(cid)) {
-      // Если это ERROR — зареджектим; если INFO/OK — попытаемся вытащить ticket и подтвердить.
+      // Ошибки по открытию ордера пробуем повторить, остальные ошибки — завернуть.
       const isError = (msg?.type === 'ERROR') || /error|failed/i.test(asStr);
-      if (isError) {
-        this.#rejectPending(cid, msg?.reason || 'EA ERROR', msg);
+      if (isError && msg?.error_type === 'OPEN_ORDER') {
+        this.#retryPending(cid);
+      } else if (isError) {
+        this.#rejectPending(cid, msg?.reason || msg?.description || 'EA ERROR', msg);
       } else {
         const ticket = msg?.ticket ?? (asStr.match(/ticket\\D+(\\d+)/i)?.[1]);
         this.#confirmPending(cid, ticket, undefined);
