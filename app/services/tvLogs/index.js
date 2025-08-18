@@ -78,12 +78,44 @@ function parseCsvText(text) {
 }
 
 function groupOrders(rows) {
+  // Keep rows in chronological order so we can pair market exits
+  // with the latest open deal for the symbol.
+  rows = Array.isArray(rows) ? [...rows] : [];
+  rows.sort((a, b) => a.orderId - b.orderId);
+
   const map = new Map();
+  const lastKey = new Map(); // symbol -> latest group key awaiting close
+
   for (const r of rows) {
-    const key = `${r.symbol}|${r.placingTime}`;
+    let key = `${r.symbol}|${r.placingTime}`;
+    const type = String(r.type).toLowerCase();
+    const status = String(r.status).toLowerCase();
+
+    // TradingView assigns a new placing time to market exit orders.
+    // If we see a filled market order and there is an existing open group
+    // for the same symbol, merge it into that group so the deal closes properly.
+    if (type === 'market' && status === 'filled') {
+      const prev = lastKey.get(r.symbol);
+      if (prev && prev !== key && map.has(prev)) {
+        key = prev;
+      }
+    }
+
     if (!map.has(key)) map.set(key, []);
-    map.get(key).push(r);
+    const arr = map.get(key);
+    arr.push(r);
+
+    if (status === 'filled') {
+      // remember this group as the active one for the symbol
+      lastKey.set(r.symbol, key);
+      const filledCount = arr.filter(o => String(o.status).toLowerCase() === 'filled').length;
+      if (filledCount >= 2) {
+        // deal has both entry and exit, stop tracking
+        lastKey.delete(r.symbol);
+      }
+    }
   }
+
   return map;
 }
 
