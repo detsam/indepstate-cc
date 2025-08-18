@@ -42,7 +42,7 @@ class DWXAdapter extends ExecutionAdapter {
         userHandler.on_order_event?.();
       },
       on_message(msg, orderId) {
-        // Попробуем вытащить cid из message/comment и подтвердить/завернуть
+        // Попробуем вытащить cid из description и подтвердить/завернуть
         self.#consumeMessage(msg, orderId);
         userHandler.on_message?.(msg, orderId);
       },
@@ -239,21 +239,24 @@ class DWXAdapter extends ExecutionAdapter {
   }
 
   #consumeMessage(msg, orderId) {
-    // Форматы на MQL стороне бывают разные. Ищем cid в явном поле, в comment/строке или берём ключ сообщения.
+    // В сообщениях об ошибках ожидаем `description` с фрагментом `comment: cid:...`.
     const asStr = typeof msg === 'string' ? msg : JSON.stringify(msg);
-    const cid = extractCid(asStr) || orderId;
-    if (cid && this.pending.has(cid)) {
-      // Ошибки по открытию ордера пробуем повторить, остальные ошибки — завернуть.
-      const isError = (msg?.type === 'ERROR') || /error|failed/i.test(asStr);
-      if (isError && msg?.error_type === 'OPEN_ORDER') {
-        this.#retryPending(cid);
-      } else if (isError) {
-        this.#rejectPending(cid, msg?.reason || msg?.description || 'EA ERROR', msg);
-      } else {
-        const ticket = msg?.ticket ?? (asStr.match(/ticket\\D+(\\d+)/i)?.[1]);
-        this.#confirmPending(cid, ticket, undefined);
-      }
+    const cid = extractCid(msg?.description || '');
+    if (!cid || !this.pending.has(cid)) return;
+
+    const isError = (msg?.type === 'ERROR') || /error|failed/i.test(asStr);
+    if (isError && msg?.error_type === 'OPEN_ORDER') {
+      this.#retryPending(cid);
+      return;
     }
+
+    if (isError) {
+      this.#rejectPending(cid, msg?.reason || msg?.description || 'EA ERROR', msg);
+      return;
+    }
+
+    const ticket = msg?.ticket ?? (asStr.match(/ticket\\D+(\\d+)/i)?.[1]);
+    this.#confirmPending(cid, ticket, undefined);
   }
 
   #reconcilePendingWithOpenOrders() {
