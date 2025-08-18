@@ -371,7 +371,7 @@ function appendCidToComment(comment, cid) {
 }
 
 function extractCid(s) {
-  const m = String(s).match(/cid[:=]\\s*([a-f0-9]{8,})/i);
+  const m = String(s).match(/cid[:=]\s*([a-f0-9]{8,})/i);
   return m ? m[1] : null;
 }
 
