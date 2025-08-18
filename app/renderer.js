@@ -281,6 +281,14 @@ function ensureInstrument(ticker) {
   });
 }
 
+function forgetInstrument(ticker) {
+  if (!ticker) return;
+  if (state.rows.some(r => r.ticker === ticker)) return;
+  instrumentInfo.delete(ticker);
+  pendingInstruments.delete(ticker);
+  ipcRenderer.invoke('instrument:forget', ticker).catch(() => {});
+}
+
 // Миграция ключей (rowKey зависит от полей row)
 function migrateKey(oldKey, newKey, {preserveUi = false, nextUiPatch = null} = {}) {
   if (oldKey === newKey) return;
@@ -984,6 +992,7 @@ function removeRow(row) {
   clearPendingByKey(key);
   userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
   render();
+  forgetInstrument(row.ticker);
 }
 
 function removeRowByKey(key) {
@@ -996,6 +1005,7 @@ function removeRowByKey(key) {
     clearPendingByKey(key);
     userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
     render();
+    forgetInstrument(row.ticker);
   }
 }
 

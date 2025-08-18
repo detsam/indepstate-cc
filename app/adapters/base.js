@@ -19,5 +19,7 @@ class ExecutionAdapter {
    * @returns {Promise<{bid?:number, ask?:number, price?:number}|null>}
    */
   async getQuote(_symbol) { return null; }
+
+  async forgetQuote(_symbol) { return; }
 }
 module.exports = { ExecutionAdapter };
