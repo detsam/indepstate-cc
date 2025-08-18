@@ -490,6 +490,18 @@ function setupIpc(orderSvc) {
     }
   });
 
+  ipcMain.handle('instrument:forget', async (_evt, symbol) => {
+    try {
+      const instrumentType = detectInstrumentType(String(symbol || ''));
+      const adapterName = pickAdapterName(instrumentType);
+      const adapter = getAdapter(adapterName);
+      await adapter.forgetQuote?.(String(symbol || ''));
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   // --- IPC: orders:list (tail JSONL файлов, совместим с старым вызовом) ---
   ipcMain.handle('orders:list', async (_evt, arg) => {
     // Совместимость: могут передать число (rows) или объект {file, rows}

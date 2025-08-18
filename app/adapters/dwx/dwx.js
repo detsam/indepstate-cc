@@ -322,6 +322,14 @@ class DWXAdapter extends ExecutionAdapter {
     return { bid, ask, price };
   }
 
+  async forgetQuote(symbol) {
+    symbol = String(symbol || '').trim();
+    if (!symbol) return;
+    if (this._subscribedSymbols.delete(symbol)) {
+      try { await this.client.subscribe_symbols([...this._subscribedSymbols]); } catch {}
+    }
+  }
+
   async listOpenOrders() {
     return Object.values(this.client.open_orders || {});
   }
