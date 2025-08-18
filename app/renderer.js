@@ -9,6 +9,11 @@ const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
 
+const envInstrRefresh = Number(process.env.INSTRUMENT_REFRESH_MS);
+const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
+  ? envInstrRefresh
+  : Number(orderCardsCfg?.instrumentRefreshMs) || 1000;
+
 // ======= App state =======
 const state = {rows: [], filter: '', autoscroll: true};
 
@@ -280,6 +285,47 @@ function ensureInstrument(ticker) {
     }, 1000);
   });
 }
+
+// Періодичне оновлення інструментної інформації для всіх видимих карток
+(function refreshAllInstrumentsPeriodically() {
+  let running = false;
+  setInterval(async () => {
+    if (running) return;
+    running = true;
+    try {
+      const tickers = Array.from(new Set((state.rows || []).map(r => r.ticker).filter(Boolean)));
+      if (!tickers.length) return;
+
+      let changed = false;
+      await Promise.all(tickers.map(async (t) => {
+        // пропускаємо, якщо картки вже немає
+        if (!state.rows.some(r => r.ticker === t)) return;
+        // не дублюємо запит, якщо вже є активний
+        if (pendingInstruments.has(t)) return;
+
+        pendingInstruments.add(t);
+        try {
+          const info = await ipcRenderer.invoke('instrument:get', t);
+          if (info) {
+            const prev = instrumentInfo.get(t);
+            instrumentInfo.set(t, info);
+            if (!prev || prev.bid !== info.bid || prev.ask !== info.ask || prev.price !== info.price) {
+              changed = true;
+            }
+          }
+        } catch {
+          // ігноруємо помилку; наступна ітерація спробує знову
+        } finally {
+          pendingInstruments.delete(t);
+        }
+      }));
+
+      if (changed) render();
+    } finally {
+      running = false;
+    }
+  }, INSTRUMENT_REFRESH_MS);
+})();
 
 // Миграция ключей (rowKey зависит от полей row)
 function migrateKey(oldKey, newKey, {preserveUi = false, nextUiPatch = null} = {}) {

@@ -110,6 +110,17 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     return this.symbolMap[symbol] || this.symbolMap[String(symbol).toUpperCase()] || symbol;
   }
 
+  // Витягнути найбільш надійний ідентифікатор ордера з відповіді біржі
+  _resolveOrderId(res) {
+    try {
+      const info = res?.info || {};
+      const id = res?.id || res?.clientOrderId || info?.orderId || info?.origClientOrderId || info?.clientOrderId || info?.data?.orderId;
+      return id ? String(id) : '';
+    } catch {
+      return '';
+    }
+  }
+
   // Підписка на внутрішні події адаптера (сумісно з wireAdapter)
   on(event, fn) { this.events.on(event, fn); return () => this.events.off(event, fn); }
 
@@ -163,7 +174,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       try {
         // Для ccxt/binance 'stop' потребує і price, і stopPrice (STOP/STOP_LIMIT)
         const slOrder = await this.exchange.createOrder(mappedSymbol, 'stop', opposite, amount, slPrice, slParams);
-        if (slOrder?.id) childIds.push(String(slOrder.id));
+        const slId = this._resolveOrderId(slOrder);
+        if (slId) childIds.push(slId);
       } catch (e) {
         console.error(`[${this.provider}] Failed to place SL order:`, e?.message || String(e));
       }
@@ -173,7 +185,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     if (hasTP && Number.isFinite(tpPrice) && tpPrice > 0) {
       try {
         const tpOrder = await this.exchange.createOrder(mappedSymbol, 'limit', opposite, amount, tpPrice, reduceParams);
-        if (tpOrder?.id) childIds.push(String(tpOrder.id));
+        const tpId = this._resolveOrderId(tpOrder);
+        if (tpId) childIds.push(tpId);
       } catch (e) {
         console.error(`[${this.provider}] Failed to place TP order:`, e?.message || String(e));
       }
@@ -221,7 +234,16 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     if (!link) return;
     const { symbol: mappedSymbol, children } = link;
     for (const cid of children || []) {
-      try { await this.exchange.cancelOrder(cid, mappedSymbol); } catch {}
+      try {
+        await this.exchange.cancelOrder(cid, mappedSymbol);
+      } catch {
+        // Спроба відміни по clientOrderId/origClientOrderId (актуально для умовних ордерів на деяких біржах)
+        try {
+          await this.exchange.cancelOrder(undefined, mappedSymbol, { origClientOrderId: cid, clientOrderId: cid });
+        } catch {
+          // остання спроба — ігноруємо помилку
+        }
+      }
     }
     this._childOrdersByParent.delete(parentId);
   }
