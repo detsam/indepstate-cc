@@ -67,7 +67,8 @@ class dwx_client {
     this._last_bar_data_str = '';
     this._last_historic_data_str = '';
     this._last_historic_trades_str = '';
-    this._seen_message_keys = new Set();
+    // track last seen messages to reprocess when content changes
+    this._seen_messages = new Map();
 
     this.open_orders = {};
     this.account_info = {};
@@ -195,8 +196,9 @@ class dwx_client {
 
       const entries = Object.entries(data);
       for (const [key, message] of entries) {
-        if (this._seen_message_keys.has(key)) continue;
-        this._seen_message_keys.add(key);
+        const str = JSON.stringify(message);
+        if (this._seen_messages.get(key) === str) continue;
+        this._seen_messages.set(key, str);
         if (this.event_handler && typeof this.event_handler.on_message === 'function') {
           try { this.event_handler.on_message(message, key); } catch {}
         }
@@ -331,7 +333,9 @@ class dwx_client {
       this._last_messages_str = text;
       try {
         const data = JSON.parse(text);
-        for (const k of Object.keys(data)) this._seen_message_keys.add(k);
+        for (const [k, msg] of Object.entries(data)) {
+          this._seen_messages.set(k, JSON.stringify(msg));
+        }
       } catch {}
     }
   }
