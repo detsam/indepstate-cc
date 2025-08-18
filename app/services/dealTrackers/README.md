@@ -43,3 +43,4 @@ The Obsidian deal tracker expects an `info` object with properties describing th
 - `tradeSession` – fills the `- Trade Session::` line when supplied
 - when configured with a chart image composer, the tracker writes
   `\t- 1D ![[filename]]` linking to the generated screenshot
+- `placingDate` – uses this value for the note file name and `- Date::` line; defaults to today's date
