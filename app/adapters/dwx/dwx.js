@@ -206,12 +206,16 @@ class DWXAdapter extends ExecutionAdapter {
     const backoff  = this.cfg.openOrderRetryBackoff;
     const ctrl = this._retryControllers.get(cid);
 
-    this.#openOrderWithRetry(p.order, p.order_type, { delayMs, backoff, signal: ctrl?.signal, cid })
-      .catch((e) => {
-        if (e?.message !== 'RETRY_STOPPED') this.#rejectPending(cid, e?.message || String(e));
-      });
-
-    p.restart();
+    setTimeout(() => {
+      if (ctrl?.signal.aborted) return;
+      const p2 = this.pending.get(cid);
+      if (!p2) return;
+      this.#openOrderWithRetry(p2.order, p2.order_type, { delayMs, backoff, signal: ctrl?.signal, cid })
+        .catch((e) => {
+          if (e?.message !== 'RETRY_STOPPED') this.#rejectPending(cid, e?.message || String(e));
+        });
+      p2.restart();
+    }, delayMs);
   }
 
   #timeoutPending(cid) {
