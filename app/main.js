@@ -245,7 +245,7 @@ function normalizeOrderPayload(payload) {
         instrumentType ,                // 'CX' | 'EQ' | 'FX'
       symbol,                        // 'BTCUSDT.P' | 'AAPL'
       side: payload.kind,            // 'BL'|'BSL'|'SL'|'SSL'
-      mintick: payload.mintick,
+      tickSize: payload.tickSize,
       qty: instrumentType === 'EQ'
         ? Math.floor(Number(payload.meta.qty || 0))
         : Number(payload.meta.qty || 0),
@@ -263,7 +263,7 @@ function normalizeOrderPayload(payload) {
     instrumentType,
     symbol,
     side: payload.side || payload.action, // 'BL'|'BSL'|'SL'|'SSL'
-    mintick: payload.mintick,
+    tickSize: payload.tickSize,
     qty: instrumentType === 'EQ'
       ? Math.floor(Number(payload.qty || 0))
       : Number(payload.qty || 0),

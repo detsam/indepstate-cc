@@ -105,6 +105,57 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     } catch {}
   }
 
+  _getTickSizeFromMarket(mappedSymbol) {
+    try {
+      const m = (this.exchange.markets && this.exchange.markets[mappedSymbol]) || this.exchange.market(mappedSymbol);
+      if (!m) return 0.01;
+
+      // 1) За precision.price
+      const p = m?.precision?.price;
+      if (Number.isInteger(p) && p >= 0 && p <= 18) {
+        const ts = Math.pow(10, -p);
+        // console.log(`[${this.provider}] Using precision.price=${p} for ${mappedSymbol}:`, ts);
+        if (Number.isFinite(ts) && ts > 0) return ts;
+      }
+
+      // 2) Уніфіковане tickSize (деякі біржі надають)
+      if (Number.isFinite(m?.tickSize) && m.tickSize > 0)  {
+        // console.log(`[${this.provider}] Using tickSize=${m.tickSize} for ${mappedSymbol}:`, m.tickSize);
+        return Number(m.tickSize);
+      }
+
+
+      // // 3) limits.price.step (інколи відповідає мін. кроку)
+      // const step = m?.limits?.price?.min;
+      // if (Number.isFinite(step) && step > 0) {
+      //   console.log(`[${this.provider}] Using price.step=${step} for ${mappedSymbol}:`, step);
+      //   return Number(step);
+      // }
+
+      // 4) Біржові "info"
+      const info = m.info || {};
+      // Binance
+      if (Array.isArray(info.filters)) {
+        const pf = info.filters.find(f => String(f.filterType).toUpperCase() === 'PRICE_FILTER');
+        const ts = pf && parseFloat(pf.tickSize);
+        if (Number.isFinite(ts) && ts > 0) {
+          // console.log(`[${this.provider}] Using price.filter.tickSize=${ts} for ${mappedSymbol}:`, ts);
+          return ts;
+        }
+      }
+      // Bybit
+      const bbTs = parseFloat(info?.priceFilter?.tickSize || info?.priceFilter?.tick_size);
+      if (Number.isFinite(bbTs) && bbTs > 0) return bbTs;
+      // OKX
+      const okxTs = parseFloat(info?.tickSz || info?.tickSize);
+      if (Number.isFinite(okxTs) && okxTs > 0) return okxTs;
+
+      return 0.01;
+    } catch {
+      return 0.01;
+    }
+  }
+
   mapSymbol(symbol) {
     if (!symbol) return symbol;
     return this.symbolMap[symbol] || this.symbolMap[String(symbol).toUpperCase()] || symbol;
@@ -143,10 +194,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
    * - TP: limit ордер на протилежну сторону за tpPrice (reduceOnly)
    * Повертає масив id дочірніх ордерів (може бути порожнім/частковим).
    */
-  async _placeProtectiveOrders({ mappedSymbol, side, amount, entryPrice, slPts, tpPts, mintick, baseParams = {} }) {
+  async _placeProtectiveOrders({ mappedSymbol, side, amount, entryPrice, slPts, tpPts, tickSize, baseParams = {} }) {
     const childIds = [];
     const opposite = side === 'buy' ? 'sell' : 'buy';
-    const tick = Number(mintick) > 0 ? Number(mintick) : 1;
+    const tick = Number(tickSize) > 0 ? Number(tickSize) : 1;
 
     const reduceParams = { ...baseParams };
     // популярний ключ у ccxt
@@ -357,8 +408,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
                         : undefined;
             const slPts = Number(order.sl);
             const tpPts = Number(order.tp);
-            const mintick = Number(order.mintick);
-            console.log('entry', entry, 'slPts', slPts, 'tpPts', tpPts, 'mintick', mintick);
+            const tickSize = Number(order.tickSize);
+            // console.log('entry', entry, 'slPts', slPts, 'tpPts', tpPts, 'tickSize', tickSize);
             if (providerOrderId && Number.isFinite(entry)) {
               const children = await this._placeProtectiveOrders({
                 mappedSymbol: symbol,
@@ -367,7 +418,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
                 entryPrice: entry,
                 slPts,
                 tpPts,
-                mintick,
+                tickSize,
                 baseParams: this.defaultParams || {}
               });
               if (children && children.length) {
@@ -457,7 +508,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       const price = Number.isFinite(t.last) ? t.last :
                     (Number.isFinite(t.bid) && Number.isFinite(t.ask)) ? (t.bid + t.ask) / 2 :
                     undefined;
-      return { bid: t.bid, ask: t.ask, price };
+      const tickSize = this._getTickSizeFromMarket(mapped);
+      return { bid: t.bid, ask: t.ask, price, tickSize };
     } catch {
       return null;
     }

@@ -673,11 +673,12 @@ function createFxBody(row, key) {
       const r = _normNum($risk.value);
       const sl = _normNum($sl.value);
       // Use lot from row if available and positive
-      const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 100000; //standard lot for FX
-      const tickSize = Number.isFinite(row.tickSize) && row.tickSize > 0 ? row.tickSize : 0.00001; //default FX tick size
 
       if (isPos(r) && isSL(sl)) {
-        let q = Math.floor((r / tickSize) / sl / lot / 0.01) * 0.01;
+        const tick = tickSize(row) ||  0.00001;
+        const lot = row.lot || 100000 ; //safe standard lot for FX
+
+        let q = Math.floor((r / tick) / sl / lot / 0.01) * 0.01;
         if (!Number.isFinite(q) || q < 0) q = 0;
         $qty.value = String(q);
       }
@@ -821,7 +822,8 @@ function createEquitiesBody(row, key) {
     const r = _normNum($risk.value);
     const sl = _normNum($sl.value);
     if (isPos(r) && isSL(sl)) {
-      let q = Math.floor((r * 100) / sl);
+      const tick = tickSize(row) || 0.01;
+      let q = Math.floor((r / tick) / sl);
       if (!Number.isFinite(q) || q < 0) q = 0;
       $qty.value = String(q);
     }
@@ -936,6 +938,12 @@ function createEquitiesBody(row, key) {
   return body;
 }
 
+
+function tickSize(row) {
+  //todo config
+  return row.tickSize || instrumentInfo.get(row.ticker)?.tickSize;
+}
+
 // ======= Order placement (shared) =======
 async function place(kind, row, v, instrumentType) {
   if (!v.valid) return;
@@ -952,23 +960,26 @@ async function place(kind, row, v, instrumentType) {
     if (rb) rb.textContent = '0';
   }
 
-  let qtyVal, priceVal, slVal, takeVal, extra = {};
+  let qtyVal, priceVal, slVal, takeVal, tick, extra = {};
   if (v.type === 'crypto') {
     qtyVal = v.qty;
     priceVal = v.pr;
     slVal = v.sl;
     takeVal = v.tp ?? null;
+    tick = tickSize(row);  //do not fallback for crypro to keep fail order if tick size is unknown
   } else if (v.type === 'equities') {
     qtyVal = v.qtyInt;
     priceVal = v.pr;
     slVal = v.sl;
     takeVal = v.tp ?? null;
+    tick = tickSize(row) || 0.01;
     extra.riskUsd = v.risk;
   } else {
     qtyVal = v.qty;
     priceVal = v.pr;
     slVal = v.sl;
     takeVal = v.tp ?? null;
+    tick = tickSize(row) || 0.00001;
     extra.riskUsd = v.risk;
   }
 
@@ -979,7 +990,7 @@ async function place(kind, row, v, instrumentType) {
     price: Number(priceVal),
     kind,
     instrumentType: instrumentType,
-    mintick: (row.tickSize || 0.01), //todo from config
+    tickSize: tick,
     meta: {
       requestId, // связь с execution:result
       qty: Number(qtyVal),

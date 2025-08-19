@@ -117,11 +117,11 @@ class DWXAdapter extends ExecutionAdapter {
     let tp = 0.0;
 
     if (order.side === 'buy') {
-      tp = order.price + (order.tp * order.mintick);
-      sl = order.price - (order.sl * order.mintick);
+      tp = order.price + (order.tp * order.tickSize);
+      sl = order.price - (order.sl * order.tickSize);
     } else {
-      tp = order.price - (order.tp * order.mintick);
-      sl = order.price + (order.sl * order.mintick);
+      tp = order.price - (order.tp * order.tickSize);
+      sl = order.price + (order.sl * order.tickSize);
     }
 
     await this.client.open_order(
@@ -267,7 +267,8 @@ class DWXAdapter extends ExecutionAdapter {
     if (Number.isFinite(bid) && Number.isFinite(ask)) price = (bid + ask) / 2;
     else if (Number.isFinite(bid)) price = bid;
     else if (Number.isFinite(ask)) price = ask;
-    return { bid, ask, price };
+    const tickSize = undefined;
+    return { bid, ask, price, tickSize };
   }
 
   async forgetQuote(symbol) {
