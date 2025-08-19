@@ -211,15 +211,13 @@ Mapping to DWX order types:
 - Events emitted by the adapter:
   - `order:confirmed` → `{ pendingId, ticket, mtOrder, origOrder }`
   - `order:rejected`  → `{ pendingId, reason, msg, origOrder }`
+  - `order:retry`     → `{ pendingId, count }`
 
 
 Configuration options (constructor):
 - `provider` (default `dwx-mt5`)
 - `metatrader_dir_path` (required)
 - `verbose` (default `false`)
-- `confirmTimeoutMs` (default `7000`)
-- `openOrderRetryDelayMs` (default `25`)
-- `openOrderRetryBackoff` (default `2`)
 - `event_handler` (optional; proxied into `dwx_client`)
 
 ---
@@ -242,12 +240,14 @@ Configuration options (constructor):
 
 ## Retries (`open_order`)
 
-The adapter performs infinite `open_order` retries with exponential backoff. The delay starts from
-`openOrderRetryDelayMs` and multiplies by `openOrderRetryBackoff` on each failure.
-
-Whenever a confirmation timeout fires, the adapter re-sends the order and emits
-`order:retry { pendingId, count }` (with `count` starting at 1 for each order). Retries can be
-stopped via `stopOpenOrder(pendingId)` which aborts the loop and clears pending state.
+The adapter retries placement **only** when the DWX client reports an
+`OPEN_ORDER` error for the order's CID. Errors are delivered via
+`on_message` events and, after a delay controlled by
+`openOrderRetryDelayMs` (default **500 ms**), trigger a resend with
+`order:retry { pendingId, count }` (with `count` starting at `1`).
+Between attempts the adapter simply waits for either a confirmation or
+an error; there is no timeout-based rejection. Retries can be stopped
+via `stopOpenOrder(pendingId)` which clears the pending state.
 
 ---
 
@@ -305,8 +305,8 @@ Confirmation occurs when the same `cid` is found in messages or in the order’s
 
 ## Troubleshooting
 
-- **No confirmation**  
-  Increase `confirmTimeoutMs`. Verify that `DWX_Orders.txt` and `DWX_Messages.txt` are written. Ensure the comment includes `cid:<hex>`.
+- **No confirmation**
+  Verify that `DWX_Orders.txt` and `DWX_Messages.txt` are written. Ensure the comment includes `cid:<hex>`.
 
 - **Command files not created**  
   The client writes to the first free file among `0..49` and retries for `max_retry_command_seconds`. Check file permissions and EA removal of processed command files.
