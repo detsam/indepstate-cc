@@ -96,19 +96,11 @@ class DWXAdapter extends ExecutionAdapter {
     if (order.type === 'limit') order_type = order.side === 'buy' ? 'buylimit' : 'selllimit';
     else if (order.type === 'stop') order_type = order.side === 'buy' ? 'buystop' : 'sellstop';
 
-    // отправим ордер, а pending начнём отслеживать только после успешной отправки
-    this.#sendOrder(order, order_type)
-      .then(() => {
-        this.#trackPending(cid, order, order_type);
-      })
-      .catch((e) => {
-        this.events.emit('order:rejected', {
-          pendingId: cid,
-          reason: e?.message || String(e),
-          msg: e?.message || String(e),
-          origOrder: order,
-        });
-      });
+    // начнём отслеживать pending до отправки, чтобы не пропустить ранние сообщения
+    this.#trackPending(cid, order, order_type);
+    this.#sendOrder(order, order_type).catch((e) => {
+      this.#rejectPending(cid, e?.message || String(e), e?.message || String(e));
+    });
 
     return {
       status: 'ok',
