@@ -9,6 +9,12 @@ const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
 
+
+const envInstrRefresh = Number(process.env.INSTRUMENT_REFRESH_MS);
+const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
+  ? envInstrRefresh
+  : Number(orderCardsCfg?.instrumentRefreshMs) || 1000;
+
 // ======= App state =======
 const state = {rows: [], filter: '', autoscroll: true};
 
@@ -289,6 +295,41 @@ function forgetInstrument(ticker) {
   ipcRenderer.invoke('instrument:forget', ticker).catch(() => {});
 }
 
+// Періодичне оновлення інструментної інформації для всіх видимих карток
+(function refreshAllInstrumentsPeriodically() {
+  let running = false;
+  setInterval(async () => {
+    if (running) return;
+    running = true;
+    try {
+      const tickers = Array.from(new Set((state.rows || []).map(r => r.ticker).filter(Boolean)));
+      if (!tickers.length) return;
+
+      await Promise.all(tickers.map(async (t) => {
+        // пропускаємо, якщо картки вже немає
+        if (!state.rows.some(r => r.ticker === t)) return;
+        // не дублюємо запит, якщо вже є активний
+        if (pendingInstruments.has(t)) return;
+
+        pendingInstruments.add(t);
+        try {
+          const info = await ipcRenderer.invoke('instrument:get', t);
+          if (info) {
+            const prev = instrumentInfo.get(t);
+            instrumentInfo.set(t, info);
+          }
+        } catch {
+          // ігноруємо помилку; наступна ітерація спробує знову
+        } finally {
+          pendingInstruments.delete(t);
+        }
+      }));
+    } finally {
+      running = false;
+    }
+  }, INSTRUMENT_REFRESH_MS);
+})();
+
 // Миграция ключей (rowKey зависит от полей row)
 function migrateKey(oldKey, newKey, {preserveUi = false, nextUiPatch = null} = {}) {
   if (oldKey === newKey) return;
@@ -479,29 +520,38 @@ function createCryptoBody(row, key) {
     price: row.price != null ? String(row.price) : '',
     sl: row.sl != null ? String(row.sl) : '',
     tp: row.tp != null ? String(row.tp) : '',
+    risk: EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига, // як у FX: Risk $, використовується для автоперерахунку qty
     tpTouched: row.tp != null, // если TP пришёл с хуком — не перезатираем авто-логикой
   };
   let tpTouched = !!saved.tpTouched;
 
   const line = el('div', 'quad-line');
+  line.style.display = 'grid';
+  line.style.gridTemplateColumns = '1fr 1fr 0.8fr 0.8fr 1fr'; // Qty, Price, SL, TP, Risk$
+  line.style.alignItems = 'center';
+  line.style.gap = line.style.gap || '8px';
+
   const $qty = inputNumber('Qty', 'qty');
   const $price = inputNumber('Price', 'pr');
   const $sl = inputNumber('SL', 'sl');
   const $tp = inputNumber('TP', 'tp');
+  const $risk = inputNumber('Risk $', 'risk');
 
   // restore
   $qty.value = saved.qty;
   $price.value = saved.price;
   $sl.value = saved.sl;
   $tp.value = saved.tp;
+  $risk.value = saved.risk;
 
   line.appendChild($qty);
   line.appendChild($price);
   line.appendChild($sl);
   line.appendChild($tp);
+  line.appendChild($risk);
 
   const persist = () => {
-    uiState.set(key, {qty: $qty.value, price: $price.value, sl: $sl.value, tp: $tp.value, tpTouched});
+    uiState.set(key, {qty: $qty.value, price: $price.value, sl: $sl.value, tp: $tp.value, risk: $risk.value, tpTouched});
   };
   const recomputeTP = () => {
     if (!tpTouched) {
@@ -510,10 +560,24 @@ function createCryptoBody(row, key) {
       persist();
     }
   };
+  const recomputeQtyFromRisk = () => {
+    const r = _normNum($risk.value);
+    const sl = _normNum($sl.value);
+    const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 1;
+    const tick = tickSize(row) || 1; //safe tick 1
+
+    if (isPos(r) && isSL(sl)) {
+      // Та сама формула, що й у FX: дискретність 0.01
+      let q = Math.floor((r / tick) / sl / lot / 0.001) * 0.001;
+      if (!Number.isFinite(q) || q < 0) q = 0;
+      $qty.value = String(q);
+    }
+    persist();
+  };
 
   const body = {
     type: 'crypto',
-    line, $qty, $price, $sl, $tp,
+    line, $qty, $price, $sl, $tp, $risk,
     setButtons($btns) {
       this._btns = $btns;
     },
@@ -563,8 +627,14 @@ function createCryptoBody(row, key) {
   };
 
   // wiring
+  $risk.addEventListener('input', () => {
+    markTouched(row.ticker);
+    recomputeQtyFromRisk();
+    body.validate();
+  });
   $sl.addEventListener('input', () => {
     markTouched(row.ticker);
+    recomputeQtyFromRisk();
     recomputeTP();
     body.validate();
   });
@@ -584,6 +654,8 @@ function createCryptoBody(row, key) {
     persist();
   });
 
+  // Автопочатковий розрахунок qty з Risk/SL (якщо задано)
+  recomputeQtyFromRisk();
   persist();
   return body;
 }
@@ -633,11 +705,12 @@ function createFxBody(row, key) {
       const r = _normNum($risk.value);
       const sl = _normNum($sl.value);
       // Use lot from row if available and positive
-      const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 100000; //standard lot for FX
-      const tickSize = Number.isFinite(row.tickSize) && row.tickSize > 0 ? row.tickSize : 0.00001; //default FX tick size
 
       if (isPos(r) && isSL(sl)) {
-        let q = Math.floor((r / tickSize) / sl / lot / 0.01) * 0.01;
+        const tick = tickSize(row) ||  0.00001;
+        const lot = row.lot || 100000 ; //safe standard lot for FX
+
+        let q = Math.floor((r / tick) / sl / lot / 0.01) * 0.01;
         if (!Number.isFinite(q) || q < 0) q = 0;
         $qty.value = String(q);
       }
@@ -781,7 +854,8 @@ function createEquitiesBody(row, key) {
     const r = _normNum($risk.value);
     const sl = _normNum($sl.value);
     if (isPos(r) && isSL(sl)) {
-      let q = Math.floor((r * 100) / sl);
+      const tick = tickSize(row) || 0.01;
+      let q = Math.floor((r / tick) / sl);
       if (!Number.isFinite(q) || q < 0) q = 0;
       $qty.value = String(q);
     }
@@ -896,6 +970,12 @@ function createEquitiesBody(row, key) {
   return body;
 }
 
+
+function tickSize(row) {
+  //todo config
+  return row.tickSize || instrumentInfo.get(row.ticker)?.tickSize;
+}
+
 // ======= Order placement (shared) =======
 async function place(kind, row, v, instrumentType) {
   if (!v.valid) return;
@@ -912,23 +992,26 @@ async function place(kind, row, v, instrumentType) {
     if (rb) rb.textContent = '0';
   }
 
-  let qtyVal, priceVal, slVal, takeVal, extra = {};
+  let qtyVal, priceVal, slVal, takeVal, tick, extra = {};
   if (v.type === 'crypto') {
     qtyVal = v.qty;
     priceVal = v.pr;
     slVal = v.sl;
     takeVal = v.tp ?? null;
+    tick = tickSize(row);  //do not fallback for crypro to keep fail order if tick size is unknown
   } else if (v.type === 'equities') {
     qtyVal = v.qtyInt;
     priceVal = v.pr;
     slVal = v.sl;
     takeVal = v.tp ?? null;
+    tick = tickSize(row) || 0.01;
     extra.riskUsd = v.risk;
   } else {
     qtyVal = v.qty;
     priceVal = v.pr;
     slVal = v.sl;
     takeVal = v.tp ?? null;
+    tick = tickSize(row) || 0.00001;
     extra.riskUsd = v.risk;
   }
 
@@ -939,7 +1022,7 @@ async function place(kind, row, v, instrumentType) {
     price: Number(priceVal),
     kind,
     instrumentType: instrumentType,
-    mintick: (row.tickSize || 0.01), //todo from config
+    tickSize: tick,
     meta: {
       requestId, // связь с execution:result
       qty: Number(qtyVal),

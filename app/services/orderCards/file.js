@@ -8,7 +8,7 @@ const { OrderCardsSource } = require('./base');
 // provided; if QTY is provided then both SL and TP must be present. Values are
 // separated by whitespace.
 function parseLine(line) {
-  const parts = String(line).trim().split(/\s+/);
+  const parts = String(line).trim().toUpperCase().split(/\s+/);
   if (parts.length < 2) return null;
   const [ticker, priceStr, slStr = '', tpStr = '', qtyStr = ''] = parts;
   const price = Number(priceStr);

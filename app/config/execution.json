@@ -1,7 +1,7 @@
 {
     "default": "simulated",
     "byInstrumentType": {
-        "CX": "simulated",
+        "CX": "ccxt-binance-futures",
         "EQ": "dwx",
         "FX": "dwx",
         "CFD": "dwx"
@@ -17,6 +17,23 @@
         "dwx": {
             "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}",
             "openOrderRetryDelayMs": 500
+        },
+        "ccxt-binance-futures": {
+          "exchangeId": "binance",
+          "apiKey": "${ENV:BINANCE_API_KEY}",
+          "secret": "${ENV:BINANCE_API_SECRET}",
+          "sandbox": "${ENV:BINANCE_API_TESTNET}",
+          "enableRateLimit": true,
+          "options": {
+            "defaultType": "future"
+          },
+          "params": {
+            "recvWindow": 5000
+          },
+          "symbolMap": {
+            "BTCUSDT": "BTC/USDT:USDT",
+            "ETHUSDT": "ETH/USDT:USDT"
+          }
         }
     }
 }

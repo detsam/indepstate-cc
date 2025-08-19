@@ -245,7 +245,7 @@ function normalizeOrderPayload(payload) {
         instrumentType ,                // 'CX' | 'EQ' | 'FX'
       symbol,                        // 'BTCUSDT.P' | 'AAPL'
       side: payload.kind,            // 'BL'|'BSL'|'SL'|'SSL'
-      mintick: payload.mintick,
+      tickSize: payload.tickSize,
       qty: instrumentType === 'EQ'
         ? Math.floor(Number(payload.meta.qty || 0))
         : Number(payload.meta.qty || 0),
@@ -263,7 +263,7 @@ function normalizeOrderPayload(payload) {
     instrumentType,
     symbol,
     side: payload.side || payload.action, // 'BL'|'BSL'|'SL'|'SSL'
-    mintick: payload.mintick,
+    tickSize: payload.tickSize,
     qty: instrumentType === 'EQ'
       ? Math.floor(Number(payload.qty || 0))
       : Number(payload.qty || 0),
@@ -295,7 +295,7 @@ function pickAdapterName(instrumentType) {
 
 // --- EQ normalization: BL/BSL/SL/SSL -> buy/sell + limit/stoplimit (для адаптеров типа J2T)
 function normalizeEquityOrderForExecution(order) {
-  if (order.instrumentType !== 'EQ' && order.instrumentType !== 'FX' ) return order;
+  if (!['EQ','FX','CX'].includes(String(order.instrumentType))) return order;
 
   const action = String(order.side || '').toUpperCase();
   let side, type, limitPrice, stopPrice;
@@ -371,7 +371,7 @@ function setupIpc(orderSvc) {
         return rej;
       }
 
-      console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price });
+      console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price, sl: execOrder.sl, tp: execOrder.tp });
 
       const result = await adapter.placeOrder(execOrder);
 

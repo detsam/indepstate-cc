@@ -28,7 +28,7 @@ class SimulatedAdapter extends ExecutionAdapter {
 
   async getQuote(_symbol) {
     // для симуляции вернём фиксированную цену
-    return { bid: 100, ask: 100, price: 100 };
+    return { bid: 100, ask: 100, price: 100, tickSize: 0.01 };
   }
 }
 module.exports = { SimulatedAdapter };
