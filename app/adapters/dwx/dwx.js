@@ -18,7 +18,7 @@ class DWXAdapter extends ExecutionAdapter {
     if (!cfg?.metatraderDirPath) throw new Error('[DWXAdapter] metatraderDirPath is required');
 
     this.cfg = {
-      openOrderRetryDelayMs: cfg?.openOrderRetryDelayMs ?? 25,
+      openOrderRetryDelayMs: cfg?.openOrderRetryDelayMs ?? 500,
     };
 
     this.provider = cfg.provider || 'dwx-mt5';

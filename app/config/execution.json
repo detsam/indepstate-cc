@@ -16,7 +16,7 @@
         },
         "dwx": {
             "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}",
-            "openOrderRetryDelayMs": 25
+            "openOrderRetryDelayMs": 500
         }
     }
 }
