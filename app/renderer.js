@@ -9,6 +9,7 @@ const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
 
+
 const envInstrRefresh = Number(process.env.INSTRUMENT_REFRESH_MS);
 const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
   ? envInstrRefresh
@@ -519,29 +520,38 @@ function createCryptoBody(row, key) {
     price: row.price != null ? String(row.price) : '',
     sl: row.sl != null ? String(row.sl) : '',
     tp: row.tp != null ? String(row.tp) : '',
+    risk: EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига, // як у FX: Risk $, використовується для автоперерахунку qty
     tpTouched: row.tp != null, // если TP пришёл с хуком — не перезатираем авто-логикой
   };
   let tpTouched = !!saved.tpTouched;
 
   const line = el('div', 'quad-line');
+  line.style.display = 'grid';
+  line.style.gridTemplateColumns = '1fr 1fr 0.8fr 0.8fr 1fr'; // Qty, Price, SL, TP, Risk$
+  line.style.alignItems = 'center';
+  line.style.gap = line.style.gap || '8px';
+
   const $qty = inputNumber('Qty', 'qty');
   const $price = inputNumber('Price', 'pr');
   const $sl = inputNumber('SL', 'sl');
   const $tp = inputNumber('TP', 'tp');
+  const $risk = inputNumber('Risk $', 'risk');
 
   // restore
   $qty.value = saved.qty;
   $price.value = saved.price;
   $sl.value = saved.sl;
   $tp.value = saved.tp;
+  $risk.value = saved.risk;
 
   line.appendChild($qty);
   line.appendChild($price);
   line.appendChild($sl);
   line.appendChild($tp);
+  line.appendChild($risk);
 
   const persist = () => {
-    uiState.set(key, {qty: $qty.value, price: $price.value, sl: $sl.value, tp: $tp.value, tpTouched});
+    uiState.set(key, {qty: $qty.value, price: $price.value, sl: $sl.value, tp: $tp.value, risk: $risk.value, tpTouched});
   };
   const recomputeTP = () => {
     if (!tpTouched) {
@@ -550,10 +560,24 @@ function createCryptoBody(row, key) {
       persist();
     }
   };
+  const recomputeQtyFromRisk = () => {
+    const r = _normNum($risk.value);
+    const sl = _normNum($sl.value);
+    const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 1;
+    const tick = tickSize(row) || 1; //safe tick 1
+
+    if (isPos(r) && isSL(sl)) {
+      // Та сама формула, що й у FX: дискретність 0.01
+      let q = Math.floor((r / tick) / sl / lot / 0.001) * 0.001;
+      if (!Number.isFinite(q) || q < 0) q = 0;
+      $qty.value = String(q);
+    }
+    persist();
+  };
 
   const body = {
     type: 'crypto',
-    line, $qty, $price, $sl, $tp,
+    line, $qty, $price, $sl, $tp, $risk,
     setButtons($btns) {
       this._btns = $btns;
     },
@@ -603,8 +627,14 @@ function createCryptoBody(row, key) {
   };
 
   // wiring
+  $risk.addEventListener('input', () => {
+    markTouched(row.ticker);
+    recomputeQtyFromRisk();
+    body.validate();
+  });
   $sl.addEventListener('input', () => {
     markTouched(row.ticker);
+    recomputeQtyFromRisk();
     recomputeTP();
     body.validate();
   });
@@ -624,6 +654,8 @@ function createCryptoBody(row, key) {
     persist();
   });
 
+  // Автопочатковий розрахунок qty з Risk/SL (якщо задано)
+  recomputeQtyFromRisk();
   persist();
   return body;
 }
