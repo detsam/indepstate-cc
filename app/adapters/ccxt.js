@@ -53,6 +53,13 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     // Pending та події підтвердження/відхилення (для UI)
     this.events = new (require('events').EventEmitter)();
     this.pending = new Map(); // cid -> { order, createdAt }
+
+    // Трекінг позицій/замовлень для подій як у DWX
+    this._ticketToSymbol = new Map(); // ticket(providerOrderId) -> mappedSymbol
+    this._ticketOpened = new Set();   // ticket -> boolean (позиція відкрита)
+    this.watchIntervalMs = Number.isFinite(cfg.watchIntervalMs) ? cfg.watchIntervalMs : 2000;
+    this._watchTimer = null;
+    this._startWatchLoop();
   }
 
   async ensureReady() {
@@ -169,6 +176,57 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       return id ? String(id) : '';
     } catch {
       return '';
+    }
+  }
+
+  _startWatchLoop() {
+    if (this._watchTimer || typeof this.exchange.fetchPositions !== 'function') return;
+    this._watchTimer = setInterval(() => {
+      this._watchOnce().catch(() => {});
+    }, Math.max(500, this.watchIntervalMs));
+    // перша ітерація
+    this._watchOnce().catch(() => {});
+  }
+
+  async _watchOnce() {
+    try {
+      // якщо нема нічого відстежувати — пропускаємо (економимо ліміти)
+      if (this._ticketToSymbol.size === 0) return;
+
+      // 1) Позиції: будуємо map символ -> net size
+      let positions = [];
+      try { positions = await this.exchange.fetchPositions(); } catch { positions = []; }
+      const sizeBySymbol = new Map();
+      const pnlBySymbol = new Map();
+
+      for (const p of positions || []) {
+        const sym = p?.symbol || p?.info?.symbol || p?.info?.instId;
+        if (!sym) continue;
+        // спробуємо нормалізувати розмір
+        const sz = Number(p?.contracts ?? p?.positionAmt ?? p?.size ?? p?.info?.positionAmt ?? p?.info?.pos ?? 0);
+        const net = Number(sizeBySymbol.get(sym) || 0) + (Number.isFinite(sz) ? sz : 0);
+        sizeBySymbol.set(sym, net);
+        const upnl = Number(p?.unrealizedPnl ?? p?.info?.unrealizedPnl ?? p?.info?.upl ?? 0);
+        pnlBySymbol.set(sym, upnl);
+      }
+
+      // 2) Для кожного ticket (оригінальна заявка) дивимось символ і зміну стану
+      for (const [ticket, sym] of this._ticketToSymbol.entries()) {
+        const szNow = Number(sizeBySymbol.get(sym) || 0);
+        const wasOpen = this._ticketOpened.has(ticket);
+        if (!wasOpen && szNow !== 0) {
+          // відкрилася позиція
+          this._ticketOpened.add(ticket);
+          this.events.emit('position:opened', { ticket, order: { symbol: sym, size: szNow } });
+        } else if (wasOpen && szNow === 0) {
+          // позиція закрилась
+          this._ticketOpened.delete(ticket);
+          const profit = pnlBySymbol.has(sym) ? Number(pnlBySymbol.get(sym)) : undefined;
+          this.events.emit('position:closed', { ticket, trade: { profit } });
+        }
+      }
+    } catch {
+      // ignore watcher errors
     }
   }
 
@@ -299,6 +357,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           clearInterval(timer);
           this._parentWatchers.delete(parentId);
           await this._cancelChildOrders(parentId);
+          // повідомимо UI про відміну ордера
+          this.events.emit('order:cancelled', { ticket: parentId });
         } else if (st === 'closed') {
           clearInterval(timer);
           this._parentWatchers.delete(parentId);
@@ -433,6 +493,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           // Підтвердження для UI
           if (this.pending.has(cid)) {
             this.pending.delete(cid);
+
+            // збережемо прив'язку ticket -> symbol для подальшого трекінгу позиції
+            if (providerOrderId) this._ticketToSymbol.set(providerOrderId, symbol);
+
             this.events.emit('order:confirmed', {
               pendingId: cid,
               ticket: providerOrderId,
