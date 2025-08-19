@@ -420,7 +420,7 @@ class dwx_client {
           if (!fssync.existsSync(file_path)) {
             try {
               const handle = await fs.open(file_path, 'w');
-              await handler.writeFile(`<:${this.command_id}|${command}|${content}:>`);
+              await handle.writeFile(`<:${this.command_id}|${command}|${content}:>`);
               await handle.close();
               success = true;
               break;
