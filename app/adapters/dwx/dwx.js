@@ -17,6 +17,10 @@ class DWXAdapter extends ExecutionAdapter {
     super();
     if (!cfg?.metatraderDirPath) throw new Error('[DWXAdapter] metatraderDirPath is required');
 
+    this.cfg = {
+      openOrderRetryDelayMs: cfg?.openOrderRetryDelayMs ?? 25,
+    };
+
     this.provider = cfg.provider || 'dwx-mt5';
     this.verbose = !!cfg.verbose;
 
@@ -158,6 +162,7 @@ class DWXAdapter extends ExecutionAdapter {
   async #retryOrder(cid) {
     const p = this.pending.get(cid);
     if (!p) return;
+    await new Promise(r => setTimeout(r, this.cfg.openOrderRetryDelayMs));
     try {
       p.cycles++;
       this.events.emit('order:retry', { pendingId: cid, count: p.cycles });

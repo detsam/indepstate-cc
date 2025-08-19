@@ -242,11 +242,12 @@ Configuration options (constructor):
 
 The adapter retries placement **only** when the DWX client reports an
 `OPEN_ORDER` error for the order's CID. Errors are delivered via
-`on_message` events and immediately trigger a resend with
+`on_message` events and, after a delay controlled by
+`openOrderRetryDelayMs` (default **25 ms**), trigger a resend with
 `order:retry { pendingId, count }` (with `count` starting at `1`).
-Between attempts the adapter simply waits for either a confirmation or an error;
-there is no timeout-based rejection. Retries can be stopped via
-`stopOpenOrder(pendingId)` which clears the pending state.
+Between attempts the adapter simply waits for either a confirmation or
+an error; there is no timeout-based rejection. Retries can be stopped
+via `stopOpenOrder(pendingId)` which clears the pending state.
 
 ---
 
