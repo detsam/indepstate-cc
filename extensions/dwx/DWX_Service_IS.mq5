@@ -12,7 +12,7 @@
 //+--------------------------------------------------------------+
 #property copyright "Copyright 2017-2021, Darwinex Labs."
 #property link      "https://www.darwinex.com/"
-#property version   "1.0"
+#property version   "1.1"
 #property strict
 
 /*
@@ -770,7 +770,7 @@ void GetHistoricData(string dataStr) {
 
    text += "}}";
    for (int i=0; i<5; i++) {
-      if (WriteToFile(filePathHistoricData, text)) break;
+      if (WriteToFileAtomic(filePathHistoricData, text, 0)) break;
       Sleep(100);
    }
    SendInfo(StringFormat("Successfully read historic data for %s_%s.", symbol, data[1]));
@@ -814,7 +814,7 @@ void GetHistoricTrades(string dataStr) {
 
    text += "}";
    for (int i=0; i<5; i++) {
-      if (WriteToFile(filePathHistoricTrades, text)) break;
+      if (WriteToFileAtomic(filePathHistoricTrades, text, 0)) break;
       Sleep(100);
    }
    SendInfo("Successfully read historic trades.");
@@ -855,7 +855,7 @@ void CheckMarketData() {
 
 
 
-   if (WriteToFile(filePathMarketData, text)) {
+   if (WriteToFileAtomic(filePathMarketData, text, 0)) {
       lastMarketDataText = text;
    }
 }
@@ -896,7 +896,7 @@ void CheckBarData() {
 
    text = StringSubstr(text, 0, StringLen(text)-2) + "}";
    for (int i=0; i<5; i++) {
-      if (WriteToFile(filePathBarData, text)) break;
+      if (WriteToFileAtomic(filePathBarData, text, 0)) break;
       Sleep(100);
    }
 }
@@ -1034,7 +1034,7 @@ void CheckOpenOrders() {
    // if there are open positions, it will almost always be different because of open profit/loss.
    // update at least once per second in case there was a problem during writing.
    if (text == lastOrderText && GetTickCount() < lastUpdateOrdersMillis + 1000) return;
-   if (WriteToFile(filePathOrders, text)) {
+   if (WriteToFileAtomic(filePathOrders, text, 0)) {
       lastUpdateOrdersMillis = GetTickCount();
       lastOrderText = text;
    }
