@@ -286,6 +286,14 @@ function ensureInstrument(ticker) {
   });
 }
 
+function forgetInstrument(ticker) {
+  if (!ticker) return;
+  if (state.rows.some(r => r.ticker === ticker)) return;
+  instrumentInfo.delete(ticker);
+  pendingInstruments.delete(ticker);
+  ipcRenderer.invoke('instrument:forget', ticker).catch(() => {});
+}
+
 // Періодичне оновлення інструментної інформації для всіх видимих карток
 (function refreshAllInstrumentsPeriodically() {
   let running = false;
@@ -1024,6 +1032,7 @@ function removeRow(row) {
   clearPendingByKey(key);
   userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
   render();
+  forgetInstrument(row.ticker);
 }
 
 function removeRowByKey(key) {
@@ -1036,6 +1045,7 @@ function removeRowByKey(key) {
     clearPendingByKey(key);
     userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
     render();
+    forgetInstrument(row.ticker);
   }
 }
 

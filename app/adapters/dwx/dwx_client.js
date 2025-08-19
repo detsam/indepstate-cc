@@ -419,7 +419,9 @@ class dwx_client {
           const file_path = `${this.path_commands_prefix}${i}.txt`;
           if (!fssync.existsSync(file_path)) {
             try {
-              await fs.writeFile(file_path, `<:${this.command_id}|${command}|${content}:>`);
+              const handle = await fs.open(file_path, 'w');
+              await handle.writeFile(`<:${this.command_id}|${command}|${content}:>`);
+              await handle.close();
               success = true;
               break;
             } catch (e) {
