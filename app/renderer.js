@@ -15,6 +15,36 @@ const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
   ? envInstrRefresh
   : Number(orderCardsCfg?.instrumentRefreshMs) || 1000;
 
+const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ignore';
+
+const closedCardStrategies = {
+  ignore: () => {},
+  revive: ({ row, idx, oldRow, oldKey }) => {
+    userTouchedByTicker.delete(row.ticker);
+    setCardState(oldKey, null);
+    const newRow = { ...oldRow, ...row };
+    const newKey = rowKey(newRow);
+    state.rows[idx] = newRow;
+    migrateKey(oldKey, newKey, {
+      preserveUi: false,
+      nextUiPatch: (prevUi) => {
+        const patch = {};
+        if (row.qty != null) patch.qty = String(row.qty);
+        if (row.price != null) patch.price = String(row.price);
+        if (row.sl != null) patch.sl = String(row.sl);
+        if (row.tp != null) patch.tp = String(row.tp);
+        return patch;
+      }
+    });
+    const updated = state.rows.splice(idx, 1)[0];
+    state.rows.unshift(updated);
+    if (state.rows.length > 500) state.rows.length = 500;
+    render();
+  }
+};
+
+const handleClosedCard = closedCardStrategies[CLOSED_CARD_EVENT_STRATEGY] || closedCardStrategies.ignore;
+
 // ======= App state =======
 const state = {rows: [], filter: '', autoscroll: true};
 
@@ -1165,8 +1195,15 @@ ipcRenderer.on('orders:new', (_evt, row) => {
     render();
     return;
   }
-
   // карточка для тикера уже есть
+  const oldRow = state.rows[idx];
+  const oldKey = rowKey(oldRow);
+  const st = cardStates.get(oldKey);
+  if (st === 'profit' || st === 'loss') {
+    handleClosedCard({ row, idx, oldRow, oldKey });
+    return;
+  }
+
   const touched = isTouched(row.ticker);
 
   if (touched) {
@@ -1178,11 +1215,7 @@ ipcRenderer.on('orders:new', (_evt, row) => {
   }
 
   // пользователь не менял: обновляем данными последнего ивента + переносим наверх
-  const oldRow = state.rows[idx];
-  const oldKey = rowKey(oldRow);
-
-  // формируем новую запись на основе старой + новые поля из ивента
-  const newRow = {...oldRow, ...row};
+  const newRow = { ...oldRow, ...row };
   const newKey = rowKey(newRow);
 
   // подменяем строку
