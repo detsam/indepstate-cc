@@ -412,21 +412,19 @@ class dwx_client {
     try {
       this.command_id = (this.command_id + 1) % 100000;
       const endTime = Date.now() + this.max_retry_command_seconds * 1000;
-
+  
       while (Date.now() < endTime) {
         let success = false;
         for (let i = 0; i < this.num_command_files; i++) {
           const file_path = `${this.path_commands_prefix}${i}.txt`;
-          if (!fssync.existsSync(file_path)) {
-            try {
-              const handle = await fs.open(file_path, 'w');
-              await handle.writeFile(`<:${this.command_id}|${command}|${content}:>`);
-              await handle.close();
-              success = true;
-              break;
-            } catch (e) {
-              if (this.verbose) console.warn(e);
-            }
+          try {
+            const handle = await fs.open(file_path, 'wx'); // fail if exists
+            await handle.writeFile(`<:${this.command_id}|${command}|${content}:>`);
+            await handle.close();
+            success = true;
+            break;
+          } catch (e) {
+            if (e.code !== 'EEXIST' && this.verbose) console.warn(e);
           }
         }
         if (success) break;
