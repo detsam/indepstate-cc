@@ -292,13 +292,13 @@ function isTouched(ticker) {
 
 const pendingInstruments = new Set();
 
-function ensureInstrument(ticker) {
+function ensureInstrument(ticker, provider) {
   if (!ticker) return;
-  if (!state.rows.some(r => r.ticker === ticker)) return; // card removed
+  if (!state.rows.some(r => r.ticker === ticker && r.provider === provider)) return; // card removed
   if (instrumentInfo.has(ticker)) return; // already have data
   if (pendingInstruments.has(ticker)) return; // request in-flight
   pendingInstruments.add(ticker);
-  ipcRenderer.invoke('instrument:get', ticker).then(info => {
+  ipcRenderer.invoke('instrument:get', { symbol: ticker, provider }).then(info => {
     if (info) {
       pendingInstruments.delete(ticker);
       instrumentInfo.set(ticker, info);
@@ -306,23 +306,23 @@ function ensureInstrument(ticker) {
     } else {
       setTimeout(() => {
         pendingInstruments.delete(ticker);
-        ensureInstrument(ticker);
+        ensureInstrument(ticker, provider);
       }, 1000);
     }
   }).catch(() => {
     setTimeout(() => {
       pendingInstruments.delete(ticker);
-      ensureInstrument(ticker);
+      ensureInstrument(ticker, provider);
     }, 1000);
   });
 }
 
-function forgetInstrument(ticker) {
+function forgetInstrument(ticker, provider) {
   if (!ticker) return;
-  if (state.rows.some(r => r.ticker === ticker)) return;
+  if (state.rows.some(r => r.ticker === ticker && r.provider === provider)) return;
   instrumentInfo.delete(ticker);
   pendingInstruments.delete(ticker);
-  ipcRenderer.invoke('instrument:forget', ticker).catch(() => {});
+  ipcRenderer.invoke('instrument:forget', { symbol: ticker, provider }).catch(() => {});
 }
 
 // Періодичне оновлення інструментної інформації для всіх видимих карток
@@ -336,14 +336,15 @@ function forgetInstrument(ticker) {
       if (!tickers.length) return;
 
       await Promise.all(tickers.map(async (t) => {
-        // пропускаємо, якщо картки вже немає
-        if (!state.rows.some(r => r.ticker === t)) return;
+        const row = state.rows.find(r => r.ticker === t);
+        if (!row) return; // пропускаємо, якщо картки вже немає
+        const provider = row.provider;
         // не дублюємо запит, якщо вже є активний
         if (pendingInstruments.has(t)) return;
 
         pendingInstruments.add(t);
         try {
-          const info = await ipcRenderer.invoke('instrument:get', t);
+          const info = await ipcRenderer.invoke('instrument:get', { symbol: t, provider });
           if (info) {
             const prev = instrumentInfo.get(t);
             instrumentInfo.set(t, info);
@@ -429,7 +430,7 @@ function createCard(row, index) {
   const key = rowKey(row);
 
   // ensure we have a quote for this symbol ASAP
-  ensureInstrument(row.ticker);
+  ensureInstrument(row.ticker, row.provider);
 
   const card = el('div', 'card');
   card.setAttribute('data-rowkey', key);
@@ -1105,7 +1106,7 @@ function removeRow(row) {
   clearPendingByKey(key);
   userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
   render();
-  forgetInstrument(row.ticker);
+  forgetInstrument(row.ticker, row.provider);
 }
 
 function removeRowByKey(key) {
@@ -1118,7 +1119,7 @@ function removeRowByKey(key) {
     clearPendingByKey(key);
     userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
     render();
-    forgetInstrument(row.ticker);
+    forgetInstrument(row.ticker, row.provider);
   }
 }
 

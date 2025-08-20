@@ -197,6 +197,9 @@ app.whenReady().then(() => {
       ...src,
       nowTs,
       onRow(row) {
+        const ticker = row.ticker || row.symbol;
+        const instrumentType = detectInstrumentType(String(ticker || ''));
+        row.provider = pickAdapterName(instrumentType);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('orders:new', row);
         }
@@ -214,7 +217,12 @@ app.whenReady().then(() => {
   orderCardService = {
     async getOrdersList(rows = 100) {
       const lists = await Promise.all(orderCardServices.map((s) => s.getOrdersList(rows)));
-      return lists.flat().sort((a, b) => (b.time || 0) - (a.time || 0));
+      const combined = lists.flat().sort((a, b) => (b.time || 0) - (a.time || 0));
+      return combined.map((row) => {
+        const ticker = row.ticker || row.symbol;
+        const instrumentType = detectInstrumentType(String(ticker || ''));
+        return { ...row, provider: row.provider || pickAdapterName(instrumentType) };
+      });
     }
   };
 
@@ -478,10 +486,12 @@ function setupIpc(orderSvc) {
     }
   });
 
-  ipcMain.handle('instrument:get', async (_evt, symbol) => {
+  ipcMain.handle('instrument:get', async (_evt, arg) => {
     try {
+      const symbol = typeof arg === 'object' ? arg.symbol : arg;
+      const provider = typeof arg === 'object' ? arg.provider : undefined;
       const instrumentType = detectInstrumentType(String(symbol || ''));
-      const adapterName = pickAdapterName(instrumentType);
+      const adapterName = provider || pickAdapterName(instrumentType);
       const adapter = getAdapter(adapterName);
       const q = await adapter.getQuote?.(String(symbol || ''));
       return q || null;
@@ -490,10 +500,12 @@ function setupIpc(orderSvc) {
     }
   });
 
-  ipcMain.handle('instrument:forget', async (_evt, symbol) => {
+  ipcMain.handle('instrument:forget', async (_evt, arg) => {
     try {
+      const symbol = typeof arg === 'object' ? arg.symbol : arg;
+      const provider = typeof arg === 'object' ? arg.provider : undefined;
       const instrumentType = detectInstrumentType(String(symbol || ''));
-      const adapterName = pickAdapterName(instrumentType);
+      const adapterName = provider || pickAdapterName(instrumentType);
       const adapter = getAdapter(adapterName);
       await adapter.forgetQuote?.(String(symbol || ''));
       return true;
