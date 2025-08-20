@@ -33,7 +33,8 @@ contents onto the defaults bundled in this directory.
 
 The `order-cards.json` file lists every source that can feed order cards into the
 application. The file contains a single object with a `sources` array and optional
-settings such as a default stop value in dollars for equity cards:
+settings such as a default stop value in dollars for equity cards or how to treat
+events for cards already in a final state:
 
 ```json
 {
@@ -41,7 +42,8 @@ settings such as a default stop value in dollars for equity cards:
     { "type": "webhook" },
     { "type": "file", "pathEnvVar": "ORDER_CARDS_PATH", "pollMs": 1000 }
   ],
-  "defaultEquityStopUsd": 50
+  "defaultEquityStopUsd": 50,
+  "closedCardEventStrategy": "ignore"
 }
 ```
 
@@ -52,6 +54,11 @@ merged together.
 If `defaultEquityStopUsd` is present, its numeric value (in dollars) is used as a
 pre-filled Risk $ field for new equity order cards. The
 `DEFAULT_EQUITY_STOP_USD` environment variable (if set) overrides this value.
+
+`closedCardEventStrategy` determines how the app handles a new order event for a
+ticker whose card is already closed (`take`/`stop`). When set to `"ignore"`
+(default) such events are discarded. Setting it to `"revive"` reactivates the
+card with the fresh data, making it ready for a new order.
 
 ## Source types
 
