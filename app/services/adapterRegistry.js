@@ -45,38 +45,43 @@ function resolveSecrets(obj){
   return out;
 }
 
-function buildAdapter(name, cfg){
-  const n = String(name || '').toLowerCase();
+function buildAdapter(providerName, cfg){
+  const { adapter: adapterName, ...adapterCfg } = cfg || {};
+  if (!adapterName) {
+    throw new Error(`[adapterRegistry] provider "${providerName}" must specify an adapter`);
+  }
+  const n = String(adapterName).toLowerCase();
 
   // CCXT сімейство: дозволяємо імена 'ccxt', 'ccxt:binance', 'ccxt-binance-futures' тощо
   if (n === 'ccxt' || n.startsWith('ccxt:') || n.startsWith('ccxt-')) {
     const { CCXTExecutionAdapter } = require('../adapters/ccxt');
-    const inst = new CCXTExecutionAdapter(cfg || {});
+    const inst = new CCXTExecutionAdapter(adapterCfg);
     // зберігаємо оригінальну назву провайдера (корисно для логів/подій)
-    inst.provider = name;
+    inst.provider = providerName;
     return inst;
   }
 
   switch (n) {
     case 'j2t': {
       const { J2TExecutionAdapter } = require('../adapters/j2t');
-      const inst = new J2TExecutionAdapter(cfg || {});
-      inst.provider = 'j2t';
+      const inst = new J2TExecutionAdapter(adapterCfg);
+      inst.provider = providerName;
       return inst;
     }
     case 'dwx': {
       const { DWXAdapter } = require('../adapters/dwx/dwx');
-      const inst = new DWXAdapter(cfg || {});
-      inst.provider = 'dwx';
+      const inst = new DWXAdapter(adapterCfg);
+      inst.provider = providerName;
       return inst;
     }
-    case 'simulated':
-    default: {
+    case 'simulated': {
       const { SimulatedExecutionAdapter } = require('../adapters/simulated');
-      const inst = new SimulatedExecutionAdapter(cfg || {});
-      inst.provider = 'simulated';
+      const inst = new SimulatedExecutionAdapter(adapterCfg);
+      inst.provider = providerName;
       return inst;
     }
+    default:
+      throw new Error(`[adapterRegistry] unknown adapter "${adapterName}" for provider "${providerName}"`);
   }
 }
 

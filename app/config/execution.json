@@ -7,7 +7,11 @@
         "CFD": "dwx"
     },
     "providers": {
+        "simulated": {
+            "adapter": "simulated"
+        },
         "j2t": {
+            "adapter": "j2t",
             "baseURL": "https://api.j2t.com",
             "accountId": "${ENV:J2T_ACCOUNT_ID}",
             "accessToken": "${ENV:J2T_TOKEN}",
@@ -15,10 +19,12 @@
             "defaultDuration": "gtc"
         },
         "dwx": {
+            "adapter": "dwx",
             "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}",
             "openOrderRetryDelayMs": 500
         },
         "ccxt-binance-futures": {
+          "adapter": "ccxt",
           "exchangeId": "binance",
           "apiKey": "${ENV:BINANCE_API_KEY}",
           "secret": "${ENV:BINANCE_API_SECRET}",
