@@ -63,7 +63,7 @@ const pendingIndex = new Map(); // pendingId(cID) -> { reqId, adapter, order, ts
 const trackerPending = new Map(); // reqId -> { ticker, tp, sp }
 const trackerIndex = new Map(); // ticket -> { ticker, tp, sp }
 
-function wireAdapter(adapter, adapterName) {
+function wireAdapter(adapter, providerName) {
   if (!adapter?.on || wiredAdapters.has(adapter)) return;
   wiredAdapters.add(adapter);
 
@@ -75,7 +75,7 @@ function wireAdapter(adapter, adapterName) {
     const payload = {
       ts: nowTs(),
       reqId: rec.reqId,
-      provider: adapterName,
+      provider: providerName,
       status: 'ok',
       providerOrderId: String(ticket || ''),
       pendingId,
@@ -101,7 +101,7 @@ function wireAdapter(adapter, adapterName) {
     const payload = {
       ts: nowTs(),
       reqId: rec.reqId,
-      provider: adapterName,
+      provider: providerName,
       status: 'rejected',
       reason: reason || 'EA error',
       pendingId,
@@ -124,14 +124,14 @@ function wireAdapter(adapter, adapterName) {
   });
 
   adapter.on('position:opened', ({ ticket, order, origOrder }) => {
-    events.emit('position:opened', { ticket, order, origOrder, adapter: adapterName });
+    events.emit('position:opened', { ticket, order, origOrder, provider: providerName });
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('position:opened', { ticket, order, origOrder, provider: adapterName });
+      mainWindow.webContents.send('position:opened', { ticket, order, origOrder, provider: providerName });
     }
   });
 
   adapter.on('position:closed', ({ ticket, trade }) => {
-    events.emit('position:closed', { ticket, trade, adapter: adapterName });
+    events.emit('position:closed', { ticket, trade, provider: providerName });
     const profit = trade?.profit;
     const info = trackerIndex.get(String(ticket));
     if (info) {
@@ -148,15 +148,15 @@ function wireAdapter(adapter, adapterName) {
       trackerIndex.delete(String(ticket));
     }
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('position:closed', { ticket, trade, profit, provider: adapterName });
+      mainWindow.webContents.send('position:closed', { ticket, trade, profit, provider: providerName });
     }
   });
 
   adapter.on('order:cancelled', ({ ticket }) => {
-    events.emit('order:cancelled', { ticket, adapter: adapterName });
+    events.emit('order:cancelled', { ticket, provider: providerName });
     trackerIndex.delete(String(ticket));
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('order:cancelled', { ticket, provider: adapterName });
+      mainWindow.webContents.send('order:cancelled', { ticket, provider: providerName });
     }
   });
 }
@@ -197,6 +197,9 @@ app.whenReady().then(() => {
       ...src,
       nowTs,
       onRow(row) {
+        const ticker = row.ticker || row.symbol;
+        const instrumentType = detectInstrumentType(String(ticker || ''));
+        row.provider = pickProviderName(instrumentType);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('orders:new', row);
         }
@@ -214,7 +217,12 @@ app.whenReady().then(() => {
   orderCardService = {
     async getOrdersList(rows = 100) {
       const lists = await Promise.all(orderCardServices.map((s) => s.getOrdersList(rows)));
-      return lists.flat().sort((a, b) => (b.time || 0) - (a.time || 0));
+      const combined = lists.flat().sort((a, b) => (b.time || 0) - (a.time || 0));
+      return combined.map((row) => {
+        const ticker = row.ticker || row.symbol;
+        const instrumentType = detectInstrumentType(String(ticker || ''));
+        return { ...row, provider: row.provider || pickProviderName(instrumentType) };
+      });
     }
   };
 
@@ -289,7 +297,7 @@ function validateOrder(order) {
   }
 }
 
-function pickAdapterName(instrumentType) {
+function pickProviderName(instrumentType) {
   return execCfg.byInstrumentType?.[instrumentType] || execCfg.default || 'simulated';
 }
 
@@ -333,7 +341,7 @@ function setupIpc(orderSvc) {
     }
 
     // выбор адаптера, requestId и нормализация под исполнение
-    const adapterName = pickAdapterName(order.instrumentType);
+    const providerName = pickProviderName(order.instrumentType);
     let execOrder;
     try {
       const ts = nowTs();
@@ -354,24 +362,24 @@ function setupIpc(orderSvc) {
 
       execOrder = normalizeEquityOrderForExecution(order);
 
-      const adapter = getAdapter(adapterName);
+      const adapter = getAdapter(providerName);
       // разово подключим слушатели подтверждений (если адаптер их поддерживает)
-      wireAdapter(adapter, adapterName);
+      wireAdapter(adapter, providerName);
 
       const quote = await adapter.getQuote?.(execOrder.symbol);
       if (!quote || !Number.isFinite(quote.price)) {
-        const rej = { status: 'rejected', provider: adapterName, reason: 'No quote' };
-        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, adapter: adapterName, order: execOrder, result: rej });
+        const rej = { status: 'rejected', provider: providerName, reason: 'No quote' };
+        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, provider: providerName, order: execOrder, result: rej });
         return rej;
       }
       const rule = tradeRules.validate(execOrder, quote);
       if (!rule.ok) {
-        const rej = { status: 'rejected', provider: adapterName, reason: rule.reason };
-        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, adapter: adapterName, order: execOrder, result: rej });
+        const rej = { status: 'rejected', provider: providerName, reason: rule.reason };
+        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, provider: providerName, order: execOrder, result: rej });
         return rej;
       }
 
-      console.log('[EXEC][REQ]', { adapter: adapterName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price, sl: execOrder.sl, tp: execOrder.tp });
+      console.log('[EXEC][REQ]', { provider: providerName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price, sl: execOrder.sl, tp: execOrder.tp });
 
       const result = await adapter.placeOrder(execOrder);
 
@@ -380,13 +388,13 @@ function setupIpc(orderSvc) {
       const maybePending = String(result?.providerOrderId || '');
       if (maybePending.startsWith('pending:')) {
         const pendingId = maybePending.slice('pending:'.length);
-        pendingIndex.set(pendingId, { reqId, adapter, adapterName, order: execOrder, ts });
+        pendingIndex.set(pendingId, { reqId, adapter, providerName, order: execOrder, ts });
 
         appendJsonl(EXEC_LOG, {
           t: ts,
           kind: 'place-queued',
           reqId,
-          adapter: adapterName,
+          provider: providerName,
           pendingId,
           order: execOrder
         });
@@ -395,18 +403,18 @@ function setupIpc(orderSvc) {
           mainWindow.webContents.send('execution:pending', {
             ts,
             reqId,
-            provider: adapterName,
+            provider: providerName,
             pendingId,
             order: execOrder
           });
         }
 
-        events.emit('order:placed', { order: execOrder, result: { status: 'ok', provider: adapterName, providerOrderId: result.providerOrderId } });
+        events.emit('order:placed', { order: execOrder, result: { status: 'ok', provider: providerName, providerOrderId: result.providerOrderId } });
 
         console.log('[EXEC][QUEUED]', { reqId, pendingId });
         // для синхронного ответа IPC можно вернуть «ok» с pendingId,
         // но UI должен ждать финального события 'execution:result'
-        return { status: 'ok', provider: adapterName, providerOrderId: result.providerOrderId };
+        return { status: 'ok', provider: providerName, providerOrderId: result.providerOrderId };
       }
 
       // иначе — поведение как раньше (simulated/rejected/другие адаптеры)
@@ -415,7 +423,7 @@ function setupIpc(orderSvc) {
         kind: 'place',
         reqId,
         valid: true,
-        adapter: (result && result.provider) || adapterName,
+        provider: (result && result.provider) || providerName,
         order: execOrder,
         result
       };
@@ -425,7 +433,7 @@ function setupIpc(orderSvc) {
         mainWindow.webContents.send('execution:result', {
           ts,
           reqId,
-          provider: execRecord.adapter,
+          provider: execRecord.provider,
           status: result?.status || 'rejected',
           reason: result?.reason,
           providerOrderId: result?.providerOrderId,
@@ -439,7 +447,7 @@ function setupIpc(orderSvc) {
       }
       trackerPending.delete(reqId);
 
-      events.emit('order:placed', { order: execOrder, result: { status: result?.status || 'rejected', provider: execRecord.adapter, providerOrderId: result?.providerOrderId, reason: result?.reason } });
+      events.emit('order:placed', { order: execOrder, result: { status: result?.status || 'rejected', provider: execRecord.provider, providerOrderId: result?.providerOrderId, reason: result?.reason } });
 
       console.log('[EXEC][RES]', { reqId, status: result?.status, reason: result?.reason, providerOrderId: result?.providerOrderId });
       return result;
@@ -451,15 +459,15 @@ function setupIpc(orderSvc) {
         mainWindow.webContents.send('execution:result', {
           ts: nowTs(),
           reqId: order?.meta?.requestId,
-          provider: adapterName,
+          provider: providerName,
           status: 'rejected',
           reason: rej.reason,
           order
         });
       }
       trackerPending.delete(order?.meta?.requestId);
-      console.log('[EXEC][ERR]', { adapter: adapterName, reqId: order?.meta?.requestId, error: String(err) });
-      events.emit('order:placed', { order: execOrder, result: { status: 'rejected', provider: adapterName, reason: rej.reason } });
+      console.log('[EXEC][ERR]', { provider: providerName, reqId: order?.meta?.requestId, error: String(err) });
+      events.emit('order:placed', { order: execOrder, result: { status: 'rejected', provider: providerName, reason: rej.reason } });
       return rej;
     }
   });
@@ -478,11 +486,13 @@ function setupIpc(orderSvc) {
     }
   });
 
-  ipcMain.handle('instrument:get', async (_evt, symbol) => {
+  ipcMain.handle('instrument:get', async (_evt, arg) => {
     try {
+      const symbol = typeof arg === 'object' ? arg.symbol : arg;
+      const provider = typeof arg === 'object' ? arg.provider : undefined;
       const instrumentType = detectInstrumentType(String(symbol || ''));
-      const adapterName = pickAdapterName(instrumentType);
-      const adapter = getAdapter(adapterName);
+      const providerName = provider || pickProviderName(instrumentType);
+      const adapter = getAdapter(providerName);
       const q = await adapter.getQuote?.(String(symbol || ''));
       return q || null;
     } catch {
@@ -490,11 +500,13 @@ function setupIpc(orderSvc) {
     }
   });
 
-  ipcMain.handle('instrument:forget', async (_evt, symbol) => {
+  ipcMain.handle('instrument:forget', async (_evt, arg) => {
     try {
+      const symbol = typeof arg === 'object' ? arg.symbol : arg;
+      const provider = typeof arg === 'object' ? arg.provider : undefined;
       const instrumentType = detectInstrumentType(String(symbol || ''));
-      const adapterName = pickAdapterName(instrumentType);
-      const adapter = getAdapter(adapterName);
+      const providerName = provider || pickProviderName(instrumentType);
+      const adapter = getAdapter(providerName);
       await adapter.forgetQuote?.(String(symbol || ''));
       return true;
     } catch {
