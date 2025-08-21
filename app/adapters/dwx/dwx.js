@@ -283,6 +283,19 @@ class DWXAdapter extends ExecutionAdapter {
     return Object.values(this.client.open_orders || {});
   }
 
+  async findClosedTradeByCid(cid, lookbackDays = 30, timeoutMs = 2000) {
+    if (!cid) return null;
+    try { await this.client.get_historic_trades(lookbackDays); } catch {}
+    const end = Date.now() + timeoutMs;
+    while (Date.now() < end) {
+      const trades = Object.values(this.client.historic_trades || {});
+      const hit = trades.find(t => String(t.comment || '').includes(cid) && t.entry === 'out');
+      if (hit) return hit;
+      await new Promise(r => setTimeout(r, 200));
+    }
+    return null;
+  }
+
   async listClosedPositions() {
     return Object.values(this.client.historic_trades || {});
   }
