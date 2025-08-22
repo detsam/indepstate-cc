@@ -48,6 +48,7 @@ class DWXAdapter extends ExecutionAdapter {
       on_historic_data: (...a) => userHandler.on_historic_data?.(...a),
       on_historic_trades() {
         // при появлении новых исторических сделок проверим закрытие позиций
+        self.events.emit('dwx:historic_trades');
         self.#reconcilePendingWithOpenOrders();
         userHandler.on_historic_trades?.();
       },
@@ -283,6 +284,34 @@ class DWXAdapter extends ExecutionAdapter {
     return Object.values(this.client.open_orders || {});
   }
 
+  async findClosedTradeByCid(cid, lookbackDays = 30, timeoutMs = 2000) {
+    if (!cid) return null;
+    let timer;
+    const trades = await new Promise(resolve => {
+      const handler = () => {
+        clearTimeout(timer);
+        this.events.off('dwx:historic_trades', handler);
+        resolve(Object.values(this.client.historic_trades || {}));
+      };
+      timer = setTimeout(() => {
+        this.events.off('dwx:historic_trades', handler);
+        resolve(Object.values(this.client.historic_trades || {}));
+      }, timeoutMs);
+      this.events.on('dwx:historic_trades', handler);
+      try { this.client.get_historic_trades(lookbackDays); } catch {}
+    });
+    if (!trades.length) return null;
+    trades.sort((a, b) => parseDealTime(a?.deal_time) - parseDealTime(b?.deal_time));
+    const tIn = trades.find(t => includesCid(t?.comment, cid) && normalizeEntry(t?.entry) === 'in');
+    if (!tIn) return null;
+    const tOut = trades.find(
+      t => normalizeEntry(t?.entry) === 'out'
+        && t?.symbol === tIn.symbol
+        && parseDealTime(t?.deal_time) >= parseDealTime(tIn.deal_time)
+    );
+    return tOut ? { ...tOut, entry: tIn } : null;
+  }
+
   async listClosedPositions() {
     return Object.values(this.client.historic_trades || {});
   }
@@ -309,6 +338,28 @@ function appendCidToComment(comment, cid) {
 function extractCid(s) {
   const m = String(s).match(/cid[:=]\s*([a-f0-9]{8,})/i);
   return m ? m[1] : null;
+}
+
+function includesCid(comment, cid) {
+  return String(comment || '').includes(cid);
+}
+
+function normalizeEntry(entry) {
+  const e = String(entry || '').toLowerCase();
+  if (e === 'in' || e === 'entry_in') return 'in';
+  if (e === 'out' || e === 'entry_out') return 'out';
+  return e;
+}
+
+function parseDealTime(s) {
+  if (!s) return 0;
+  if (typeof s === 'number') return s;
+  const [datePart, timePart] = String(s).split(' ');
+  if (!datePart || !timePart) return 0;
+  const [y, m, d] = datePart.split('.').map(Number);
+  const [H, M, S] = timePart.split(':').map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1, H || 0, M || 0, S || 0);
+  return dt.getTime();
 }
 
 function findHeuristicMatchCid(pendingMap, mtOrder) {

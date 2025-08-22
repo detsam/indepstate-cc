@@ -61,7 +61,12 @@ function ensureLogs({ truncateExecutionsOnStart = false } = {}) {
 const wiredAdapters = new WeakSet();
 const pendingIndex = new Map(); // pendingId(cID) -> { reqId, adapter, order, ts }
 const trackerPending = new Map(); // reqId -> { ticker, tp, sp }
-const trackerIndex = new Map(); // ticket -> { ticker, tp, sp }
+const trackerIndex = new Map(); // ticket -> { ticker, tp, sp, cid }
+
+function extractCid(s) {
+  const m = String(s).match(/cid[:=]\s*([a-f0-9]{8,})/i);
+  return m ? m[1] : undefined;
+}
 
 function wireAdapter(adapter, providerName) {
   if (!adapter?.on || wiredAdapters.has(adapter)) return;
@@ -87,6 +92,8 @@ function wireAdapter(adapter, providerName) {
     }
     const info = trackerPending.get(rec.reqId);
     if (info) {
+      const cid = extractCid(mtOrder?.comment || '');
+      if (cid) info.cid = cid;
       trackerIndex.set(String(ticket), info);
       trackerPending.delete(rec.reqId);
     }
@@ -130,18 +137,24 @@ function wireAdapter(adapter, providerName) {
     }
   });
 
-  adapter.on('position:closed', ({ ticket, trade }) => {
+  adapter.on('position:closed', async ({ ticket, trade }) => {
     events.emit('position:closed', { ticket, trade, provider: providerName });
-    const profit = trade?.profit;
     const info = trackerIndex.get(String(ticket));
+    let hist;
+    if (info?.cid && typeof adapter.findClosedTradeByCid === 'function') {
+      try { hist = await adapter.findClosedTradeByCid(info.cid); } catch {}
+    }
+    const profit = hist?.pnl ?? trade?.profit;
     if (info) {
       const payload = calcDealData({
         symbol: { ticker: info.ticker },
         side: info.side,
-        entryPrice: info.price,
+        entryPrice: hist?.entry?.deal_price ?? info.price,
+        exitPrice: hist?.deal_price,
         qty: info.qty,
         takeSetup: info.tp,
         stopSetup: info.sp,
+        commission: hist?.commission,
         profit
       });
       dealTrackers.notifyPositionClosed(payload);
