@@ -569,11 +569,41 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       if (!mapped) return null;
       const t = await this.exchange.fetchTicker(mapped);
       if (!t) return null;
-      const price = Number.isFinite(t.last) ? t.last :
-                    (Number.isFinite(t.bid) && Number.isFinite(t.ask)) ? (t.bid + t.ask) / 2 :
-                    undefined;
+
+      // Надійне діставання bid/ask: спочатку з уніфікованих полів, далі з info, і як fallback — orderbook
+      let bid = Number.isFinite(t.bid) ? Number(t.bid)
+        : (t.info && Number.isFinite(Number(t.info.bidPrice)) ? Number(t.info.bidPrice)
+          : (t.info && Number.isFinite(Number(t.info.bestBid)) ? Number(t.info.bestBid)
+            : (t.info && Number.isFinite(Number(t.info.b)) ? Number(t.info.b) : undefined)));
+
+      let ask = Number.isFinite(t.ask) ? Number(t.ask)
+        : (t.info && Number.isFinite(Number(t.info.askPrice)) ? Number(t.info.askPrice)
+          : (t.info && Number.isFinite(Number(t.info.bestAsk)) ? Number(t.info.bestAsk)
+            : (t.info && Number.isFinite(Number(t.info.a)) ? Number(t.info.a) : undefined)));
+
+      if ((!Number.isFinite(bid) || !Number.isFinite(ask)) && typeof this.exchange.fetchOrderBook === 'function') {
+        try {
+          const ob = await this.exchange.fetchOrderBook(mapped, 5);
+          if (!Number.isFinite(bid) && Array.isArray(ob?.bids) && ob.bids.length) {
+            const v = Number(ob.bids[0][0]);
+            if (Number.isFinite(v)) bid = v;
+          }
+          if (!Number.isFinite(ask) && Array.isArray(ob?.asks) && ob.asks.length) {
+            const v = Number(ob.asks[0][0]);
+            if (Number.isFinite(v)) ask = v;
+          }
+        } catch {
+          // ігноруємо помилку фолу до ордербука
+        }
+      }
+
+      let price = Number.isFinite(t.last) ? Number(t.last)
+        : (Number.isFinite(bid) && Number.isFinite(ask)) ? (bid + ask) / 2
+          : (Number.isFinite(Number(t.close)) ? Number(t.close)
+            : (Number.isFinite(Number(t.info?.lastPrice)) ? Number(t.info.lastPrice) : undefined));
+
       const tickSize = this._getTickSizeFromMarket(mapped);
-      return { bid: t.bid, ask: t.ask, price, tickSize };
+      return { bid, ask, price, tickSize };
     } catch {
       return null;
     }
