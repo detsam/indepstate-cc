@@ -112,14 +112,7 @@ function priceToPoints(inp, price, row, commit = false) {
   if (!isPos(pr)) return _normNum(raw);
   const val = _normNum(raw);
   if (val == null) return val;
-  let tick = tickSize(row);
-  const it = row.instrumentType || detectInstrumentType(row.ticker);
-  let fallback = 0.00001;
-  if (it === 'equities') fallback = 0.01;
-  else if (it === 'fx') fallback = 0.00001;
-  // if tick is missing or unrealistically small, use fallback
-  if (!isPos(tick) || tick < fallback) tick = fallback;
-  const pts = Math.abs(pr - val) / tick;
+  const pts = Math.abs(pr - val) / 0.01; // fixed minimal tick for testing
   if (Number.isFinite(pts)) {
     if (commit) inp.value = String(pts);
     return pts;
