@@ -1145,7 +1145,7 @@ function decimalsFromTick(tick) {
 function computeSpreadPts(info, row) {
   if (!info || !Number.isFinite(info.ask) || !Number.isFinite(info.bid)) return NaN;
   const spread = info.ask - info.bid;
-  const tick = tickSize(row) || 0.01;
+  const tick = tickSize(row) ||  (detectInstrumentType(row.ticker) === 'FX' ? 0.00001 : 0.01);
   if (!Number.isFinite(spread) || !Number.isFinite(tick) || tick <= 0) return NaN;
   const pts = spread / tick;
   if (!Number.isFinite(pts)) return NaN;
