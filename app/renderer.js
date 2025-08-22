@@ -571,6 +571,7 @@ function createCryptoBody(row, key) {
     tpTouched: row.tp != null, // если TP пришёл с хуком — не перезатираем авто-логикой
   };
   let tpTouched = !!saved.tpTouched;
+  let autoTpUpdate = false;
 
   const line = el('div', 'quad-line');
   line.style.display = 'grid';
@@ -603,7 +604,9 @@ function createCryptoBody(row, key) {
   const recomputeTP = () => {
     if (!tpTouched) {
       const slv = priceToPoints($sl, _normNum($price.value), row);
+      autoTpUpdate = true;
       $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      autoTpUpdate = false;
       persist();
     }
   };
@@ -712,6 +715,7 @@ function createCryptoBody(row, key) {
     body.validate(true);
   });
   $tp.addEventListener('input', () => {
+    if (autoTpUpdate) return;
     markTouched(row.ticker);
     tpTouched = true;
     persist();
@@ -740,6 +744,7 @@ function createFxBody(row, key) {
     tpTouched: row.tp != null,
   };
   let tpTouched = !!saved.tpTouched;
+  let autoTpUpdate = false;
 
   const line = el('div', 'quad-line');
   line.style.display = 'grid';
@@ -785,7 +790,9 @@ function createFxBody(row, key) {
   const recomputeTP = () => {
     if (!tpTouched) {
       const slv = priceToPoints($sl, _normNum($price.value), row);
+      autoTpUpdate = true;
       $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      autoTpUpdate = false;
       persist();
     }
   };
@@ -873,6 +880,7 @@ function createFxBody(row, key) {
     body.validate(true);
   });
   $tp.addEventListener('input', () => {
+    if (autoTpUpdate) return;
     markTouched(row.ticker);
     tpTouched = true;
     persist();
@@ -908,6 +916,7 @@ function createEquitiesBody(row, key) {
     tpTouched: row.tp != null,
   };
   let tpTouched = !!saved.tpTouched;
+  let autoTpUpdate = false;
 
   const line = el('div', 'quad-line');
   line.style.display = 'grid';
@@ -952,7 +961,9 @@ function createEquitiesBody(row, key) {
   const recomputeTP = () => {
     if (!tpTouched) {
       const slv = priceToPoints($sl, _normNum($price.value), row);
+      autoTpUpdate = true;
       $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      autoTpUpdate = false;
       persist();
     }
   };
@@ -1057,6 +1068,7 @@ function createEquitiesBody(row, key) {
     body.validate(true);
   });
   $tp.addEventListener('input', () => {
+    if (autoTpUpdate) return;
     markTouched(row.ticker);
     tpTouched = true;
     persist();
