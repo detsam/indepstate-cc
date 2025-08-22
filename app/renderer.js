@@ -1434,11 +1434,18 @@ $cmdline.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const cmd = $cmdline.value.trim();
     if (cmd) {
-      runCommand(cmd).then((res) => {
-        if (!res?.ok && res?.error) toast(res.error);
-      });
+      runCommand(cmd)
+        .then((res) => {
+          if (!res?.ok && res?.error) {
+            toast(res.error);
+          } else {
+            $cmdline.value = '';
+          }
+        })
+        .catch((err) => {
+          toast(err.message || String(err));
+        });
     }
-    $cmdline.value = '';
   }
 });
 

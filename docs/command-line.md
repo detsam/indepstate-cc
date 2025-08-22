@@ -4,6 +4,8 @@ The bottom of the application window includes a text input that accepts simple c
 
 Commands are case-insensitive and may define multiple names (aliases).
 
+If a command fails (e.g. due to validation error), the entered text remains in the input field so you can quickly correct and retry. Successful commands clear the input.
+
 ## Commands
 
 ### add (alias: a)
