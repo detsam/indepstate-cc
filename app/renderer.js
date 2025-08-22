@@ -68,6 +68,8 @@ const userTouchedByTicker = new Map(); // ticker -> boolean
 
 // котировки по тикерам
 const instrumentInfo = new Map(); // ticker -> {price,bid,ask}
+// історія спредів у пунктах: ticker -> number[] (trim до 100)
+const spreadHistory = new Map();
 
 // ======= DOM =======
 const $wrap = document.getElementById('wrap');
@@ -318,6 +320,7 @@ function ensureInstrument(ticker, provider) {
     if (info) {
       pendingInstruments.delete(ticker);
       instrumentInfo.set(ticker, info);
+      updateSpreadForTicker(ticker);
       render();
     } else {
       setTimeout(() => {
@@ -467,10 +470,10 @@ function createCard(row, index) {
   right.appendChild($status);
 
   const $spread = el('span', 'card__spread');
-  $spread.title = 'Spread (ask - bid)';
+  $spread.title = 'Spread pts: current / avg10 / avg100';
   $spread.style.fontSize = '11px';
   $spread.style.color = '#6b7280';
-  $spread.textContent = formatSpreadValue(instrumentInfo.get(row.ticker), row) || '';
+  $spread.textContent = formatSpreadTriple(row.ticker, row) || '';
   right.appendChild($spread);
 
   const $retry = document.createElement('button');
@@ -1138,23 +1141,56 @@ function decimalsFromTick(tick) {
   return dot >= 0 ? (s.length - dot - 1) : 0;
 }
 
-function formatSpreadValue(info, row) {
-  if (!info || !Number.isFinite(info.ask) || !Number.isFinite(info.bid)) return '';
+// Повертає спред у пунктах (integer) або NaN
+function computeSpreadPts(info, row) {
+  if (!info || !Number.isFinite(info.ask) || !Number.isFinite(info.bid)) return NaN;
   const spread = info.ask - info.bid;
-  if (!Number.isFinite(spread)) return '';
-  const tick = tickSize(row);
-  const decimals = Math.min(8, Math.max(0, decimalsFromTick(tick)));
-  return spread.toFixed(decimals);
+  const tick = tickSize(row) || 0.01;
+  if (!Number.isFinite(spread) || !Number.isFinite(tick) || tick <= 0) return NaN;
+  const pts = spread / tick;
+  if (!Number.isFinite(pts)) return NaN;
+  return Math.max(0, Math.round(pts));
+}
+
+function calcAvg(arr, n) {
+  const len = Array.isArray(arr) ? arr.length : 0;
+  if (!len) return NaN;
+  const k = Math.max(1, Math.min(n, len));
+  let sum = 0;
+  for (let i = len - k; i < len; i++) sum += arr[i];
+  return Math.round(sum / k);
+}
+
+function formatSpreadTriple(ticker, row, curPtsOverride) {
+  const info = instrumentInfo.get(ticker);
+  const cur = Number.isFinite(curPtsOverride) ? curPtsOverride : computeSpreadPts(info, row);
+  if (!Number.isFinite(cur)) return '';
+  const hist = spreadHistory.get(ticker) || [];
+  const avg10 = Number.isFinite(calcAvg(hist, 10)) ? calcAvg(hist, 10) : cur;
+  const avg100 = Number.isFinite(calcAvg(hist, 100)) ? calcAvg(hist, 100) : (Number.isFinite(avg10) ? avg10 : cur);
+  return `${cur}/${avg10}/${avg100}`;
 }
 
 function updateSpreadForTicker(ticker) {
   if (!ticker) return;
   const info = instrumentInfo.get(ticker);
   const row = state.rows.find(r => r.ticker === ticker);
+  if (!row) return;
+
+  // 1) Оновлюємо історію
+  const curPts = computeSpreadPts(info, row);
+  if (Number.isFinite(curPts)) {
+    const arr = spreadHistory.get(ticker) || [];
+    arr.push(curPts);
+    if (arr.length > 100) arr.splice(0, arr.length - 100);
+    spreadHistory.set(ticker, arr);
+  }
+
+  // 2) Оновлюємо UI для всіх карток із цим тикером
   const cards = $grid.querySelectorAll(`.card[data-ticker="${cssEsc(ticker)}"]`);
   cards.forEach(card => {
     const sp = card.querySelector('.card__spread');
-    if (sp) sp.textContent = formatSpreadValue(info, row) || '';
+    if (sp) sp.textContent = formatSpreadTriple(ticker, row, curPts) || '';
   });
 }
 
