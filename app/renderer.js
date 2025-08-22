@@ -364,6 +364,7 @@ function forgetInstrument(ticker, provider) {
           if (info) {
             const prev = instrumentInfo.get(t);
             instrumentInfo.set(t, info);
+            updateSpreadForTicker(t);
           }
         } catch {
           // ігноруємо помилку; наступна ітерація спробує знову
@@ -450,6 +451,7 @@ function createCard(row, index) {
 
   const card = el('div', 'card');
   card.setAttribute('data-rowkey', key);
+  card.setAttribute('data-ticker', row.ticker);
 
   // head
   const head = el('div', 'row');
@@ -458,10 +460,17 @@ function createCard(row, index) {
   head.appendChild(el('div', null, row.ticker, {style: 'font-weight:600;font-size:13px'}));
 
   // Правая часть: статус + кнопка удаления
-  const right = el('div', null, null, {style: 'display:flex;align-items:center'});
+  const right = el('div', null, null, {style: 'display:flex;align-items:center;gap:6px'});
   const $status = el('span', 'card__status');
   $status.style.display = 'none';
   right.appendChild($status);
+
+  const $spread = el('span', 'card__spread');
+  $spread.title = 'Spread (ask - bid)';
+  $spread.style.fontSize = '11px';
+  $spread.style.color = '#6b7280';
+  $spread.textContent = formatSpreadValue(instrumentInfo.get(row.ticker), row) || '';
+  right.appendChild($spread);
 
   const $retry = document.createElement('button');
   $retry.type = 'button';
@@ -1113,6 +1122,39 @@ function tickSize(row) {
   return row.tickSize || instrumentInfo.get(row.ticker)?.tickSize;
 }
 
+function decimalsFromTick(tick) {
+  const t = Number(tick);
+  if (!Number.isFinite(t) || t <= 0) return 5;
+  const s = String(t);
+  if (s.includes('e') || s.includes('E')) {
+    const m = t.toString();
+    const p = m.indexOf('.');
+    return p >= 0 ? (m.length - p - 1) : 0;
+  }
+  const dot = s.indexOf('.');
+  return dot >= 0 ? (s.length - dot - 1) : 0;
+}
+
+function formatSpreadValue(info, row) {
+  if (!info || !Number.isFinite(info.ask) || !Number.isFinite(info.bid)) return '';
+  const spread = info.ask - info.bid;
+  if (!Number.isFinite(spread)) return '';
+  const tick = tickSize(row);
+  const decimals = Math.min(8, Math.max(0, decimalsFromTick(tick)));
+  return spread.toFixed(decimals);
+}
+
+function updateSpreadForTicker(ticker) {
+  if (!ticker) return;
+  const info = instrumentInfo.get(ticker);
+  const row = state.rows.find(r => r.ticker === ticker);
+  const cards = $grid.querySelectorAll(`.card[data-ticker="${cssEsc(ticker)}"]`);
+  cards.forEach(card => {
+    const sp = card.querySelector('.card__spread');
+    if (sp) sp.textContent = formatSpreadValue(info, row) || '';
+  });
+}
+
 // ======= Order placement (shared) =======
 async function place(kind, row, v, instrumentType) {
   if (!v.valid) return;
@@ -1422,3 +1464,4 @@ $wrap.addEventListener('wheel', () => {
 
 // initial render
 render();
+
