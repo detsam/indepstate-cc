@@ -25,18 +25,23 @@ class AddCommand extends Command {
   }
 
   run(args) {
-    const [ticker, slStr, tpStr, riskStr] = args;
-    if (!ticker || slStr == null) {
-      return { ok: false, error: 'Usage: add {ticker} {sl} {tp} {risk}' };
+    const [ticker, priceStr, slStr, tpStr, riskStr] = args;
+    if (!ticker || priceStr == null || slStr == null) {
+      return { ok: false, error: 'Usage: add {ticker} {price} {sl} {tp} {risk}' };
     }
+    const price = _normNum(priceStr);
     const sl = parsePts(slStr);
     const tp = parsePts(tpStr);
     const risk = _normNum(riskStr);
+    if (!Number.isFinite(price) || price <= 0) {
+      return { ok: false, error: 'Invalid price' };
+    }
     if (!isSL(sl)) {
       return { ok: false, error: 'Invalid SL' };
     }
     const row = {
       ticker,
+      price,
       sl,
       time: Date.now(),
       event: 'manual'

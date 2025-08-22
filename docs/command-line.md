@@ -9,10 +9,10 @@ Commands are case-insensitive and may define multiple names (aliases).
 ### add (alias: a)
 
 ```
-add {ticker} {sl} {tp} {risk}
+add {ticker} {price} {sl} {tp} {risk}
 ```
 
-Creates a new order card with the given ticker and stop loss. `tp` and `risk` are optional.
+Creates a new order card with the given ticker, entry price and stop loss. `tp` and `risk` are optional.
 
 `sl` and `tp` accept either raw point values or prices containing a decimal dot. Dotted values are converted to integer points using the shared `digitsFallbackPoints` helper.
 
