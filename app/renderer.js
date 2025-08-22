@@ -365,6 +365,7 @@ function forgetInstrument(ticker, provider) {
             const prev = instrumentInfo.get(t);
             instrumentInfo.set(t, info);
             updateSpreadForTicker(t);
+            revalidateCardsForTicker(t);
           }
         } catch {
           // ігноруємо помилку; наступна ітерація спробує знову
@@ -565,6 +566,8 @@ function createCard(row, index) {
   body.setButtons(btns);
   if (body.setNote) body.setNote(note);
   body.validate();
+  // expose validator for external revalidation on instrument updates
+  card._validate = (commit = false) => body.validate(commit);
 
   return card;
 }
@@ -1152,6 +1155,18 @@ function updateSpreadForTicker(ticker) {
   cards.forEach(card => {
     const sp = card.querySelector('.card__spread');
     if (sp) sp.textContent = formatSpreadValue(info, row) || '';
+  });
+}
+
+function revalidateCardsForTicker(ticker) {
+  if (!ticker) return;
+  const cards = $grid.querySelectorAll(`.card[data-ticker="${cssEsc(ticker)}"]`);
+  cards.forEach(card => {
+    if (typeof card._validate === 'function') {
+      try {
+        card._validate(false);
+      } catch (_) {}
+    }
   });
 }
 
