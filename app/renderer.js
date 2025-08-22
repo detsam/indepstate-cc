@@ -740,7 +740,8 @@ function createCryptoBody(row, key) {
 
   // Автопочатковий розрахунок qty з Risk/SL (якщо задано)
   recomputeQtyFromRisk();
-  persist();
+  // Если TP не передан — вычисляем его из SL
+  recomputeTP();
   return body;
 }
 
@@ -917,6 +918,8 @@ function createFxBody(row, key) {
 
   // compute qty from default risk and SL (if provided)
   recomputeQtyFromRisk();
+  // if TP wasn't provided, derive it from SL
+  recomputeTP();
   return body;
 }
 
@@ -1110,6 +1113,8 @@ function createEquitiesBody(row, key) {
 
   // compute qty from default risk and SL (if provided)
   recomputeQtyFromRisk();
+  // prefill TP from SL when not explicitly passed
+  recomputeTP();
   return body;
 }
 
