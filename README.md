@@ -48,6 +48,7 @@ Some configuration values, especially credentials, are supplied via environment 
 ### Obsidian integration
 - `OBSIDIAN_INDEPSTATE_VAULT` – path to the Obsidian vault used for deal notes.
 - `OBSIDIAN_INDEPSTATE_DEALS_JOURNAL` – directory within the vault where notes are written.
+- `OBSIDIAN_INDEPSTATE_DEALS_SEARCH` – optional directory to search for existing notes to avoid duplicates.
 
 #### Chart images
 

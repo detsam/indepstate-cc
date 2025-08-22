@@ -6,6 +6,8 @@ Deal trackers receive notifications when a position closes and can persist the t
 
 Trackers are configured in `app/config/deal-trackers.json`. Each entry specifies a `type` and tracker specific options. Values may reference environment variables using the `${ENV:VAR}` syntax.
 
+An Obsidian tracker writes new notes to `journalPath`. Provide `findJournalPath` to search for existing notes in a different directory before creating new ones.
+
 An Obsidian tracker can optionally include a `chartImageComposer` block. When
 present the tracker queues a screenshot request for the trade symbol and
 inserts the image file name into the note under the `\t- 1D` line. The composer
@@ -37,7 +39,7 @@ The Obsidian deal tracker expects an `info` object with properties describing th
 - `profit` – written to `- Trade Profit::`
 - `commission` – overrides `- Trade Commissions::` when non-zero
 - `tp` / `sp` – replace `- Take Setup::` and `- Stop Setup::`
-- `takePoints` / `stopPoints` – fill `- Take Points::` and `- Stop Points::` when provided
+- `takePoints` / `stopPoints` – fill `- Take Points::` and `- Stop Points::` when provided; when `status` is `take` the tracker sets `- Stop Points:: 0`, when `status` is `stop` it sets `- Take Points:: 0`
 - `tradeRisk` – replaces `- Trade Risk::` when defined
 - when `status` is `take`, the tracker sets `- Homework:: [[Analysis. Right Direction]]`
 - `tradeSession` – fills the `- Trade Session::` line when supplied

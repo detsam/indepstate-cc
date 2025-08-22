@@ -11,6 +11,7 @@ class ObsidianDealTracker extends DealTracker {
     super();
     this.vaultPath = cfg.vaultPath;
     this.journalPath = cfg.journalPath || cfg.vaultPath;
+    this.findJournalPath = cfg.findJournalPath;
     this.chartComposer = cfg.chartImageComposer;
   }
 
@@ -20,6 +21,8 @@ class ObsidianDealTracker extends DealTracker {
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
     if (!vault || !targetDir) return;
+    const searchDirs = [this.findJournalPath || targetDir];
+    if ((this.findJournalPath || targetDir) !== targetDir) searchDirs.push(targetDir);
 
     const templatePath = path.join(vault, 'z. Staff', 'Templates', 'Template. Deal.md');
     let template;
@@ -43,13 +46,17 @@ class ObsidianDealTracker extends DealTracker {
     });
 
     let i = 1;
-    while (fs.existsSync(filePath)) {
+    while (searchDirs.some(dir => fs.existsSync(path.join(dir, fileName)))) {
       if (canCheck) {
-        try {
-          const existing = fs.readFileSync(filePath, 'utf8');
-          const found = criteria.every(c => existing.includes(`${c.field}: ${getProp(info, c.prop)}`));
-          if (found) return;
-        } catch {}
+        for (const dir of searchDirs) {
+          const existingPath = path.join(dir, fileName);
+          if (!fs.existsSync(existingPath)) continue;
+          try {
+            const existing = fs.readFileSync(existingPath, 'utf8');
+            const found = criteria.every(c => existing.includes(`${c.field}: ${getProp(info, c.prop)}`));
+            if (found) return;
+          } catch {}
+        }
       }
       fileName = `${baseName} (${i}).md`;
       filePath = path.join(targetDir, fileName);
@@ -77,6 +84,11 @@ class ObsidianDealTracker extends DealTracker {
     }
     if (stopPoints != null && stopPoints !== 0) {
       content = content.replace(/^- Stop Points::.*$/m, `- Stop Points:: ${stopPoints}`);
+    }
+    if (status === 'take') {
+      content = content.replace(/^- Stop Points::.*$/m, '- Stop Points:: 0');
+    } else if (status === 'stop') {
+      content = content.replace(/^- Take Points::.*$/m, '- Take Points:: 0');
     }
     if (tradeSession != null && tradeSession !== 0) {
       content = content.replace(/^- Trade Session::.*$/m, `- Trade Session:: ${tradeSession}`);
