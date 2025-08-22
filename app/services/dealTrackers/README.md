@@ -6,6 +6,8 @@ Deal trackers receive notifications when a position closes and can persist the t
 
 Trackers are configured in `app/config/deal-trackers.json`. Each entry specifies a `type` and tracker specific options. Values may reference environment variables using the `${ENV:VAR}` syntax.
 
+An Obsidian tracker writes new notes to `journalPath`. Provide `findJournalPath` to search for existing notes in a different directory before creating new ones.
+
 An Obsidian tracker can optionally include a `chartImageComposer` block. When
 present the tracker queues a screenshot request for the trade symbol and
 inserts the image file name into the note under the `\t- 1D` line. The composer
