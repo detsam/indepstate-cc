@@ -2,9 +2,11 @@
 
 The bottom of the application window includes a text input that accepts simple commands. The renderer forwards entered strings to the main process where `app/services/commandLine.js` resolves the command name and executes the corresponding handler.
 
+Commands are case-insensitive and may define multiple names (aliases).
+
 ## Commands
 
-### add
+### add (alias: a)
 
 ```
 add {ticker} {sl} {tp} {risk}

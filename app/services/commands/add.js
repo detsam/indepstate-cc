@@ -20,7 +20,7 @@ function isSL(n) {
 
 class AddCommand extends Command {
   constructor(opts = {}) {
-    super('add');
+    super(['add', 'a']);
     this.onAdd = opts.onAdd;
   }
 
