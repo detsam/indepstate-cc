@@ -85,6 +85,11 @@ class ObsidianDealTracker extends DealTracker {
     if (stopPoints != null && stopPoints !== 0) {
       content = content.replace(/^- Stop Points::.*$/m, `- Stop Points:: ${stopPoints}`);
     }
+    if (status === 'take') {
+      content = content.replace(/^- Stop Points::.*$/m, '- Stop Points:: 0');
+    } else if (status === 'stop') {
+      content = content.replace(/^- Take Points::.*$/m, '- Take Points:: 0');
+    }
     if (tradeSession != null && tradeSession !== 0) {
       content = content.replace(/^- Trade Session::.*$/m, `- Trade Session:: ${tradeSession}`);
     }

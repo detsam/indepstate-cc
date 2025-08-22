@@ -39,7 +39,7 @@ The Obsidian deal tracker expects an `info` object with properties describing th
 - `profit` – written to `- Trade Profit::`
 - `commission` – overrides `- Trade Commissions::` when non-zero
 - `tp` / `sp` – replace `- Take Setup::` and `- Stop Setup::`
-- `takePoints` / `stopPoints` – fill `- Take Points::` and `- Stop Points::` when provided
+- `takePoints` / `stopPoints` – fill `- Take Points::` and `- Stop Points::` when provided; when `status` is `take` the tracker sets `- Stop Points:: 0`, when `status` is `stop` it sets `- Take Points:: 0`
 - `tradeRisk` – replaces `- Trade Risk::` when defined
 - when `status` is `take`, the tracker sets `- Homework:: [[Analysis. Right Direction]]`
 - `tradeSession` – fills the `- Trade Session::` line when supplied
