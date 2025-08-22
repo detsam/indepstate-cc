@@ -685,12 +685,15 @@ function createCryptoBody(row, key) {
   });
   $sl.addEventListener('input', () => {
     markTouched(row.ticker);
+    if (String($sl.value).includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     body.validate();
   });
   $sl.addEventListener('blur', () => {
+    const raw = $sl.value;
     priceToPoints($sl, _normNum($price.value), row, true);
+    if (raw.includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     persist();
@@ -707,8 +710,10 @@ function createCryptoBody(row, key) {
     body.validate();
   });
   $price.addEventListener('blur', () => {
+    const slRaw = $sl.value;
     priceToPoints($sl, _normNum($price.value), row, true);
     priceToPoints($tp, _normNum($price.value), row, true);
+    if (slRaw.includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     persist();
@@ -850,12 +855,15 @@ function createFxBody(row, key) {
   });
   $sl.addEventListener('input', () => {
     markTouched(row.ticker);
+    if (String($sl.value).includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     body.validate();
   });
   $sl.addEventListener('blur', () => {
+    const raw = $sl.value;
     priceToPoints($sl, _normNum($price.value), row, true);
+    if (raw.includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     persist();
@@ -872,8 +880,10 @@ function createFxBody(row, key) {
     body.validate();
   });
   $price.addEventListener('blur', () => {
+    const slRaw = $sl.value;
     priceToPoints($sl, _normNum($price.value), row, true);
     priceToPoints($tp, _normNum($price.value), row, true);
+    if (slRaw.includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     persist();
@@ -1038,12 +1048,15 @@ function createEquitiesBody(row, key) {
   });
   $sl.addEventListener('input', () => {
     markTouched(row.ticker);
-    recomputeQtyFromRisk();
-    recomputeTP();
-    body.validate();
+    if (String($sl.value).includes('.')) tpTouched = false;
+   recomputeQtyFromRisk();
+   recomputeTP();
+   body.validate();
   });
   $sl.addEventListener('blur', () => {
+    const raw = $sl.value;
     priceToPoints($sl, _normNum($price.value), row, true);
+    if (raw.includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     persist();
@@ -1060,8 +1073,10 @@ function createEquitiesBody(row, key) {
     body.validate();
   });
   $price.addEventListener('blur', () => {
+    const slRaw = $sl.value;
     priceToPoints($sl, _normNum($price.value), row, true);
     priceToPoints($tp, _normNum($price.value), row, true);
+    if (slRaw.includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     persist();
