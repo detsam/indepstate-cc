@@ -114,8 +114,9 @@ function priceToPoints(inp, price, row, commit = false) {
   if (val == null) return val;
   const pts = Math.abs(pr - val) / 0.01; // fixed minimal tick for testing
   if (Number.isFinite(pts)) {
-    if (commit) inp.value = String(pts);
-    return pts;
+    const rounded = Math.round(pts);
+    if (commit) inp.value = String(rounded);
+    return rounded;
   }
   return val;
 }
