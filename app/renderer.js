@@ -105,6 +105,22 @@ function isUpEvent(ev) {
   return /(up|long)/i.test(String(ev));
 }
 
+function priceToPoints(inp, price, row, commit = false) {
+  const raw = String(inp?.value ?? '').trim();
+  if (!raw || !raw.includes('.')) return _normNum(raw);
+  const pr = _normNum(price);
+  if (!isPos(pr)) return _normNum(raw);
+  const val = _normNum(raw);
+  if (val == null) return val;
+  const pts = Math.abs(pr - val) / 0.01; // fixed minimal tick for testing
+  if (Number.isFinite(pts)) {
+    const rounded = Math.round(pts);
+    if (commit) inp.value = String(rounded);
+    return rounded;
+  }
+  return val;
+}
+
 
 function el(tag, className, text, attrs) {
   const node = document.createElement(tag);
@@ -555,6 +571,7 @@ function createCryptoBody(row, key) {
     tpTouched: row.tp != null, // если TP пришёл с хуком — не перезатираем авто-логикой
   };
   let tpTouched = !!saved.tpTouched;
+  let autoTpUpdate = false;
 
   const line = el('div', 'quad-line');
   line.style.display = 'grid';
@@ -586,14 +603,16 @@ function createCryptoBody(row, key) {
   };
   const recomputeTP = () => {
     if (!tpTouched) {
-      const slv = _normNum($sl.value);
+      const slv = priceToPoints($sl, _normNum($price.value), row);
+      autoTpUpdate = true;
       $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      autoTpUpdate = false;
       persist();
     }
   };
   const recomputeQtyFromRisk = () => {
     const r = _normNum($risk.value);
-    const sl = _normNum($sl.value);
+    const sl = priceToPoints($sl, _normNum($price.value), row);
     const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 1;
     const tick = tickSize(row) || 1; //safe tick 1
 
@@ -615,10 +634,11 @@ function createCryptoBody(row, key) {
     setNote($note) {
       this._note = $note;
     },
-      validate() {
+      validate(commit = false) {
         const qty = _normNum($qty.value);
         const pr = _normNum($price.value);
-        const sl = _normNum($sl.value);
+        const sl = priceToPoints($sl, pr, row, commit);
+        const tpVal = priceToPoints($tp, pr, row, commit);
         const info = instrumentInfo.get(row.ticker);
         const instrumentType = row.instrumentType || detectInstrumentType(row.ticker);
         const qtyOk = isPos(qty);
@@ -653,7 +673,7 @@ function createCryptoBody(row, key) {
         }
       }
 
-      return {valid, type: 'crypto', qty, pr, sl, tp: _normNum($tp.value)};
+      return {valid, type: 'crypto', qty, pr, sl, tp: tpVal};
     }
   };
 
@@ -665,9 +685,19 @@ function createCryptoBody(row, key) {
   });
   $sl.addEventListener('input', () => {
     markTouched(row.ticker);
+    if (String($sl.value).includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     body.validate();
+  });
+  $sl.addEventListener('blur', () => {
+    const raw = $sl.value;
+    priceToPoints($sl, _normNum($price.value), row, true);
+    if (raw.includes('.')) tpTouched = false;
+    recomputeQtyFromRisk();
+    recomputeTP();
+    persist();
+    body.validate(true);
   });
   $qty.addEventListener('input', () => {
     markTouched(row.ticker);
@@ -679,10 +709,27 @@ function createCryptoBody(row, key) {
     persist();
     body.validate();
   });
+  $price.addEventListener('blur', () => {
+    const slRaw = $sl.value;
+    priceToPoints($sl, _normNum($price.value), row, true);
+    priceToPoints($tp, _normNum($price.value), row, true);
+    if (slRaw.includes('.')) tpTouched = false;
+    recomputeQtyFromRisk();
+    recomputeTP();
+    persist();
+    body.validate(true);
+  });
   $tp.addEventListener('input', () => {
+    if (autoTpUpdate) return;
     markTouched(row.ticker);
     tpTouched = true;
     persist();
+    body.validate();
+  });
+  $tp.addEventListener('blur', () => {
+    priceToPoints($tp, _normNum($price.value), row, true);
+    persist();
+    body.validate(true);
   });
 
   // Автопочатковий розрахунок qty з Risk/SL (якщо задано)
@@ -702,6 +749,7 @@ function createFxBody(row, key) {
     tpTouched: row.tp != null,
   };
   let tpTouched = !!saved.tpTouched;
+  let autoTpUpdate = false;
 
   const line = el('div', 'quad-line');
   line.style.display = 'grid';
@@ -734,13 +782,10 @@ function createFxBody(row, key) {
   };
     const recomputeQtyFromRisk = () => {
       const r = _normNum($risk.value);
-      const sl = _normNum($sl.value);
-      // Use lot from row if available and positive
-
+      const sl = priceToPoints($sl, _normNum($price.value), row);
       if (isPos(r) && isSL(sl)) {
-        const tick = tickSize(row) ||  0.00001;
-        const lot = row.lot || 100000 ; //safe standard lot for FX
-
+        const tick = tickSize(row) || 0.00001;
+        const lot = row.lot || 100000;
         let q = Math.floor((r / tick) / sl / lot / 0.01) * 0.01;
         if (!Number.isFinite(q) || q < 0) q = 0;
         $qty.value = String(q);
@@ -749,8 +794,10 @@ function createFxBody(row, key) {
     };
   const recomputeTP = () => {
     if (!tpTouched) {
-      const slv = _normNum($sl.value);
+      const slv = priceToPoints($sl, _normNum($price.value), row);
+      autoTpUpdate = true;
       $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      autoTpUpdate = false;
       persist();
     }
   };
@@ -761,10 +808,11 @@ function createFxBody(row, key) {
     setButtons($btns) {
       this._btns = $btns;
     },
-      validate() {
+      validate(commit = false) {
         const qtyRaw = _normNum($qty.value);
         const pr = _normNum($price.value);
-        const sl = _normNum($sl.value);
+        const sl = priceToPoints($sl, pr, row, commit);
+        const tpVal = priceToPoints($tp, pr, row, commit);
         const risk = _normNum($risk.value);
         const info = instrumentInfo.get(row.ticker);
         const instrumentType = row.instrumentType || 'FX';
@@ -794,7 +842,7 @@ function createFxBody(row, key) {
 
         return {
           valid, type: 'fx',
-          qty: qtyRaw, pr, sl, risk, tp: _normNum($tp.value) //todo normalize to min qty
+          qty: qtyRaw, pr, sl, risk, tp: tpVal //todo normalize to min qty
         };
       }
     };
@@ -807,9 +855,19 @@ function createFxBody(row, key) {
   });
   $sl.addEventListener('input', () => {
     markTouched(row.ticker);
+    if (String($sl.value).includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
     body.validate();
+  });
+  $sl.addEventListener('blur', () => {
+    const raw = $sl.value;
+    priceToPoints($sl, _normNum($price.value), row, true);
+    if (raw.includes('.')) tpTouched = false;
+    recomputeQtyFromRisk();
+    recomputeTP();
+    persist();
+    body.validate(true);
   });
   $qty.addEventListener('input', () => {
     markTouched(row.ticker);
@@ -821,10 +879,27 @@ function createFxBody(row, key) {
     persist();
     body.validate();
   });
+  $price.addEventListener('blur', () => {
+    const slRaw = $sl.value;
+    priceToPoints($sl, _normNum($price.value), row, true);
+    priceToPoints($tp, _normNum($price.value), row, true);
+    if (slRaw.includes('.')) tpTouched = false;
+    recomputeQtyFromRisk();
+    recomputeTP();
+    persist();
+    body.validate(true);
+  });
   $tp.addEventListener('input', () => {
+    if (autoTpUpdate) return;
     markTouched(row.ticker);
     tpTouched = true;
     persist();
+    body.validate();
+  });
+  $tp.addEventListener('blur', () => {
+    priceToPoints($tp, _normNum($price.value), row, true);
+    persist();
+    body.validate(true);
   });
 
   // assemble
@@ -851,6 +926,7 @@ function createEquitiesBody(row, key) {
     tpTouched: row.tp != null,
   };
   let tpTouched = !!saved.tpTouched;
+  let autoTpUpdate = false;
 
   const line = el('div', 'quad-line');
   line.style.display = 'grid';
@@ -883,7 +959,7 @@ function createEquitiesBody(row, key) {
   };
   const recomputeQtyFromRisk = () => {
     const r = _normNum($risk.value);
-    const sl = _normNum($sl.value);
+    const sl = priceToPoints($sl, _normNum($price.value), row);
     if (isPos(r) && isSL(sl)) {
       const tick = tickSize(row) || 0.01;
       let q = Math.floor((r / tick) / sl);
@@ -894,8 +970,10 @@ function createEquitiesBody(row, key) {
   };
   const recomputeTP = () => {
     if (!tpTouched) {
-      const slv = _normNum($sl.value);
+      const slv = priceToPoints($sl, _normNum($price.value), row);
+      autoTpUpdate = true;
       $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      autoTpUpdate = false;
       persist();
     }
   };
@@ -909,10 +987,11 @@ function createEquitiesBody(row, key) {
     setNote($note) {
       this._note = $note;
     },
-      validate() {
+      validate(commit = false) {
         const qtyRaw = _normNum($qty.value);
         const pr = _normNum($price.value);
-        const sl = _normNum($sl.value);
+        const sl = priceToPoints($sl, pr, row, commit);
+        const tpVal = priceToPoints($tp, pr, row, commit);
         const risk = _normNum($risk.value);
         const info = instrumentInfo.get(row.ticker);
         const instrumentType = row.instrumentType || detectInstrumentType(row.ticker);
@@ -955,7 +1034,7 @@ function createEquitiesBody(row, key) {
 
       return {
         valid, type: 'equities',
-        qty: qtyRaw, pr, sl, risk, tp: _normNum($tp.value),
+        qty: qtyRaw, pr, sl, risk, tp: tpVal,
         qtyInt: Number.isFinite(qtyRaw) ? Math.floor(qtyRaw) : 0
       };
     }
@@ -969,9 +1048,19 @@ function createEquitiesBody(row, key) {
   });
   $sl.addEventListener('input', () => {
     markTouched(row.ticker);
+    if (String($sl.value).includes('.')) tpTouched = false;
+   recomputeQtyFromRisk();
+   recomputeTP();
+   body.validate();
+  });
+  $sl.addEventListener('blur', () => {
+    const raw = $sl.value;
+    priceToPoints($sl, _normNum($price.value), row, true);
+    if (raw.includes('.')) tpTouched = false;
     recomputeQtyFromRisk();
     recomputeTP();
-    body.validate();
+    persist();
+    body.validate(true);
   });
   $qty.addEventListener('input', () => {
     markTouched(row.ticker);
@@ -983,10 +1072,27 @@ function createEquitiesBody(row, key) {
     persist();
     body.validate();
   });
+  $price.addEventListener('blur', () => {
+    const slRaw = $sl.value;
+    priceToPoints($sl, _normNum($price.value), row, true);
+    priceToPoints($tp, _normNum($price.value), row, true);
+    if (slRaw.includes('.')) tpTouched = false;
+    recomputeQtyFromRisk();
+    recomputeTP();
+    persist();
+    body.validate(true);
+  });
   $tp.addEventListener('input', () => {
+    if (autoTpUpdate) return;
     markTouched(row.ticker);
     tpTouched = true;
     persist();
+    body.validate();
+  });
+  $tp.addEventListener('blur', () => {
+    priceToPoints($tp, _normNum($price.value), row, true);
+    persist();
+    body.validate(true);
   });
 
   // assemble
