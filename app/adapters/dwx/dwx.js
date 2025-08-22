@@ -48,6 +48,7 @@ class DWXAdapter extends ExecutionAdapter {
       on_historic_data: (...a) => userHandler.on_historic_data?.(...a),
       on_historic_trades() {
         // при появлении новых исторических сделок проверим закрытие позиций
+        self.events.emit('dwx:historic_trades');
         self.#reconcilePendingWithOpenOrders();
         userHandler.on_historic_trades?.();
       },
@@ -285,28 +286,30 @@ class DWXAdapter extends ExecutionAdapter {
 
   async findClosedTradeByCid(cid, lookbackDays = 30, timeoutMs = 2000) {
     if (!cid) return null;
-    try { await this.client.get_historic_trades(lookbackDays); } catch {}
-    const deadline = Date.now() + timeoutMs;
-
-    while (Date.now() < deadline) {
-      const trades = Object.values(this.client.historic_trades || {});
-      if (trades.length) {
-        // ensure chronological search
-        trades.sort((a, b) => (a?.deal_time || 0) - (b?.deal_time || 0));
-
-        const tIn = trades.find(t => includesCid(t?.comment, cid) && normalizeEntry(t?.entry) === 'in');
-        if (tIn) {
-          const tOut = trades.find(
-            t => normalizeEntry(t?.entry) === 'out'
-              && t?.symbol === tIn.symbol
-              && Number(t?.deal_time) >= Number(tIn.deal_time)
-          );
-          if (tOut) return { ...tOut, entry: tIn };
-        }
-      }
-      await new Promise(r => setTimeout(r, 200));
-    }
-    return null;
+    let timer;
+    const trades = await new Promise(resolve => {
+      const handler = () => {
+        clearTimeout(timer);
+        this.events.off('dwx:historic_trades', handler);
+        resolve(Object.values(this.client.historic_trades || {}));
+      };
+      timer = setTimeout(() => {
+        this.events.off('dwx:historic_trades', handler);
+        resolve(Object.values(this.client.historic_trades || {}));
+      }, timeoutMs);
+      this.events.on('dwx:historic_trades', handler);
+      try { this.client.get_historic_trades(lookbackDays); } catch {}
+    });
+    if (!trades.length) return null;
+    trades.sort((a, b) => (a?.deal_time || 0) - (b?.deal_time || 0));
+    const tIn = trades.find(t => includesCid(t?.comment, cid) && normalizeEntry(t?.entry) === 'in');
+    if (!tIn) return null;
+    const tOut = trades.find(
+      t => normalizeEntry(t?.entry) === 'out'
+        && t?.symbol === tIn.symbol
+        && Number(t?.deal_time) >= Number(tIn.deal_time)
+    );
+    return tOut ? { ...tOut, entry: tIn } : null;
   }
 
   async listClosedPositions() {
