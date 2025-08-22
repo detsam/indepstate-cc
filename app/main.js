@@ -149,7 +149,7 @@ function wireAdapter(adapter, providerName) {
       const payload = calcDealData({
         symbol: { ticker: info.ticker },
         side: info.side,
-        entryPrice: info.price,
+        entryPrice: hist?.entry?.deal_price ?? info.price,
         exitPrice: hist?.deal_price,
         qty: info.qty,
         takeSetup: info.tp,

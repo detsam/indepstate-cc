@@ -286,11 +286,24 @@ class DWXAdapter extends ExecutionAdapter {
   async findClosedTradeByCid(cid, lookbackDays = 30, timeoutMs = 2000) {
     if (!cid) return null;
     try { await this.client.get_historic_trades(lookbackDays); } catch {}
-    const end = Date.now() + timeoutMs;
-    while (Date.now() < end) {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
       const trades = Object.values(this.client.historic_trades || {});
-      const hit = trades.find(t => String(t.comment || '').includes(cid) && t.entry === 'out');
-      if (hit) return hit;
+      if (trades.length) {
+        // ensure chronological search
+        trades.sort((a, b) => (a?.deal_time || 0) - (b?.deal_time || 0));
+
+        const tIn = trades.find(t => includesCid(t?.comment, cid) && normalizeEntry(t?.entry) === 'in');
+        if (tIn) {
+          const tOut = trades.find(
+            t => normalizeEntry(t?.entry) === 'out'
+              && t?.symbol === tIn.symbol
+              && Number(t?.deal_time) >= Number(tIn.deal_time)
+          );
+          if (tOut) return { ...tOut, entry: tIn };
+        }
+      }
       await new Promise(r => setTimeout(r, 200));
     }
     return null;
@@ -322,6 +335,17 @@ function appendCidToComment(comment, cid) {
 function extractCid(s) {
   const m = String(s).match(/cid[:=]\s*([a-f0-9]{8,})/i);
   return m ? m[1] : null;
+}
+
+function includesCid(comment, cid) {
+  return String(comment || '').includes(cid);
+}
+
+function normalizeEntry(entry) {
+  const e = String(entry || '').toLowerCase();
+  if (e === 'in' || e === 'entry_in') return 'in';
+  if (e === 'out' || e === 'entry_out') return 'out';
+  return e;
 }
 
 function findHeuristicMatchCid(pendingMap, mtOrder) {
