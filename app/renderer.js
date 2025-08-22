@@ -74,6 +74,7 @@ const $wrap = document.getElementById('wrap');
 const $grid = document.getElementById('grid');
 const $filter = document.getElementById('filter');
 const $autoscroll = document.getElementById('autoscroll');
+const $cmdline = document.getElementById('cmdline');
 
 // ======= Utils =======
 function findKeyByTicker(ticker) {
@@ -185,6 +186,11 @@ function toast(msg) {
   t._h = setTimeout(() => {
     t.style.opacity = '0';
   }, 2500);
+}
+
+// ======= Command line handling =======
+function runCommand(str) {
+  return ipcRenderer.invoke('cmdline:run', str);
 }
 
 function setCardState(key, state) {
@@ -745,7 +751,7 @@ function createFxBody(row, key) {
     price: row.price != null ? String(row.price) : '',
     sl: row.sl != null ? String(row.sl) : '',
     tp: row.tp != null ? String(row.tp) : '',
-    risk: EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига
+    risk: row.risk != null ? String(row.risk) : (EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : ''), // дефолтный риск или из строки
     tpTouched: row.tp != null,
   };
   let tpTouched = !!saved.tpTouched;
@@ -922,7 +928,7 @@ function createEquitiesBody(row, key) {
     price: row.price != null ? String(row.price) : '',
     sl: row.sl != null ? String(row.sl) : '',
     tp: row.tp != null ? String(row.tp) : '',
-    risk: EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига
+    risk: row.risk != null ? String(row.risk) : (EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : ''), // дефолтный риск или из строки
     tpTouched: row.tp != null,
   };
   let tpTouched = !!saved.tpTouched;
@@ -1418,6 +1424,17 @@ $autoscroll.addEventListener('change', () => {
 $wrap.addEventListener('wheel', () => {
   state.autoscroll = false;
   $autoscroll.checked = false;
+});
+$cmdline.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const cmd = $cmdline.value.trim();
+    if (cmd) {
+      runCommand(cmd).then((res) => {
+        if (!res?.ok && res?.error) toast(res.error);
+      });
+    }
+    $cmdline.value = '';
+  }
 });
 
 // initial render

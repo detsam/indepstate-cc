@@ -19,6 +19,7 @@ const dealTrackersCfg = loadConfig('deal-trackers.json');
 const dealTrackers = require('./services/dealTrackers');
 const { calcDealData } = require('./services/dealTrackers/calc');
 const tvLogs = require('./services/tvLogs');
+const { createCommandService } = require('./services/commandLine');
 let tvLogsCfg = {};
 try { tvLogsCfg = loadConfig('tv-logs.json'); }
 catch { tvLogsCfg = {}; }
@@ -238,6 +239,15 @@ app.whenReady().then(() => {
       });
     }
   };
+
+  const cmdService = createCommandService({
+    onAdd(row) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('orders:new', row);
+      }
+    }
+  });
+  ipcMain.handle('cmdline:run', (_evt, str) => cmdService.run(str));
 
   createWindow();
   setupIpc(orderCardService);
