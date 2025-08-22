@@ -301,13 +301,13 @@ class DWXAdapter extends ExecutionAdapter {
       try { this.client.get_historic_trades(lookbackDays); } catch {}
     });
     if (!trades.length) return null;
-    trades.sort((a, b) => (a?.deal_time || 0) - (b?.deal_time || 0));
+    trades.sort((a, b) => parseDealTime(a?.deal_time) - parseDealTime(b?.deal_time));
     const tIn = trades.find(t => includesCid(t?.comment, cid) && normalizeEntry(t?.entry) === 'in');
     if (!tIn) return null;
     const tOut = trades.find(
       t => normalizeEntry(t?.entry) === 'out'
         && t?.symbol === tIn.symbol
-        && Number(t?.deal_time) >= Number(tIn.deal_time)
+        && parseDealTime(t?.deal_time) >= parseDealTime(tIn.deal_time)
     );
     return tOut ? { ...tOut, entry: tIn } : null;
   }
@@ -349,6 +349,17 @@ function normalizeEntry(entry) {
   if (e === 'in' || e === 'entry_in') return 'in';
   if (e === 'out' || e === 'entry_out') return 'out';
   return e;
+}
+
+function parseDealTime(s) {
+  if (!s) return 0;
+  if (typeof s === 'number') return s;
+  const [datePart, timePart] = String(s).split(' ');
+  if (!datePart || !timePart) return 0;
+  const [y, m, d] = datePart.split('.').map(Number);
+  const [H, M, S] = timePart.split(':').map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1, H || 0, M || 0, S || 0);
+  return dt.getTime();
 }
 
 function findHeuristicMatchCid(pendingMap, mtOrder) {
