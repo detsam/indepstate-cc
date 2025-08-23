@@ -3,11 +3,13 @@ const {ipcRenderer} = require('electron');
 const loadConfig = require('./config/load');
 const tradeRules = require('./services/tradeRules');
 const {detectInstrumentType} = require("./services/instruments");
+const { findTickSizeFromConfig } = require('./services/points');
 const orderCardsCfg = loadConfig('order-cards.json');
 const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
 const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
+
 
 
 const envInstrRefresh = Number(process.env.INSTRUMENT_REFRESH_MS);
@@ -466,8 +468,16 @@ function createCard(row, index) {
   // head
   const head = el('div', 'row');
 
-  // Левая часть: тикер
-  head.appendChild(el('div', null, row.ticker, {style: 'font-weight:600;font-size:13px'}));
+  // Левая часть: тикер + bid/ask
+  const left = el('div', null, null, {style: 'display:flex;align-items:center;gap:6px'});
+  left.appendChild(el('div', null, row.ticker, {style: 'font-weight:600;font-size:13px'}));
+  const $bidask = el('span', 'card__bidask');
+  $bidask.title = 'Bid / Ask';
+  $bidask.style.fontSize = '11px';
+  $bidask.style.color = '#6b7280';
+  $bidask.textContent = formatBidAskText(instrumentInfo.get(row.ticker), row) || '';
+  left.appendChild($bidask);
+  head.appendChild(left);
 
   // Правая часть: статус + кнопка удаления
   const right = el('div', null, null, {style: 'display:flex;align-items:center;gap:6px'});
@@ -806,7 +816,7 @@ function createFxBody(row, key) {
       const r = _normNum($risk.value);
       const sl = priceToPoints($sl, _normNum($price.value), row);
       if (isPos(r) && isSL(sl)) {
-        const tick = tickSize(row) || 0.00001;
+        const tick = tickSize(row);
         const lot = row.lot || 100000;
         let q = Math.floor((r / tick) / sl / lot / 0.01) * 0.01;
         if (!Number.isFinite(q) || q < 0) q = 0;
@@ -985,7 +995,7 @@ function createEquitiesBody(row, key) {
     const r = _normNum($risk.value);
     const sl = priceToPoints($sl, _normNum($price.value), row);
     if (isPos(r) && isSL(sl)) {
-      const tick = tickSize(row) || 0.01;
+      const tick = tickSize(row);
       let q = Math.floor((r / tick) / sl);
       if (!Number.isFinite(q) || q < 0) q = 0;
       $qty.value = String(q);
@@ -1135,8 +1145,23 @@ function createEquitiesBody(row, key) {
 
 
 function tickSize(row) {
-  //todo config
-  return row.tickSize || instrumentInfo.get(row.ticker)?.tickSize;
+  const info = instrumentInfo.get(row.ticker);
+
+  // 1) Прямо з рядка (якщо задано)
+  const direct = Number(row?.tickSize);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  // 2) З instrumentInfo (біржа/адаптер)
+  const fromInfo = Number(info?.tickSize);
+  if (Number.isFinite(fromInfo) && fromInfo > 0) return fromInfo;
+
+  // 3) З конфігурації через services/points
+  const fromCfg = Number(findTickSizeFromConfig(row.ticker));
+  if (Number.isFinite(fromCfg) && fromCfg > 0) return fromCfg;
+
+  // 4) Фолбек за типом інструмента
+  const instrType = row.instrumentType || detectInstrumentType(row.ticker);
+  return (instrType === 'FX') ? 0.00001 : 0.01;
 }
 
 function decimalsFromTick(tick) {
@@ -1152,15 +1177,41 @@ function decimalsFromTick(tick) {
   return dot >= 0 ? (s.length - dot - 1) : 0;
 }
 
+function formatPriceValue(info, row) {
+  if (!info || typeof info !== 'object') return '';
+  const bid = Number(info.bid);
+  const ask = Number(info.ask);
+  let price = Number(info.price);
+  if (!Number.isFinite(price)) {
+    if (Number.isFinite(bid) && Number.isFinite(ask)) price = (bid + ask) / 2;
+  }
+  if (!Number.isFinite(price)) return '';
+  const tick = tickSize(row);
+  const decimals = Math.min(8, Math.max(0, decimalsFromTick(tick)));
+  return price.toFixed(decimals);
+}
+
 // Повертає спред у пунктах (integer) або NaN
 function computeSpreadPts(info, row) {
   if (!info || !Number.isFinite(info.ask) || !Number.isFinite(info.bid)) return NaN;
   const spread = info.ask - info.bid;
-  const tick = tickSize(row) ||  (detectInstrumentType(row.ticker) === 'FX' ? 0.00001 : 0.01);
+  const tick = tickSize(row);
   if (!Number.isFinite(spread) || !Number.isFinite(tick) || tick <= 0) return NaN;
   const pts = spread / tick;
   if (!Number.isFinite(pts)) return NaN;
   return Math.max(0, Math.round(pts));
+}
+
+function formatBidAskText(info, row) {
+  if (!info || typeof info !== 'object') return '';
+  const bid = Number(info.bid);
+  const ask = Number(info.ask);
+  if (!Number.isFinite(bid) && !Number.isFinite(ask)) return '';
+  const tick = tickSize(row);
+  const decimals = Math.min(8, Math.max(0, decimalsFromTick(tick)));
+  const b = Number.isFinite(bid) ? bid.toFixed(decimals) : '-';
+  const a = Number.isFinite(ask) ? ask.toFixed(decimals) : '-';
+  return `${b} / ${a}`;
 }
 
 function calcAvg(arr, n) {
@@ -1200,6 +1251,8 @@ function updateSpreadForTicker(ticker) {
   // 2) Оновлюємо UI для всіх карток із цим тикером
   const cards = $grid.querySelectorAll(`.card[data-ticker="${cssEsc(ticker)}"]`);
   cards.forEach(card => {
+    const ba = card.querySelector('.card__bidask');
+    if (ba) ba.textContent = formatBidAskText(info, row) || '';
     const sp = card.querySelector('.card__spread');
     if (sp) sp.textContent = formatSpreadTriple(ticker, row, curPts) || '';
   });
@@ -1245,14 +1298,14 @@ async function place(kind, row, v, instrumentType) {
     priceVal = v.pr;
     slVal = v.sl;
     takeVal = v.tp ?? null;
-    tick = tickSize(row) || 0.01;
+    tick = tickSize(row);
     extra.riskUsd = v.risk;
   } else {
     qtyVal = v.qty;
     priceVal = v.pr;
     slVal = v.sl;
     takeVal = v.tp ?? null;
-    tick = tickSize(row) || 0.00001;
+    tick = tickSize(row);
     extra.riskUsd = v.risk;
   }
 
