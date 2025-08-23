@@ -10,6 +10,9 @@ const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
 
+const SHOW_BID_ASK = !!(orderCardsCfg && orderCardsCfg.showBidAsk);
+const SHOW_SPREAD = !!(orderCardsCfg && orderCardsCfg.showSpread);
+
 
 
 const envInstrRefresh = Number(process.env.INSTRUMENT_REFRESH_MS);
@@ -468,15 +471,17 @@ function createCard(row, index) {
   // head
   const head = el('div', 'row');
 
-  // Левая часть: тикер + bid/ask
+  // Левая часть: тикер (+ bid/ask при наявності)
   const left = el('div', null, null, {style: 'display:flex;align-items:center;gap:6px'});
   left.appendChild(el('div', null, row.ticker, {style: 'font-weight:600;font-size:13px'}));
-  const $bidask = el('span', 'card__bidask');
-  $bidask.title = 'Bid / Ask';
-  $bidask.style.fontSize = '11px';
-  $bidask.style.color = '#6b7280';
-  $bidask.textContent = formatBidAskText(instrumentInfo.get(row.ticker), row) || '';
-  left.appendChild($bidask);
+  if (SHOW_BID_ASK) {
+    const $bidask = el('span', 'card__bidask');
+    $bidask.title = 'Bid / Ask';
+    $bidask.style.fontSize = '11px';
+    $bidask.style.color = '#6b7280';
+    $bidask.textContent = formatBidAskText(instrumentInfo.get(row.ticker), row) || '';
+    left.appendChild($bidask);
+  }
   head.appendChild(left);
 
   // Правая часть: статус + кнопка удаления
@@ -485,12 +490,14 @@ function createCard(row, index) {
   $status.style.display = 'none';
   right.appendChild($status);
 
-  const $spread = el('span', 'card__spread');
-  $spread.title = 'Spread pts: current / avg10 / avg100';
-  $spread.style.fontSize = '11px';
-  $spread.style.color = '#6b7280';
-  $spread.textContent = formatSpreadTriple(row.ticker, row) || '';
-  right.appendChild($spread);
+  if (SHOW_SPREAD) {
+    const $spread = el('span', 'card__spread');
+    $spread.title = 'Spread pts: current / avg10 / avg100';
+    $spread.style.fontSize = '11px';
+    $spread.style.color = '#6b7280';
+    $spread.textContent = formatSpreadTriple(row.ticker, row) || '';
+    right.appendChild($spread);
+  }
 
   const $retry = document.createElement('button');
   $retry.type = 'button';
@@ -1239,22 +1246,29 @@ function updateSpreadForTicker(ticker) {
   const row = state.rows.find(r => r.ticker === ticker);
   if (!row) return;
 
-  // 1) Оновлюємо історію
-  const curPts = computeSpreadPts(info, row);
-  if (Number.isFinite(curPts)) {
-    const arr = spreadHistory.get(ticker) || [];
-    arr.push(curPts);
-    if (arr.length > 100) arr.splice(0, arr.length - 100);
-    spreadHistory.set(ticker, arr);
+  // 1) Оновлюємо історію (лише якщо спред відображається)
+  let curPts;
+  if (SHOW_SPREAD) {
+    curPts = computeSpreadPts(info, row);
+    if (Number.isFinite(curPts)) {
+      const arr = spreadHistory.get(ticker) || [];
+      arr.push(curPts);
+      if (arr.length > 100) arr.splice(0, arr.length - 100);
+      spreadHistory.set(ticker, arr);
+    }
   }
 
   // 2) Оновлюємо UI для всіх карток із цим тикером
   const cards = $grid.querySelectorAll(`.card[data-ticker="${cssEsc(ticker)}"]`);
   cards.forEach(card => {
-    const ba = card.querySelector('.card__bidask');
-    if (ba) ba.textContent = formatBidAskText(info, row) || '';
-    const sp = card.querySelector('.card__spread');
-    if (sp) sp.textContent = formatSpreadTriple(ticker, row, curPts) || '';
+    if (SHOW_BID_ASK) {
+      const ba = card.querySelector('.card__bidask');
+      if (ba) ba.textContent = formatBidAskText(info, row) || '';
+    }
+    if (SHOW_SPREAD) {
+      const sp = card.querySelector('.card__spread');
+      if (sp) sp.textContent = formatSpreadTriple(ticker, row, curPts) || '';
+    }
   });
 }
 
