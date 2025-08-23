@@ -2,7 +2,6 @@
 const parsers = [
   require('./parsers/atr'),
   require('./parsers/json'),
-  require('./parsers/plain'),
 ];
 
 function parseWebhook(raw, nowTs) {
