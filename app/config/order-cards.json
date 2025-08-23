@@ -4,5 +4,7 @@
     { "type": "file", "pathEnvVar": "ORDER_CARDS_PATH", "pollMs": 1000 }
   ],
   "defaultEquityStopUsd": 50,
-  "closedCardEventStrategy": "ignore"
+  "closedCardEventStrategy": "ignore",
+  "showBidAsk": false,
+  "showSpread": false
 }

@@ -98,4 +98,4 @@ function toPoints(hookTick, symbol, deltaPrice, priceHint, deltaTokenForFallback
   return undefined;
 }
 
-module.exports = { toPoints, digitsFallbackPoints };
+module.exports = { toPoints, digitsFallbackPoints, findTickSizeFromConfig };
