@@ -206,6 +206,7 @@ function setCardState(key, state) {
   const status = card.querySelector('.card__status');
   const close = card.querySelector('.card__close');
   const retryBtn = card.querySelector('.retry-btn');
+  const spreadEl = card.querySelector('.card__spread');
   if (!status) return;
 
   const inputs = card.querySelectorAll('input');
@@ -217,6 +218,7 @@ function setCardState(key, state) {
     status.className = `card__status card__status--${state}`;
     card.classList.toggle('card--pending', state === 'pending');
     if (close) close.style.display = 'none';
+    if (spreadEl) spreadEl.style.display = 'none';
     inputs.forEach(inp => {
       inp.disabled = true;
     });
@@ -283,6 +285,10 @@ function setCardState(key, state) {
     status.title = '';
     status.onclick = null;
     card.classList.remove('card--pending');
+    if (spreadEl) {
+      spreadEl.style.display = '';
+      if (SHOW_SPREAD) updateSpreadForTicker(card.dataset.ticker);
+    }
     if (close) close.style.display = '';
     inputs.forEach(inp => {
       inp.disabled = false;
