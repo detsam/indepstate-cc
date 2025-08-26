@@ -208,10 +208,18 @@ function buildDeal(row, sessions = cfg.sessions) {
 function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS) {
   let text;
   try {
-    text = fs.readFileSync(file, 'utf8');
+    const buf = fs.readFileSync(file);
+    if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
+      text = buf.toString('utf16le');
+    } else if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) {
+      text = buf.toString('utf16be');
+    } else {
+      text = buf.toString('utf8');
+    }
   } catch {
     return [];
   }
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
   const rows = parseHtmlText(text);
   const deals = rows.map(r => buildDeal(r, sessions)).filter(Boolean);
   if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {

@@ -274,7 +274,7 @@ function buildHtmlPositionsOnly(rows) {
 }
 
 const tmp = path.join(os.tmpdir(), 'mt5-report.html');
-fs.writeFileSync(tmp, buildHtml(rows));
+fs.writeFileSync(tmp, Buffer.from('\ufeff' + buildHtml(rows), 'utf16le'));
 
 const deals = processFile(tmp, undefined, Infinity);
 
@@ -285,7 +285,7 @@ assert.deepStrictEqual(deals[deals.length - 1].symbol, { ticker: 'CCL' });
 assert.strictEqual(deals[deals.length - 1].profit, -33.72);
 
 const tmp2 = path.join(os.tmpdir(), 'mt5-report-positions-only.html');
-fs.writeFileSync(tmp2, buildHtmlPositionsOnly(rows));
+fs.writeFileSync(tmp2, Buffer.from('\ufeff' + buildHtmlPositionsOnly(rows), 'utf16le'));
 const deals2 = processFile(tmp2, undefined, Infinity);
 assert.strictEqual(deals2.length, rows.length);
 
