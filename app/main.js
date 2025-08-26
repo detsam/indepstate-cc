@@ -19,14 +19,21 @@ const dealTrackersCfg = loadConfig('deal-trackers.json');
 const dealTrackers = require('./services/dealTrackers');
 const { calcDealData } = require('./services/dealTrackers/calc');
 const tvLogs = require('./services/tvLogs');
+const mt5Logs = require('./services/mt5Logs');
 const { createCommandService } = require('./services/commandLine');
 let tvLogsCfg = {};
 try { tvLogsCfg = loadConfig('tv-logs.json'); }
 catch { tvLogsCfg = {}; }
+let mt5LogsCfg = {};
+try { mt5LogsCfg = loadConfig('mt5-logs.json'); }
+catch { mt5LogsCfg = {}; }
 initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
 if (tvLogsCfg.enabled !== false) {
   tvLogs.start(tvLogsCfg);
+}
+if (mt5LogsCfg.enabled !== false) {
+  mt5Logs.start(mt5LogsCfg);
 }
 
 function envBool(name, fallback = false) {

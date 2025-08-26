@@ -1,0 +1,253 @@
+const fs = require('fs');
+const path = require('path');
+const dealTrackers = require('../dealTrackers');
+const { calcDealData } = require('../dealTrackers/calc');
+const loadConfig = require('../../config/load');
+const DEFAULT_MAX_AGE_DAYS = 2;
+let cfg = {};
+try {
+  cfg = loadConfig('mt5-logs.json');
+} catch (_) {
+  cfg = {};
+}
+
+function resolveEnvRef(str) {
+  if (typeof str !== 'string') return str;
+  const m = str.match(/^\s*(?:\$\{?ENV:([A-Z0-9_]+)\}?)\s*$/i);
+  if (!m) return str;
+  const v = process.env[m[1]];
+  return v == null ? '' : v;
+}
+function resolveSecrets(obj) {
+  if (!obj || typeof obj !== 'object') return resolveEnvRef(obj);
+  if (Array.isArray(obj)) return obj.map(resolveSecrets);
+  const out = {};
+  for (const k of Object.keys(obj)) out[k] = resolveSecrets(obj[k]);
+  return out;
+}
+
+function extractText(html) {
+  return String(html).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+}
+
+function parseHtmlText(text) {
+  const rows = [];
+  // Extract the Positions section. If no later section header is found, fall back to the end of the document
+  const sectionMatch = String(text).match(
+    /<b>Positions<\/b>[\s\S]*?(?:<b>Orders<\/b>|<b>Deals<\/b>|<b>Open Positions<\/b>|$)/i
+  );
+  const section = sectionMatch ? sectionMatch[0] : '';
+  const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let match;
+  while ((match = trRe.exec(section))) {
+    const rowHtml = match[1];
+    if (/^\s*<th/i.test(rowHtml)) continue;
+    const cells = [];
+    // Skip hidden cells regardless of quoting style
+    const tdRe = /<td(?![^>]*class=['"]?hidden['"]?)[^>]*>([\s\S]*?)<\/td>/gi;
+    let m;
+    while ((m = tdRe.exec(rowHtml))) {
+      cells.push(extractText(m[1]));
+    }
+    if (cells.length < 13) continue;
+    if (!/^\d{4}/.test(cells[0])) continue;
+    const [openTime, positionId, symbol, side, volumeStr, openPriceStr, slStr, tpStr, closeTime, closePriceStr, commissionStr, swapStr, profitStr] = cells;
+    rows.push({
+      openTime,
+      positionId: Number(positionId),
+      symbol,
+      side,
+      volume: Number(volumeStr),
+      openPrice: Number(openPriceStr),
+      sl: slStr ? Number(slStr) : undefined,
+      tp: tpStr ? Number(tpStr) : undefined,
+      closeTime,
+      closePrice: Number(closePriceStr),
+      commission: commissionStr ? Number(commissionStr) : 0,
+      swap: swapStr ? Number(swapStr) : 0,
+      profit: profitStr ? Number(profitStr) : 0
+    });
+  }
+  return rows;
+}
+
+function priceDiff(a, b) {
+  const A = Number(a);
+  const B = Number(b);
+  if (!Number.isFinite(A) || !Number.isFinite(B)) return undefined;
+  return Math.abs(A - B);
+}
+
+function diffPoints(a, b) {
+  const diff = priceDiff(a, b);
+  if (diff == null) return undefined;
+  return Math.round(diff * 100);
+}
+
+function buildDeal(row, sessions = cfg.sessions) {
+  if (!row) return null;
+  const {
+    symbol: rawSymbol,
+    openTime: rawOpenTime,
+    side: rawSide,
+    volume: qty,
+    openPrice,
+    sl,
+    tp,
+    closePrice,
+    commission: rawCommission,
+    profit
+  } = row;
+  const [placingDateRaw = '', placingTime = ''] = String(rawOpenTime).split(/\s+/);
+  const placingDate = placingDateRaw.replace(/\./g, '-');
+  const side = String(rawSide).toLowerCase() === 'sell' ? 'short' : 'long';
+
+  let takeSetup, stopSetup;
+  if (tp != null) takeSetup = diffPoints(tp, openPrice);
+  if (sl != null) stopSetup = diffPoints(sl, openPrice);
+
+  const status = profit >= 0 ? 'take' : 'stop';
+  let takePoints; let stopPoints;
+  const resPoints = diffPoints(closePrice, openPrice);
+  if (status === 'take') {
+    takePoints = resPoints;
+  } else {
+    stopPoints = resPoints;
+  }
+
+  let commission = Math.abs(rawCommission);
+  if (commission < 3) {
+    const fee = qty < 500 ? 3 : qty * 0.006 * 2;
+    commission = fee;
+  }
+
+  const base = calcDealData({
+    symbol: { ticker: rawSymbol },
+    side,
+    entryPrice: openPrice,
+    exitPrice: closePrice,
+    qty,
+    takeSetup,
+    stopSetup,
+    commission,
+    profit,
+    takePoints,
+    stopPoints,
+    placingTime,
+    sessions,
+    status
+  });
+  const key = `${rawSymbol}|${placingDate} ${placingTime}`;
+  return { _key: key, placingDate, placingTime, ...base };
+}
+
+function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS) {
+  let text;
+  try {
+    const buf = fs.readFileSync(file);
+    if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
+      text = buf.toString('utf16le');
+    } else if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) {
+      text = buf.toString('utf16be');
+    } else {
+      text = buf.toString('utf8');
+    }
+  } catch {
+    return [];
+  }
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = parseHtmlText(text);
+  const deals = rows.map(r => buildDeal(r, sessions)).filter(Boolean);
+  if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {
+    const cutoff = Date.now() - maxAgeDays * 86400000;
+    return deals.filter(d => {
+      const t = Date.parse(d.placingDate);
+      return isNaN(t) ? true : t >= cutoff;
+    });
+  }
+  return deals;
+}
+
+function start(config = cfg) {
+  const resolved = resolveSecrets(config);
+  const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
+  const pollMs = resolved.pollMs || 5000;
+  const sessions = resolved.sessions;
+  const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
+  const state = new Map();
+
+  function processAndNotify(file, acc, info) {
+    const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
+    const deals = processFile(file, sessions, maxAgeDays);
+    for (const d of deals) {
+      const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
+      const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
+      if (info.keys.has(key)) continue;
+      info.keys.add(key);
+      dealTrackers.notifyPositionClosed({
+        symbol: d.symbol,
+        tp: d.tp,
+        sp: d.sp,
+        status: d.status,
+        profit: d.profit,
+        commission: d.commission,
+        takePoints: d.takePoints,
+        stopPoints: d.stopPoints,
+        side: d.side,
+        tactic: acc.tactic,
+        tradeRisk: d.tradeRisk,
+        tradeSession: d.tradeSession,
+        placingDate: d.placingDate,
+        _key: d._key
+      }, opts);
+    }
+  }
+
+  function listFiles(dir) {
+    let names;
+    try { names = fs.readdirSync(dir); } catch { return []; }
+    const out = [];
+    for (const name of names) {
+      const full = path.join(dir, name);
+      let stat;
+      try { stat = fs.statSync(full); } catch { continue; }
+      if (!stat.isFile()) continue;
+      const t = stat.birthtimeMs || stat.mtimeMs || 0;
+      out.push({ file: full, time: t });
+    }
+    out.sort((a, b) => a.time - b.time);
+    return out;
+  }
+
+  function tick() {
+    for (const acc of accounts) {
+      const dir = acc.dir || acc.path;
+      if (!dir) continue;
+      const files = listFiles(dir);
+      if (!files.length) continue;
+      let info = state.get(dir);
+      if (!info) {
+        info = { files: new Set(), keys: new Set(), initialized: false };
+        state.set(dir, info);
+      }
+      if (!info.initialized) {
+        const latest = files[files.length - 1].file;
+        processAndNotify(latest, acc, info);
+        info.files.add(latest);
+        info.initialized = true;
+      } else {
+        for (const { file } of files) {
+          if (info.files.has(file)) continue;
+          processAndNotify(file, acc, info);
+          info.files.add(file);
+        }
+      }
+    }
+  }
+
+  tick();
+  const timer = setInterval(tick, pollMs);
+  return { stop() { clearInterval(timer); } };
+}
+
+module.exports = { processFile, buildDeal, start };
