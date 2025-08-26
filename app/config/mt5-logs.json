@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "pollMs": 5000,
+  "skipExisting": [
+    { "field": "MT5-LOG-KEY", "prop": "_key" }
+  ],
+  "sessions": {
+    "02:00-06:00": 1,
+    "06:00-16:30": 2,
+    "16:30-02:00": 3
+  },
+  "accounts": [
+    {
+      "tactic": "example",
+      "dir": "${ENV:MT5_LOG_EXAMPLE}",
+      "maxAgeDays": 2
+    }
+  ]
+}
