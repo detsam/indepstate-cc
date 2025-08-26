@@ -40,7 +40,7 @@ For each account the service:
 1. Reads the MetaTrader 5 trade history HTML file and extracts rows from the **Positions** table.
 2. Derives trade side, entry price and exit price from each row.
 3. Calculates price differences such as `takeSetup` and `stopSetup` from the row's price fields, rounds them to two decimals and multiplies by `100` to get point distances.
-4. Uses these values to determine the result (`take` or `stop`), derives `takePoints`/`stopPoints` the same way, sums commission, rounds profit to two decimals and calculates `tradeRisk`.
+4. Uses these values to determine the result (`take` or `stop`), derives `takePoints`/`stopPoints` the same way, adjusts commission so that any fee under `3` is replaced with either `3` (when volume < `500`) or `volume * 0.006 * 2` (when volume ≥ `500`), rounds profit to two decimals and calculates `tradeRisk`.
 5. Splits the placing time into date and time (date normalized to `YYYY-MM-DD`), then determines `tradeSession` using the configured `sessions` map.
 6. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `symbol`, `placingDate`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints`, `side`, `tradeRisk`, `tradeSession`, `_key` and the account `tactic`, passing along the configured `skipExisting` rules to avoid duplicate notes.
 

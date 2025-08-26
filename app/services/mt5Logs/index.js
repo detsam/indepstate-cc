@@ -95,7 +95,7 @@ function buildDeal(row, sessions = cfg.sessions) {
     sl,
     tp,
     closePrice,
-    commission,
+    commission: rawCommission,
     profit
   } = row;
   const [placingDateRaw = '', placingTime = ''] = String(rawOpenTime).split(/\s+/);
@@ -113,6 +113,13 @@ function buildDeal(row, sessions = cfg.sessions) {
     takePoints = resPoints;
   } else {
     stopPoints = resPoints;
+  }
+
+  let commission = rawCommission;
+  if (Math.abs(commission) < 3) {
+    const fee = qty < 500 ? 3 : qty * 0.006 * 2;
+    const sign = commission <= 0 ? -1 : 1;
+    commission = fee * sign;
   }
 
   const base = calcDealData({
