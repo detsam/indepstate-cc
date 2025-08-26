@@ -286,10 +286,10 @@ assert.deepStrictEqual(deals[deals.length - 1].symbol, { ticker: 'CCL' });
 assert.strictEqual(deals[deals.length - 1].profit, -33.72);
 assert.strictEqual(deals[0].stopPoints, 13);
 assert.strictEqual(deals[1].takePoints, 80);
-assert.strictEqual(deals[0].commission, -7.7);
-assert.strictEqual(deals[1].commission, -3);
-assert.strictEqual(deals[7].commission, -6);
-assert.strictEqual(deals[14].commission, -10.99);
+assert.strictEqual(deals[0].commission, 7.7);
+assert.strictEqual(deals[1].commission, 3);
+assert.strictEqual(deals[7].commission, 6);
+assert.strictEqual(deals[14].commission, 10.99);
 
 const tmp2 = path.join(os.tmpdir(), 'mt5-report-positions-only.html');
 fs.writeFileSync(tmp2, Buffer.from('\ufeff' + buildHtmlPositionsOnly(rows), 'utf16le'));

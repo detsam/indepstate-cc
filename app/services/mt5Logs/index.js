@@ -115,11 +115,10 @@ function buildDeal(row, sessions = cfg.sessions) {
     stopPoints = resPoints;
   }
 
-  let commission = rawCommission;
-  if (Math.abs(commission) < 3) {
+  let commission = Math.abs(rawCommission);
+  if (commission < 3) {
     const fee = qty < 500 ? 3 : qty * 0.006 * 2;
-    const sign = commission <= 0 ? -1 : 1;
-    commission = fee * sign;
+    commission = fee;
   }
 
   const base = calcDealData({
