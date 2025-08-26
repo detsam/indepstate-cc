@@ -6,7 +6,8 @@
   "main": "app/main.js",
   "scripts": {
     "start": "electron .",
-    "postinstall": "echo Done"
+    "postinstall": "echo Done",
+    "test": "node test/mt5Logs.test.js"
   },
   "dependencies": {
     "chokidar": "^3.6.0",

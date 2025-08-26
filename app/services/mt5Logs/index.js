@@ -32,7 +32,7 @@ function extractText(html) {
 
 function parseHtmlText(text) {
   const rows = [];
-  const sectionMatch = String(text).match(/<b>Positions<\/b>[\s\S]*?<b>Orders<\/b>/i);
+  const sectionMatch = String(text).match(/<b>Positions<\/b>[\s\S]*?(?:<b>Orders<\/b>|<b>Deals<\/b>|<b>Open Positions<\/b>)/i);
   const section = sectionMatch ? sectionMatch[0] : '';
   const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let match;
@@ -46,6 +46,7 @@ function parseHtmlText(text) {
       cells.push(extractText(m[1]));
     }
     if (cells.length < 13) continue;
+    if (!/^\d{4}/.test(cells[0])) continue;
     const [openTime, positionId, symbol, side, volumeStr, openPriceStr, slStr, tpStr, closeTime, closePriceStr, commissionStr, swapStr, profitStr] = cells;
     rows.push({
       openTime,
