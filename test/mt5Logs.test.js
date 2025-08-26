@@ -281,6 +281,7 @@ const deals = processFile(tmp, undefined, Infinity);
 assert.strictEqual(deals.length, rows.length);
 assert.deepStrictEqual(deals[0].symbol, { ticker: 'KDP' });
 assert.strictEqual(deals[0].profit, -83.46);
+assert.strictEqual(deals[0].placingDate, '2025-08-26');
 assert.deepStrictEqual(deals[deals.length - 1].symbol, { ticker: 'CCL' });
 assert.strictEqual(deals[deals.length - 1].profit, -33.72);
 

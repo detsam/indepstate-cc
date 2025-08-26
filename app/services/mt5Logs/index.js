@@ -149,7 +149,8 @@ function buildDeal(row, sessions = cfg.sessions) {
     commission,
     profit
   } = row;
-  const [placingDate, placingTime] = String(rawOpenTime).split(/\s+/);
+  const [placingDateRaw = '', placingTime = ''] = String(rawOpenTime).split(/\s+/);
+  const placingDate = placingDateRaw.replace(/\./g, '-');
   const side = String(rawSide).toLowerCase() === 'sell' ? 'short' : 'long';
 
   const priceStrs = [openPriceStr];
@@ -198,11 +199,12 @@ function buildDeal(row, sessions = cfg.sessions) {
     profit,
     takePoints,
     stopPoints,
-    placingTime: rawOpenTime,
+    placingTime,
     sessions,
     status
   });
-  return { _key: `${rawSymbol}|${rawOpenTime}`, placingDate, placingTime, ...base };
+  const key = `${rawSymbol}|${placingDate} ${placingTime}`;
+  return { _key: key, placingDate, placingTime, ...base };
 }
 
 function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS) {
