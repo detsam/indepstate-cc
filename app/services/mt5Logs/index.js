@@ -78,6 +78,12 @@ function priceDiff(a, b) {
   return Math.abs(A - B);
 }
 
+function diffPoints(a, b) {
+  const diff = priceDiff(a, b);
+  if (diff == null) return undefined;
+  return Math.round(diff * 100);
+}
+
 function buildDeal(row, sessions = cfg.sessions) {
   if (!row) return null;
   const {
@@ -97,16 +103,16 @@ function buildDeal(row, sessions = cfg.sessions) {
   const side = String(rawSide).toLowerCase() === 'sell' ? 'short' : 'long';
 
   let takeSetup, stopSetup;
-  if (tp != null) takeSetup = priceDiff(tp, openPrice);
-  if (sl != null) stopSetup = priceDiff(sl, openPrice);
+  if (tp != null) takeSetup = diffPoints(tp, openPrice);
+  if (sl != null) stopSetup = diffPoints(sl, openPrice);
 
   const status = profit >= 0 ? 'take' : 'stop';
   let takePoints; let stopPoints;
-  const diffPoints = priceDiff(closePrice, openPrice);
+  const resPoints = diffPoints(closePrice, openPrice);
   if (status === 'take') {
-    takePoints = diffPoints;
+    takePoints = resPoints;
   } else {
-    stopPoints = diffPoints;
+    stopPoints = resPoints;
   }
 
   const base = calcDealData({
