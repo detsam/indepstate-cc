@@ -59,14 +59,10 @@ function parseHtmlText(text) {
       side,
       volume: Number(volumeStr),
       openPrice: Number(openPriceStr),
-      openPriceStr,
       sl: slStr ? Number(slStr) : undefined,
-      slStr: slStr || undefined,
       tp: tpStr ? Number(tpStr) : undefined,
-      tpStr: tpStr || undefined,
       closeTime,
       closePrice: Number(closePriceStr),
-      closePriceStr,
       commission: commissionStr ? Number(commissionStr) : 0,
       swap: swapStr ? Number(swapStr) : 0,
       profit: profitStr ? Number(profitStr) : 0
@@ -75,62 +71,11 @@ function parseHtmlText(text) {
   return rows;
 }
 
-function bgcd(a, b) {
-  a = a < 0n ? -a : a;
-  b = b < 0n ? -b : b;
-  while (b) {
-    const t = a % b;
-    a = b;
-    b = t;
-  }
-  return a;
-}
-function fracLen(s) {
-  s = String(s);
-  const i = s.indexOf('.');
-  return i === -1 ? 0 : s.length - i - 1;
-}
-function toUnits(s, D) {
-  s = String(s).trim();
-  let neg = false;
-  if (s[0] === '-') {
-    neg = true;
-    s = s.slice(1);
-  }
-  const [ip = '0', fp = ''] = s.split('.');
-  const fpad = (fp + '0'.repeat(D)).slice(0, D);
-  const digits = (ip.replace(/^0+(?=\d)/, '') || '0') + fpad;
-  const bi = BigInt(digits);
-  return neg ? -bi : bi;
-}
-function detectTick(prices, { minDecimals = 8 } = {}) {
-  if (!prices || prices.length < 2) return { D: minDecimals, tickUnits: 1n };
-  let D = Math.max(...prices.map(p => fracLen(String(p))));
-  if (D < minDecimals) D = minDecimals;
-  const U = prices.map(p => toUnits(p, D)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const diffs = [];
-  for (let i = 1; i < U.length; i++) {
-    let d = U[i] - U[i - 1];
-    if (d !== 0n) {
-      if (d < 0n) d = -d;
-      diffs.push(d);
-    }
-  }
-  if (!diffs.length) return { D, tickUnits: 1n };
-  let tickUnits = diffs[0];
-  for (let i = 1; i < diffs.length; i++) tickUnits = bgcd(tickUnits, diffs[i]);
-  if (tickUnits <= 0n) tickUnits = 1n;
-  return { D, tickUnits };
-}
-function pointsBetween(a, b, meta) {
-  if (!meta) throw new Error('tick meta required');
-  const { D, tickUnits } = meta;
-  const A = toUnits(a, D);
-  const B = toUnits(b, D);
-  const diffUnits = A > B ? A - B : B - A;
-  const q = diffUnits / tickUnits;
-  const r = diffUnits % tickUnits;
-  return r === 0n ? Number(q) : Number(diffUnits) / Number(tickUnits);
+function priceDiff(a, b) {
+  const A = Number(a);
+  const B = Number(b);
+  if (!Number.isFinite(A) || !Number.isFinite(B)) return undefined;
+  return Math.abs(A - B);
 }
 
 function buildDeal(row, sessions = cfg.sessions) {
@@ -141,11 +86,9 @@ function buildDeal(row, sessions = cfg.sessions) {
     side: rawSide,
     volume: qty,
     openPrice,
-    openPriceStr,
-    slStr,
-    tpStr,
+    sl,
+    tp,
     closePrice,
-    closePriceStr,
     commission,
     profit
   } = row;
@@ -153,34 +96,13 @@ function buildDeal(row, sessions = cfg.sessions) {
   const placingDate = placingDateRaw.replace(/\./g, '-');
   const side = String(rawSide).toLowerCase() === 'sell' ? 'short' : 'long';
 
-  const priceStrs = [openPriceStr];
-  if (slStr) priceStrs.push(slStr);
-  if (tpStr) priceStrs.push(tpStr);
-  if (closePriceStr) priceStrs.push(closePriceStr);
-  const tickMeta = detectTick(priceStrs);
-
-  function pricePoints(aStr, bStr) {
-    if (!aStr || !bStr) return undefined;
-    try {
-      return pointsBetween(aStr, bStr, tickMeta);
-    } catch {
-      return undefined;
-    }
-  }
-
   let takeSetup, stopSetup;
-  if (tpStr) {
-    takeSetup = pricePoints(tpStr, openPriceStr);
-    if (takeSetup != null) takeSetup = Math.floor(takeSetup);
-  }
-  if (slStr) {
-    stopSetup = pricePoints(slStr, openPriceStr);
-    if (stopSetup != null) stopSetup = Math.floor(stopSetup);
-  }
+  if (tp != null) takeSetup = priceDiff(tp, openPrice);
+  if (sl != null) stopSetup = priceDiff(sl, openPrice);
 
   const status = profit >= 0 ? 'take' : 'stop';
   let takePoints; let stopPoints;
-  const diffPoints = pricePoints(closePriceStr, openPriceStr);
+  const diffPoints = priceDiff(closePrice, openPrice);
   if (status === 'take') {
     takePoints = diffPoints;
   } else {

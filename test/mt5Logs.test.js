@@ -284,6 +284,8 @@ assert.strictEqual(deals[0].profit, -83.46);
 assert.strictEqual(deals[0].placingDate, '2025-08-26');
 assert.deepStrictEqual(deals[deals.length - 1].symbol, { ticker: 'CCL' });
 assert.strictEqual(deals[deals.length - 1].profit, -33.72);
+assert.ok(Math.abs(deals[0].stopPoints - 0.13) < 1e-8);
+assert.ok(Math.abs(deals[1].takePoints - 0.795) < 1e-8);
 
 const tmp2 = path.join(os.tmpdir(), 'mt5-report-positions-only.html');
 fs.writeFileSync(tmp2, Buffer.from('\ufeff' + buildHtmlPositionsOnly(rows), 'utf16le'));
