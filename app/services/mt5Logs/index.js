@@ -32,7 +32,10 @@ function extractText(html) {
 
 function parseHtmlText(text) {
   const rows = [];
-  const sectionMatch = String(text).match(/<b>Positions<\/b>[\s\S]*?(?:<b>Orders<\/b>|<b>Deals<\/b>|<b>Open Positions<\/b>)/i);
+  // Extract the Positions section. If no later section header is found, fall back to the end of the document
+  const sectionMatch = String(text).match(
+    /<b>Positions<\/b>[\s\S]*?(?:<b>Orders<\/b>|<b>Deals<\/b>|<b>Open Positions<\/b>|$)/i
+  );
   const section = sectionMatch ? sectionMatch[0] : '';
   const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let match;
@@ -40,7 +43,8 @@ function parseHtmlText(text) {
     const rowHtml = match[1];
     if (/^\s*<th/i.test(rowHtml)) continue;
     const cells = [];
-    const tdRe = /<td(?![^>]*class="hidden")[^>]*>([\s\S]*?)<\/td>/gi;
+    // Skip hidden cells regardless of quoting style
+    const tdRe = /<td(?![^>]*class=['"]?hidden['"]?)[^>]*>([\s\S]*?)<\/td>/gi;
     let m;
     while ((m = tdRe.exec(rowHtml))) {
       cells.push(extractText(m[1]));

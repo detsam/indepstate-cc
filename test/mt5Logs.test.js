@@ -260,6 +260,19 @@ function buildHtml(rows) {
   return header + positionsHeader + rowsHtml + footer;
 }
 
+function buildHtmlPositionsOnly(rows) {
+  const header = `<!DOCTYPE html><html><body><div><table>`;
+  const positionsHeader = `<tr align="center"><th colspan="14"><div><b>Trade History Report</b></div></th></tr>` +
+    `<tr align="center"><th colspan="14"><div><b>Positions</b></div></th></tr>` +
+    `<tr align="center" bgcolor="#E5F0FC"><td><b>Time</b></td><td><b>Position</b></td><td><b>Symbol</b></td><td><b>Type</b></td>` +
+    `<td><b>Volume</b></td><td><b>Price</b></td><td><b>S / L</b></td><td><b>T / P</b></td><td><b>Time</b></td><td><b>Price</b></td><td><b>Commission</b></td><td><b>Swap</b></td><td colspan="2"><b>Profit</b></td></tr>`;
+  const rowsHtml = rows.map((r, i) =>
+    `<tr bgcolor="${i % 2 ? '#F7F7F7' : '#FFFFFF'}" align="right"><td>${r.openTime}</td><td>${r.positionId}</td><td>${r.symbol}</td><td>${r.side}</td><td class="hidden" colspan="8">cid:x</td><td>${r.volume}</td><td>${r.openPrice}</td><td>${r.sl}</td><td>${r.tp}</td><td>${r.closeTime}</td><td>${r.closePrice}</td><td>${r.commission}</td><td>${r.swap}</td><td colspan="2">${r.profit}</td></tr>`
+  ).join('');
+  const footer = `</table></div></body></html>`;
+  return header + positionsHeader + rowsHtml + footer;
+}
+
 const tmp = path.join(os.tmpdir(), 'mt5-report.html');
 fs.writeFileSync(tmp, buildHtml(rows));
 
@@ -270,6 +283,11 @@ assert.deepStrictEqual(deals[0].symbol, { ticker: 'KDP' });
 assert.strictEqual(deals[0].profit, -83.46);
 assert.deepStrictEqual(deals[deals.length - 1].symbol, { ticker: 'CCL' });
 assert.strictEqual(deals[deals.length - 1].profit, -33.72);
+
+const tmp2 = path.join(os.tmpdir(), 'mt5-report-positions-only.html');
+fs.writeFileSync(tmp2, buildHtmlPositionsOnly(rows));
+const deals2 = processFile(tmp2, undefined, Infinity);
+assert.strictEqual(deals2.length, rows.length);
 
 console.log('mt5Logs parsing test passed');
 
