@@ -289,6 +289,13 @@ async function run() {
         { time: '2025.08.26 16:50', high: 31.50, low: 30.70 }
       ];
     }
+    if (symbol === 'ETSY') {
+      return [
+        { time: '2025.08.26 16:40', high: 55.60, low: 55.10 },
+        { time: '2025.08.26 16:45', high: 55.90, low: 55.30 },
+        { time: '2025.08.26 16:50', high: 56.20, low: 55.40 }
+      ];
+    }
     return [];
   };
 
@@ -308,6 +315,8 @@ async function run() {
   assert.strictEqual(deals[7].commission, 6);
   assert.strictEqual(deals[14].commission, 10.99);
   assert.strictEqual(deals[0].moveActualEP, 60);
+  assert.strictEqual(deals[0].moveReverse, 13);
+  assert.strictEqual(deals[1].moveReverse, 13);
 
   const tmp2 = path.join(os.tmpdir(), 'mt5-report-positions-only.html');
   fs.writeFileSync(tmp2, Buffer.from('\ufeff' + buildHtmlPositionsOnly(rows), 'utf16le'));

@@ -59,7 +59,7 @@ class ObsidianDealTracker extends DealTracker {
       return v != null && v !== '';
     });
 
-    const { symbol, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession, placingDate, moveActualEP } = info;
+    const { symbol, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession, placingDate, moveActualEP, moveReverse } = info;
     const ticker = symbol && symbol.ticker;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
@@ -126,6 +126,9 @@ class ObsidianDealTracker extends DealTracker {
     }
     if (moveActualEP != null && moveActualEP !== 0) {
       content = content.replace(/^- Move Actual EP::.*$/m, `- Move Actual EP:: ${moveActualEP}`);
+    }
+    if (moveReverse != null && moveReverse !== 0) {
+      content = content.replace(/^- Move Reverse::.*$/m, `- Move Reverse:: ${moveReverse}`);
     }
     if (status === 'take') {
       content = content.replace(/^- Homework::.*$/m, '- Homework:: [[Analysis. Right Direction]]');

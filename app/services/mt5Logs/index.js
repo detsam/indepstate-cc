@@ -112,6 +112,28 @@ function computeMoveActual({ side, openPrice, openTime }, bars = []) {
   return diffPoints(extreme, openPrice) || 0;
 }
 
+function computeMoveReverse({ side, openPrice, openTime, closeTime }, bars = []) {
+  if (!Array.isArray(bars) || bars.length === 0) return undefined;
+  const entryTs = parseMtTime(openTime);
+  const exitTs = parseMtTime(closeTime);
+  const relevant = bars.filter(b => {
+    const t = b.time != null && typeof b.time === 'number' ? b.time : parseMtTime(b.time);
+    return t >= entryTs && t <= exitTs;
+  });
+  if (!relevant.length) return undefined;
+  let extreme = openPrice;
+  for (const bar of relevant) {
+    const high = Number(bar.high);
+    const low = Number(bar.low);
+    if (side === 'long') {
+      if (low < extreme) extreme = low;
+    } else {
+      if (high > extreme) extreme = high;
+    }
+  }
+  return diffPoints(extreme, openPrice) || 0;
+}
+
 async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
   if (!row) return null;
   const {
@@ -122,6 +144,7 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
     openPrice,
     sl,
     tp,
+    closeTime: rawCloseTime,
     closePrice,
     commission: rawCommission,
     profit
@@ -154,12 +177,17 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
   }
 
   let moveActualEP;
+  let moveReverse;
   if (typeof fetchBars === 'function') {
     try {
       const bars = await fetchBars(rawSymbol, placingDateRaw);
       moveActualEP = computeMoveActual({ side, openPrice, openTime: rawOpenTime }, bars);
+      if (status === 'take') {
+        moveReverse = computeMoveReverse({ side, openPrice, openTime: rawOpenTime, closeTime: rawCloseTime }, bars);
+      }
     } catch {}
   }
+  if (status === 'stop') moveReverse = stopSetup;
 
   const base = calcDealData({
     symbol: { ticker: rawSymbol },
@@ -177,7 +205,7 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
     sessions,
     status
   });
-  return { _key: key, placingDate, placingTime, moveActualEP, ...base };
+  return { _key: key, placingDate, placingTime, moveActualEP, moveReverse, ...base };
 }
 
 async function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, fetchBars, include) {
@@ -288,6 +316,7 @@ function start(config = cfg, { dwxClients = {} } = {}) {
         tradeSession: d.tradeSession,
         placingDate: d.placingDate,
         moveActualEP: d.moveActualEP,
+        moveReverse: d.moveReverse,
         _key: d._key
       }, opts);
     }
