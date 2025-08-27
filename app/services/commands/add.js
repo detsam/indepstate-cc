@@ -14,6 +14,20 @@ function parsePts(token) {
   return Number.isFinite(n) ? n : null;
 }
 
+function parsePtsAuto(token, price) {
+  if (token == null) return null;
+  const s = String(token).trim();
+  if (!s) return null;
+  if (s.includes('.')) {
+    const pr = _normNum(price);
+    const val = _normNum(s);
+    if (!Number.isFinite(pr) || !Number.isFinite(val)) return null;
+    const diffPts = Math.abs(pr - val) / 0.01; // mimic input field conversion
+    return Number.isFinite(diffPts) ? Math.round(diffPts) : null;
+  }
+  return parsePts(token);
+}
+
 function isSL(n) {
   return typeof n === 'number' && isFinite(n) && n > 0;
 }
@@ -30,8 +44,8 @@ class AddCommand extends Command {
       return { ok: false, error: 'Usage: add {ticker} {price} {sl} {tp} {risk}' };
     }
     const price = _normNum(priceStr);
-    const sl = parsePts(slStr);
-    const tp = parsePts(tpStr);
+    const sl = parsePtsAuto(slStr, price);
+    const tp = parsePtsAuto(tpStr, price);
     const risk = _normNum(riskStr);
     if (!Number.isFinite(price) || price <= 0) {
       return { ok: false, error: 'Invalid price' };
