@@ -33,9 +33,10 @@ if (tvLogsCfg.enabled !== false) {
   tvLogs.start(tvLogsCfg);
 }
 if (mt5LogsCfg.enabled !== false) {
-  const dwxAdapter = getAdapter('dwx');
-  const dwxCfg = getProviderConfig('dwx');
-  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxCfg }, { dwxClient: dwxAdapter?.client });
+  const providerName = mt5LogsCfg.provider;
+  const adapter = providerName ? getAdapter(providerName) : undefined;
+  const providerCfg = providerName ? getProviderConfig(providerName) : undefined;
+  mt5Logs.start({ ...mt5LogsCfg, dwx: providerCfg }, { dwxClient: adapter?.client });
 }
 
 function envBool(name, fallback = false) {

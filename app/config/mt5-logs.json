@@ -1,6 +1,7 @@
 {
   "enabled": true,
   "pollMs": 5000,
+  "provider": "dwx",
   "skipExisting": [
     { "field": "MT5-LOG-KEY", "prop": "_key" }
   ],
