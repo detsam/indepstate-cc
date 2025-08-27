@@ -285,7 +285,8 @@ async function run() {
         { time: '2025.08.26 16:30', high: 30.95, low: 30.80 },
         { time: '2025.08.26 16:35', high: 31.00, low: 30.88 },
         { time: '2025.08.26 16:40', high: 31.20, low: 30.90 },
-        { time: '2025.08.26 16:45', high: 31.10, low: 30.76 }
+        { time: '2025.08.26 16:45', high: 31.10, low: 30.76 },
+        { time: '2025.08.26 16:50', high: 31.50, low: 30.70 }
       ];
     }
     return [];
@@ -306,7 +307,7 @@ async function run() {
   assert.strictEqual(deals[1].commission, 3);
   assert.strictEqual(deals[7].commission, 6);
   assert.strictEqual(deals[14].commission, 10.99);
-  assert.strictEqual(deals[0].moveActualEP, 30);
+  assert.strictEqual(deals[0].moveActualEP, 60);
 
   const tmp2 = path.join(os.tmpdir(), 'mt5-report-positions-only.html');
   fs.writeFileSync(tmp2, Buffer.from('\ufeff' + buildHtmlPositionsOnly(rows), 'utf16le'));

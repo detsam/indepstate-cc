@@ -91,7 +91,7 @@ function parseMtTime(str) {
   return new Date(y, m - 1, d, H, M, S).getTime();
 }
 
-function computeMoveActual({ side, openPrice, sl, openTime }, bars = []) {
+function computeMoveActual({ side, openPrice, openTime }, bars = []) {
   if (!Array.isArray(bars) || bars.length === 0) return undefined;
   const entryTs = parseMtTime(openTime);
   const relevant = bars.filter(b => {
@@ -104,10 +104,8 @@ function computeMoveActual({ side, openPrice, sl, openTime }, bars = []) {
     const high = Number(bar.high);
     const low = Number(bar.low);
     if (side === 'long') {
-      if (sl != null && low <= sl) break;
       if (high > extreme) extreme = high;
     } else {
-      if (sl != null && high >= sl) break;
       if (low < extreme) extreme = low;
     }
   }
@@ -159,7 +157,7 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
   if (typeof fetchBars === 'function') {
     try {
       const bars = await fetchBars(rawSymbol, placingDateRaw);
-      moveActualEP = computeMoveActual({ side, openPrice, sl, openTime: rawOpenTime }, bars);
+      moveActualEP = computeMoveActual({ side, openPrice, openTime: rawOpenTime }, bars);
     } catch {}
   }
 
