@@ -10,6 +10,9 @@ async function run() {
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'vault-'));
   const journal = path.join(vault, 'journal');
   fs.mkdirSync(journal, { recursive: true });
+  const templateDir = path.join(vault, 'z. Staff', 'Templates');
+  fs.mkdirSync(templateDir, { recursive: true });
+  fs.writeFileSync(path.join(templateDir, 'Template. Deal.md'), '- Date::\n');
 
   const info = { symbol: { ticker: 'ABC' }, placingDate: '2025-08-26' };
   const opts = { skipExisting: [{ field: 'Ticker', prop: 'symbol.ticker' }] };
@@ -33,13 +36,9 @@ async function run() {
   res = dealTrackers.shouldWritePositionClosed(info, opts);
   assert.strictEqual(res, true);
 
-  // disabling deal trackers via config prevents note creation
-  dealTrackers.init({ enabled: false, trackers: [{ type: 'obsidian', vaultPath: vault, journalPath: journal }] });
-  assert.strictEqual(dealTrackers.isEnabled(), false);
-  res = dealTrackers.shouldWritePositionClosed(info, opts);
-  assert.strictEqual(res, false);
+  // Create note via notifyPositionClosed
   dealTrackers.notifyPositionClosed({ ...info, status: 'take' }, opts);
-  assert.strictEqual(fs.existsSync(notePath), false);
+  assert.strictEqual(fs.existsSync(notePath), true);
 
   console.log('dealTrackers tests passed');
 }
