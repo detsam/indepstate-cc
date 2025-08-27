@@ -29,7 +29,6 @@ try { mt5LogsCfg = loadConfig('mt5-logs.json'); }
 catch { mt5LogsCfg = {}; }
 initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
-const dealTrackersEnabled = dealTrackersCfg.enabled !== false;
 if (tvLogsCfg.enabled !== false) {
   tvLogs.start(tvLogsCfg);
 }
@@ -49,7 +48,7 @@ if (mt5LogsCfg.enabled !== false) {
     const providerCfg = getProviderConfig(name);
     if (providerCfg) dwxConfigs[name] = providerCfg;
   }
-  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients, dealTrackersEnabled });
+  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients });
 }
 
 function envBool(name, fallback = false) {
@@ -181,9 +180,7 @@ function wireAdapter(adapter, providerName) {
         commission: hist?.commission,
         profit
       });
-      if (dealTrackersEnabled) {
-        dealTrackers.notifyPositionClosed(payload);
-      }
+      dealTrackers.notifyPositionClosed(payload);
       trackerIndex.delete(String(ticket));
     }
     if (mainWindow && !mainWindow.isDestroyed()) {
