@@ -29,6 +29,7 @@ try { mt5LogsCfg = loadConfig('mt5-logs.json'); }
 catch { mt5LogsCfg = {}; }
 initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
+const dealTrackersEnabled = dealTrackersCfg.enabled !== false;
 if (tvLogsCfg.enabled !== false) {
   tvLogs.start(tvLogsCfg);
 }
@@ -180,7 +181,7 @@ function wireAdapter(adapter, providerName) {
         commission: hist?.commission,
         profit
       });
-      if (dealTrackers.isEnabled()) {
+      if (dealTrackersEnabled) {
         dealTrackers.notifyPositionClosed(payload);
       }
       trackerIndex.delete(String(ticket));

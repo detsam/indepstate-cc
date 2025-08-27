@@ -4,7 +4,7 @@ Deal trackers receive notifications when a position closes and can persist the t
 
 ## Configuration
 
-Trackers are configured in `app/config/deal-trackers.json`. Set the top-level `enabled` flag to `false` so the main process and log services skip notifying trackers. This prevents report generation while still initializing trackers. Each entry specifies a `type` and tracker specific options. Values may reference environment variables using the `${ENV:VAR}` syntax.
+Trackers are configured in `app/config/deal-trackers.json`. Set the top-level `enabled` flag to `false` so the main process skips notifying trackers. This prevents report generation while still initializing trackers. Each entry specifies a `type` and tracker specific options. Values may reference environment variables using the `${ENV:VAR}` syntax.
 
 An Obsidian tracker writes new notes to `journalPath`. Provide `findJournalPath` to search for existing notes in a different directory before creating new ones.
 
@@ -18,8 +18,6 @@ the note is written.
 ## API
 
 `dealTrackers.notifyPositionClosed(info, opts)` dispatches the `info` object to all configured trackers. Each tracker implements `onPositionClosed(info, opts)` to handle the data.
-
-`dealTrackers.isEnabled()` returns whether report generation is enabled based on configuration.
 
 ### Duplicate protection
 

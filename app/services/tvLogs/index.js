@@ -343,24 +343,22 @@ function start(config = cfg) {
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
       info.keys.add(key);
-      if (dealTrackers.isEnabled()) {
-        dealTrackers.notifyPositionClosed({
-          symbol: d.symbol,
-          tp: d.tp,
-          sp: d.sp,
-          status: d.status,
-          profit: d.profit,
-          commission: d.commission,
-          takePoints: d.takePoints,
-          stopPoints: d.stopPoints,
-          side: d.side,
-          tactic: acc.tactic,
-          tradeRisk: d.tradeRisk,
-          tradeSession: d.tradeSession,
-          placingDate: d.placingDate,
-          _key: d._key
-        }, opts);
-      }
+      dealTrackers.notifyPositionClosed({
+        symbol: d.symbol,
+        tp: d.tp,
+        sp: d.sp,
+        status: d.status,
+        profit: d.profit,
+        commission: d.commission,
+        takePoints: d.takePoints,
+        stopPoints: d.stopPoints,
+        side: d.side,
+        tactic: acc.tactic,
+        tradeRisk: d.tradeRisk,
+        tradeSession: d.tradeSession,
+        placingDate: d.placingDate,
+        _key: d._key
+      }, opts);
     }
   }
 
