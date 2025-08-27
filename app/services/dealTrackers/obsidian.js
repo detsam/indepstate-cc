@@ -15,12 +15,46 @@ class ObsidianDealTracker extends DealTracker {
     this.chartComposer = cfg.chartImageComposer;
   }
 
+  shouldWrite(info = {}, opts = {}) {
+    const ticker = info.symbol && info.symbol.ticker;
+    const vault = this.vaultPath;
+    const targetDir = this.journalPath;
+    if (!vault || !targetDir) return false;
+    const searchDirs = [this.findJournalPath || targetDir];
+    if ((this.findJournalPath || targetDir) !== targetDir) searchDirs.push(targetDir);
+    const dateStr = info.placingDate || new Date().toISOString().slice(0, 10);
+    const baseName = `${dateStr}. ${sanitizeFileName(ticker || '')}`;
+    let fileName = `${baseName}.md`;
+    const criteria = Array.isArray(opts?.skipExisting) ? opts.skipExisting : [];
+    const getProp = (obj, p) => p.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
+    const canCheck = criteria.length > 0 && criteria.every(c => {
+      const v = getProp(info, c.prop);
+      return v != null && v !== '';
+    });
+    if (!canCheck) return true;
+    let i = 1;
+    while (searchDirs.some(dir => fs.existsSync(path.join(dir, fileName)))) {
+      for (const dir of searchDirs) {
+        const existingPath = path.join(dir, fileName);
+        if (!fs.existsSync(existingPath)) continue;
+        try {
+          const existing = fs.readFileSync(existingPath, 'utf8');
+          const found = criteria.every(c => existing.includes(`${c.field}: ${getProp(info, c.prop)}`));
+          if (found) return false;
+        } catch {}
+      }
+      fileName = `${baseName} (${i}).md`;
+      i += 1;
+    }
+    return true;
+  }
+
   async onPositionClosed(info = {}, opts = {}) {
+    if (!this.shouldWrite(info, opts)) return;
     const { symbol, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession, placingDate, moveActualEP } = info;
     const ticker = symbol && symbol.ticker;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
-    if (!vault || !targetDir) return;
     const searchDirs = [this.findJournalPath || targetDir];
     if ((this.findJournalPath || targetDir) !== targetDir) searchDirs.push(targetDir);
 
@@ -37,27 +71,8 @@ class ObsidianDealTracker extends DealTracker {
     const baseName = `${dateStr}. ${sanitizeFileName(ticker || '')}`;
     let fileName = `${baseName}.md`;
     let filePath = path.join(targetDir, fileName);
-
-    const criteria = Array.isArray(opts?.skipExisting) ? opts.skipExisting : [];
-    const getProp = (obj, path) => path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
-    const canCheck = criteria.length > 0 && criteria.every(c => {
-      const v = getProp(info, c.prop);
-      return v != null && v !== '';
-    });
-
     let i = 1;
     while (searchDirs.some(dir => fs.existsSync(path.join(dir, fileName)))) {
-      if (canCheck) {
-        for (const dir of searchDirs) {
-          const existingPath = path.join(dir, fileName);
-          if (!fs.existsSync(existingPath)) continue;
-          try {
-            const existing = fs.readFileSync(existingPath, 'utf8');
-            const found = criteria.every(c => existing.includes(`${c.field}: ${getProp(info, c.prop)}`));
-            if (found) return;
-          } catch {}
-        }
-      }
       fileName = `${baseName} (${i}).md`;
       filePath = path.join(targetDir, fileName);
       i += 1;

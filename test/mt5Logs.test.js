@@ -313,6 +313,13 @@ async function run() {
   const deals2 = await processFile(tmp2, undefined, Infinity, fetchBars);
   assert.strictEqual(deals2.length, rows.length);
 
+  let called = 0;
+  const fetchBars2 = async symbol => { called += 1; return []; };
+  const include = info => info.symbol.ticker === 'KDP';
+  const deals3 = await processFile(tmp, undefined, Infinity, fetchBars2, include);
+  assert.strictEqual(called, 1);
+  assert.strictEqual(deals3.length, 1);
+
   console.log('mt5Logs parsing test passed');
 }
 

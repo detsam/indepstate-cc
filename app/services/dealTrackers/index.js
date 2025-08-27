@@ -65,4 +65,15 @@ function notifyPositionClosed(info, opts) {
   }
 }
 
-module.exports = { init, notifyPositionClosed };
+function shouldWritePositionClosed(info, opts) {
+  for (const t of trackers) {
+    try {
+      if (typeof t.shouldWrite === 'function' && t.shouldWrite(info, opts)) return true;
+    } catch (e) {
+      console.error('DealTracker error', e);
+    }
+  }
+  return false;
+}
+
+module.exports = { init, notifyPositionClosed, shouldWritePositionClosed };

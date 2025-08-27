@@ -114,7 +114,7 @@ function computeMoveActual({ side, openPrice, sl, openTime }, bars = []) {
   return diffPoints(extreme, openPrice) || 0;
 }
 
-async function buildDeal(row, sessions = cfg.sessions, fetchBars) {
+async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
   if (!row) return null;
   const {
     symbol: rawSymbol,
@@ -131,6 +131,10 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars) {
   const [placingDateRaw = '', placingTime = ''] = String(rawOpenTime).split(/\s+/);
   const placingDate = placingDateRaw.replace(/\./g, '-');
   const side = String(rawSide).toLowerCase() === 'sell' ? 'short' : 'long';
+  const key = `${rawSymbol}|${placingDate} ${placingTime}`;
+  if (typeof include === 'function' && !include({ _key: key, placingDate, placingTime, symbol: { ticker: rawSymbol } })) {
+    return null;
+  }
 
   let takeSetup, stopSetup;
   if (tp != null) takeSetup = diffPoints(tp, openPrice);
@@ -175,11 +179,10 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars) {
     sessions,
     status
   });
-  const key = `${rawSymbol}|${placingDate} ${placingTime}`;
   return { _key: key, placingDate, placingTime, moveActualEP, ...base };
 }
 
-async function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, fetchBars) {
+async function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, fetchBars, include) {
   let text;
   try {
     const buf = fs.readFileSync(file);
@@ -195,7 +198,7 @@ async function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_M
   }
   if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
   const rows = parseHtmlText(text);
-  const deals = (await Promise.all(rows.map(r => buildDeal(r, sessions, fetchBars)))).filter(Boolean);
+  const deals = (await Promise.all(rows.map(r => buildDeal(r, sessions, fetchBars, include)))).filter(Boolean);
   if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {
     const cutoff = Date.now() - maxAgeDays * 86400000;
     return deals.filter(d => {
@@ -265,7 +268,8 @@ function start(config = cfg, { dwxClients = {} } = {}) {
   async function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
     const fetchBars = getFetchBars(acc.dwxProvider);
-    const deals = await processFile(file, sessions, maxAgeDays, fetchBars);
+    const include = d => dealTrackers.shouldWritePositionClosed(d, opts);
+    const deals = await processFile(file, sessions, maxAgeDays, fetchBars, include);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
