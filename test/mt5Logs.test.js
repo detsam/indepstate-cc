@@ -277,8 +277,10 @@ async function run() {
   const tmp = path.join(os.tmpdir(), 'mt5-report.html');
   fs.writeFileSync(tmp, Buffer.from('\ufeff' + buildHtml(rows), 'utf16le'));
 
-  const fetchBars = async (symbol) => {
+  let passedDate;
+  const fetchBars = async (symbol, date) => {
     if (symbol === 'KDP') {
+      passedDate = date;
       return [
         { time: '2025.08.26 16:30', high: 30.95, low: 30.80 },
         { time: '2025.08.26 16:35', high: 31.00, low: 30.88 },
@@ -297,6 +299,7 @@ async function run() {
   assert.strictEqual(deals[0].placingDate, '2025-08-26');
   assert.deepStrictEqual(deals[deals.length - 1].symbol, { ticker: 'CCL' });
   assert.strictEqual(deals[deals.length - 1].profit, -33.72);
+  assert.strictEqual(passedDate, '2025.08.26');
   assert.strictEqual(deals[0].stopPoints, 13);
   assert.strictEqual(deals[1].takePoints, 80);
   assert.strictEqual(deals[0].commission, 7.7);

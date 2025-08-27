@@ -154,7 +154,7 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars) {
   let moveActualEP;
   if (typeof fetchBars === 'function') {
     try {
-      const bars = await fetchBars(rawSymbol, placingDate);
+      const bars = await fetchBars(rawSymbol, placingDateRaw);
       moveActualEP = computeMoveActual({ side, openPrice, sl, openTime: rawOpenTime }, bars);
     } catch {}
   }
