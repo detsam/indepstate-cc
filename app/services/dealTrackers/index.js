@@ -35,6 +35,7 @@ function buildChartComposer(cfg = {}) {
 
 function init(cfg = {}) {
   trackers.length = 0;
+  if (cfg.enabled === false) return;
   const list = Array.isArray(cfg.trackers) ? cfg.trackers : [];
   for (const t of list) {
     const resolved = resolveSecrets(t);

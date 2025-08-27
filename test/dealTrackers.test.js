@@ -33,6 +33,13 @@ async function run() {
   res = dealTrackers.shouldWritePositionClosed(info, opts);
   assert.strictEqual(res, true);
 
+  // disabling deal trackers via config prevents note creation
+  dealTrackers.init({ enabled: false, trackers: [{ type: 'obsidian', vaultPath: vault, journalPath: journal }] });
+  res = dealTrackers.shouldWritePositionClosed(info, opts);
+  assert.strictEqual(res, false);
+  dealTrackers.notifyPositionClosed({ ...info, status: 'take' }, opts);
+  assert.strictEqual(fs.existsSync(notePath), false);
+
   console.log('dealTrackers tests passed');
 }
 
