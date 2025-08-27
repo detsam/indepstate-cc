@@ -16,5 +16,5 @@ add {ticker} {price} {sl} {tp} {risk}
 
 Creates a new order card with the given ticker, entry price and stop loss. `tp` and `risk` are optional. If `tp` is omitted, the card computes it automatically from the provided stop loss.
 
-`sl` and `tp` accept either raw point values or prices containing a decimal dot. Dotted values are converted to integer points using the shared `digitsFallbackPoints` helper.
+`sl` and `tp` accept either raw point values or absolute prices containing a decimal dot. When a dotted value is supplied, it is interpreted as a price level and converted to points relative to the entry price (same logic as the input field).
 
