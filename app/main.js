@@ -7,7 +7,7 @@ const fs = require('fs');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..','.env') });
 
-const { getAdapter, initExecutionConfig } = require('./services/adapterRegistry');
+const { getAdapter, initExecutionConfig, getProviderConfig } = require('./services/adapterRegistry');
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
@@ -33,7 +33,9 @@ if (tvLogsCfg.enabled !== false) {
   tvLogs.start(tvLogsCfg);
 }
 if (mt5LogsCfg.enabled !== false) {
-  mt5Logs.start(mt5LogsCfg);
+  const dwxAdapter = getAdapter('dwx');
+  const dwxCfg = getProviderConfig('dwx');
+  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxCfg }, { dwxClient: dwxAdapter?.client });
 }
 
 function envBool(name, fallback = false) {
