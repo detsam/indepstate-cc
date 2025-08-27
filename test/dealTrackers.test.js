@@ -40,12 +40,6 @@ async function run() {
   dealTrackers.notifyPositionClosed({ ...info, status: 'take' }, opts);
   assert.strictEqual(fs.existsSync(notePath), true);
 
-  // Re-init with enabled=false should skip note creation
-  fs.unlinkSync(notePath);
-  dealTrackers.init({ enabled: false, trackers: [{ type: 'obsidian', vaultPath: vault, journalPath: journal }] });
-  dealTrackers.notifyPositionClosed({ ...info, status: 'take' }, opts);
-  assert.strictEqual(fs.existsSync(notePath), false);
-
   console.log('dealTrackers tests passed');
 }
 

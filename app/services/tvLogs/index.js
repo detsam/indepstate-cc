@@ -327,7 +327,7 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
   return deals;
 }
 
-function start(config = cfg) {
+function start(config = cfg, { dealTrackersEnabled = true } = {}) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
   const pollMs = resolved.pollMs || 5000;
@@ -343,22 +343,24 @@ function start(config = cfg) {
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
       info.keys.add(key);
-      dealTrackers.notifyPositionClosed({
-        symbol: d.symbol,
-        tp: d.tp,
-        sp: d.sp,
-        status: d.status,
-        profit: d.profit,
-        commission: d.commission,
-        takePoints: d.takePoints,
-        stopPoints: d.stopPoints,
-        side: d.side,
-        tactic: acc.tactic,
-        tradeRisk: d.tradeRisk,
-        tradeSession: d.tradeSession,
-        placingDate: d.placingDate,
-        _key: d._key
-      }, opts);
+      if (dealTrackersEnabled) {
+        dealTrackers.notifyPositionClosed({
+          symbol: d.symbol,
+          tp: d.tp,
+          sp: d.sp,
+          status: d.status,
+          profit: d.profit,
+          commission: d.commission,
+          takePoints: d.takePoints,
+          stopPoints: d.stopPoints,
+          side: d.side,
+          tactic: acc.tactic,
+          tradeRisk: d.tradeRisk,
+          tradeSession: d.tradeSession,
+          placingDate: d.placingDate,
+          _key: d._key
+        }, opts);
+      }
     }
   }
 

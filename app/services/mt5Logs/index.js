@@ -247,7 +247,7 @@ function waitFor(fn, timeout = 5000, interval = 100) {
   });
 }
 
-function start(config = cfg, { dwxClients = {} } = {}) {
+function start(config = cfg, { dwxClients = {}, dealTrackersEnabled = true } = {}) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
   const pollMs = resolved.pollMs || 5000;
@@ -294,31 +294,35 @@ function start(config = cfg, { dwxClients = {} } = {}) {
   async function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
     const fetchBars = getFetchBars(acc.dwxProvider);
-    const include = d => dealTrackers.shouldWritePositionClosed(d, opts);
+    const include = !dealTrackersEnabled
+      ? () => false
+      : d => dealTrackers.shouldWritePositionClosed(d, opts);
     const deals = await processFile(file, sessions, maxAgeDays, fetchBars, include);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
       info.keys.add(key);
-      dealTrackers.notifyPositionClosed({
-        symbol: d.symbol,
-        tp: d.tp,
-        sp: d.sp,
-        status: d.status,
-        profit: d.profit,
-        commission: d.commission,
-        takePoints: d.takePoints,
-        stopPoints: d.stopPoints,
-        side: d.side,
-        tactic: acc.tactic,
-        tradeRisk: d.tradeRisk,
-        tradeSession: d.tradeSession,
-        placingDate: d.placingDate,
-        moveActualEP: d.moveActualEP,
-        moveReverse: d.moveReverse,
-        _key: d._key
-      }, opts);
+      if (dealTrackersEnabled) {
+        dealTrackers.notifyPositionClosed({
+          symbol: d.symbol,
+          tp: d.tp,
+          sp: d.sp,
+          status: d.status,
+          profit: d.profit,
+          commission: d.commission,
+          takePoints: d.takePoints,
+          stopPoints: d.stopPoints,
+          side: d.side,
+          tactic: acc.tactic,
+          tradeRisk: d.tradeRisk,
+          tradeSession: d.tradeSession,
+          placingDate: d.placingDate,
+          moveActualEP: d.moveActualEP,
+          moveReverse: d.moveReverse,
+          _key: d._key
+        }, opts);
+      }
     }
   }
 
