@@ -19,7 +19,7 @@ Settings live in `app/config/mt5-logs.json`:
     "16:30-02:00": 3
   },
   "accounts": [
-    { "tactic": "example", "dir": "${ENV:MT5_LOG_EXAMPLE}", "maxAgeDays": 2 }
+    { "tactic": "example", "dir": "${ENV:MT5_LOG_EXAMPLE}", "maxAgeDays": 2, "dwxProvider": "dwx" }
   ]
 }
 ```
@@ -30,6 +30,8 @@ Settings live in `app/config/mt5-logs.json`:
 - `accounts[n].maxAgeDays` – only emit deals with a placing date within this many days for the given account. Set to `0` to allow all deals (default `2`).
 - `skipExisting` – array mapping front‑matter fields to trade properties so trackers can detect existing notes.
 - `sessions` – optional mapping of `"HH:MM-HH:MM"` ranges to session numbers used for the `tradeSession` field.
+- `accounts[n].dwxProvider` – optional name of an execution provider whose DWX adapter supplies historic bars for that account. When omitted the service can init its own `dwx_client` if `dwx[provider].metatraderDirPath` is configured.
+- `dwx[provider].metatraderDirPath` – optional path to the MetaTrader `MQLx/Files` directory for the given provider. When provided the service uses `dwx_client` to retrieve 5‑minute bars for computing `moveActualEP` and `moveReverse`.
 
 On startup the service processes the most recently created file in each directory; any newly created files are processed as they appear.
 
@@ -42,7 +44,8 @@ For each account the service:
 3. Calculates price differences such as `takeSetup` and `stopSetup` from the row's price fields, rounds them to two decimals and multiplies by `100` to get point distances.
 4. Uses these values to determine the result (`take` or `stop`), derives `takePoints`/`stopPoints` the same way, adjusts commission so that any fee under `3` is replaced with either `3` (when volume < `500`) or `volume * 0.006 * 2` (when volume ≥ `500`), always stores commission as a positive amount, rounds profit to two decimals and calculates `tradeRisk`.
 5. Splits the placing time into date and time (date normalized to `YYYY-MM-DD`), then determines `tradeSession` using the configured `sessions` map.
-6. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `symbol`, `placingDate`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints`, `side`, `tradeRisk`, `tradeSession`, `_key` and the account `tactic`, passing along the configured `skipExisting` rules to avoid duplicate notes.
+6. Optionally queries a `dwx_client` for 5‑minute bars of the trade's symbol for the trading day. Bars are only requested when deal trackers are enabled and a deal does not already have a matching report. From the entry time forward it searches for the furthest favourable price movement, calculating `moveActualEP` – the distance in points from entry to that extreme. For profitable trades it also scans bars between entry and exit to find the worst counter move, storing that distance as `moveReverse`. If the deal stops out, `moveReverse` equals `stopSetup`.
+7. Emits an object per closed trade to `dealTrackers.notifyPositionClosed` with fields such as `symbol`, `placingDate`, `tp`, `sp`, `status`, `profit`, `commission`, `takePoints`, `stopPoints`, `side`, `tradeRisk`, `tradeSession`, `moveActualEP`, `moveReverse`, `_key` and the account `tactic`, passing along the configured `skipExisting` rules to avoid duplicate notes.
 
 The `_key` combines the raw symbol and placing time and is suitable for use in `skipExisting`.
 

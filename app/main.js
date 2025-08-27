@@ -7,7 +7,7 @@ const fs = require('fs');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..','.env') });
 
-const { getAdapter, initExecutionConfig } = require('./services/adapterRegistry');
+const { getAdapter, initExecutionConfig, getProviderConfig } = require('./services/adapterRegistry');
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
@@ -29,11 +29,27 @@ try { mt5LogsCfg = loadConfig('mt5-logs.json'); }
 catch { mt5LogsCfg = {}; }
 initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
+const dealTrackersEnabled = dealTrackersCfg.enabled !== false;
 if (tvLogsCfg.enabled !== false) {
   tvLogs.start(tvLogsCfg);
 }
 if (mt5LogsCfg.enabled !== false) {
-  mt5Logs.start(mt5LogsCfg);
+  const names = new Set();
+  if (mt5LogsCfg.dwxProvider) names.add(mt5LogsCfg.dwxProvider);
+  if (Array.isArray(mt5LogsCfg.accounts)) {
+    for (const acc of mt5LogsCfg.accounts) {
+      if (acc.dwxProvider) names.add(acc.dwxProvider);
+    }
+  }
+  const dwxClients = {};
+  const dwxConfigs = {};
+  for (const name of names) {
+    const adapter = getAdapter(name);
+    if (adapter?.client) dwxClients[name] = adapter.client;
+    const providerCfg = getProviderConfig(name);
+    if (providerCfg) dwxConfigs[name] = providerCfg;
+  }
+  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients });
 }
 
 function envBool(name, fallback = false) {
@@ -165,7 +181,9 @@ function wireAdapter(adapter, providerName) {
         commission: hist?.commission,
         profit
       });
-      dealTrackers.notifyPositionClosed(payload);
+      if (dealTrackersEnabled) {
+        dealTrackers.notifyPositionClosed(payload);
+      }
       trackerIndex.delete(String(ticket));
     }
     if (mainWindow && !mainWindow.isDestroyed()) {

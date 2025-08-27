@@ -84,7 +84,57 @@ function diffPoints(a, b) {
   return Math.round(diff * 100);
 }
 
-function buildDeal(row, sessions = cfg.sessions) {
+function parseMtTime(str) {
+  const [datePart = '', timePart = ''] = String(str).split(' ');
+  const [y, m, d] = datePart.split('.').map(n => Number(n) || 0);
+  const [H = 0, M = 0, S = 0] = timePart.split(':').map(n => Number(n) || 0);
+  return new Date(y, m - 1, d, H, M, S).getTime();
+}
+
+function computeMoveActual({ side, openPrice, openTime }, bars = []) {
+  if (!Array.isArray(bars) || bars.length === 0) return undefined;
+  const entryTs = parseMtTime(openTime);
+  const relevant = bars.filter(b => {
+    const t = b.time != null && typeof b.time === 'number' ? b.time : parseMtTime(b.time);
+    return t >= entryTs;
+  });
+  if (!relevant.length) return undefined;
+  let extreme = openPrice;
+  for (const bar of relevant) {
+    const high = Number(bar.high);
+    const low = Number(bar.low);
+    if (side === 'long') {
+      if (high > extreme) extreme = high;
+    } else {
+      if (low < extreme) extreme = low;
+    }
+  }
+  return diffPoints(extreme, openPrice) || 0;
+}
+
+function computeMoveReverse({ side, openPrice, openTime, closeTime }, bars = []) {
+  if (!Array.isArray(bars) || bars.length === 0) return undefined;
+  const entryTs = parseMtTime(openTime);
+  const exitTs = parseMtTime(closeTime);
+  const relevant = bars.filter(b => {
+    const t = b.time != null && typeof b.time === 'number' ? b.time : parseMtTime(b.time);
+    return t >= entryTs && t <= exitTs;
+  });
+  if (!relevant.length) return undefined;
+  let extreme = openPrice;
+  for (const bar of relevant) {
+    const high = Number(bar.high);
+    const low = Number(bar.low);
+    if (side === 'long') {
+      if (low < extreme) extreme = low;
+    } else {
+      if (high > extreme) extreme = high;
+    }
+  }
+  return diffPoints(extreme, openPrice) || 0;
+}
+
+async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
   if (!row) return null;
   const {
     symbol: rawSymbol,
@@ -94,6 +144,7 @@ function buildDeal(row, sessions = cfg.sessions) {
     openPrice,
     sl,
     tp,
+    closeTime: rawCloseTime,
     closePrice,
     commission: rawCommission,
     profit
@@ -101,6 +152,10 @@ function buildDeal(row, sessions = cfg.sessions) {
   const [placingDateRaw = '', placingTime = ''] = String(rawOpenTime).split(/\s+/);
   const placingDate = placingDateRaw.replace(/\./g, '-');
   const side = String(rawSide).toLowerCase() === 'sell' ? 'short' : 'long';
+  const key = `${rawSymbol}|${placingDate} ${placingTime}`;
+  if (typeof include === 'function' && !include({ _key: key, placingDate, placingTime, symbol: { ticker: rawSymbol } })) {
+    return null;
+  }
 
   let takeSetup, stopSetup;
   if (tp != null) takeSetup = diffPoints(tp, openPrice);
@@ -121,6 +176,19 @@ function buildDeal(row, sessions = cfg.sessions) {
     commission = fee;
   }
 
+  let moveActualEP;
+  let moveReverse;
+  if (typeof fetchBars === 'function') {
+    try {
+      const bars = await fetchBars(rawSymbol, placingDateRaw);
+      moveActualEP = computeMoveActual({ side, openPrice, openTime: rawOpenTime }, bars);
+      if (status === 'take') {
+        moveReverse = computeMoveReverse({ side, openPrice, openTime: rawOpenTime, closeTime: rawCloseTime }, bars);
+      }
+    } catch {}
+  }
+  if (status === 'stop') moveReverse = stopSetup;
+
   const base = calcDealData({
     symbol: { ticker: rawSymbol },
     side,
@@ -137,11 +205,10 @@ function buildDeal(row, sessions = cfg.sessions) {
     sessions,
     status
   });
-  const key = `${rawSymbol}|${placingDate} ${placingTime}`;
-  return { _key: key, placingDate, placingTime, ...base };
+  return { _key: key, placingDate, placingTime, moveActualEP, moveReverse, ...base };
 }
 
-function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS) {
+async function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, fetchBars, include) {
   let text;
   try {
     const buf = fs.readFileSync(file);
@@ -157,7 +224,7 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
   }
   if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
   const rows = parseHtmlText(text);
-  const deals = rows.map(r => buildDeal(r, sessions)).filter(Boolean);
+  const deals = (await Promise.all(rows.map(r => buildDeal(r, sessions, fetchBars, include)))).filter(Boolean);
   if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {
     const cutoff = Date.now() - maxAgeDays * 86400000;
     return deals.filter(d => {
@@ -168,7 +235,19 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
   return deals;
 }
 
-function start(config = cfg) {
+function waitFor(fn, timeout = 5000, interval = 100) {
+  const end = Date.now() + timeout;
+  return new Promise(resolve => {
+    (function check() {
+      const v = fn();
+      if (v) return resolve(v);
+      if (Date.now() >= end) return resolve(null);
+      setTimeout(check, interval);
+    })();
+  });
+}
+
+function start(config = cfg, { dwxClients = {} } = {}) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
   const pollMs = resolved.pollMs || 5000;
@@ -176,9 +255,47 @@ function start(config = cfg) {
   const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
   const state = new Map();
 
-  function processAndNotify(file, acc, info) {
+  const providerConfigs = typeof resolved.dwx === 'object' ? resolved.dwx : {};
+  const clients = { ...dwxClients };
+  const fetchBarsCache = new Map();
+  const defaultProvider = resolved.dwxProvider;
+
+  function getFetchBars(name) {
+    const provider = name || defaultProvider;
+    if (!provider) return undefined;
+    if (fetchBarsCache.has(provider)) return fetchBarsCache.get(provider);
+    let client = clients[provider];
+    if (!client) {
+      const cfg = providerConfigs[provider];
+      if (cfg?.metatraderDirPath) {
+        try {
+          const { dwx_client } = require('../../adapters/dwx/dwx_client');
+          client = new dwx_client({ metatrader_dir_path: cfg.metatraderDirPath });
+          client.start();
+          clients[provider] = client;
+        } catch (e) {
+          console.error('mt5Logs: failed to init dwx_client', e);
+        }
+      }
+    }
+    const fb = client ? async (symbol, date) => {
+      const startTs = Math.floor(parseMtTime(`${date} 00:00`) / 1000);
+      const endTs = startTs + 86400;
+      try { await client.get_historic_data({ symbol, time_frame: 'M5', start: startTs, end: endTs }); } catch {}
+      const key = `${symbol}_M5`;
+      const data = await waitFor(() => client.historic_data[key], 5000);
+      if (!data) return [];
+      return Object.entries(data).map(([time, o]) => ({ time, ...o }));
+    } : undefined;
+    fetchBarsCache.set(provider, fb);
+    return fb;
+  }
+
+  async function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
-    const deals = processFile(file, sessions, maxAgeDays);
+    const fetchBars = getFetchBars(acc.dwxProvider);
+    const include = d => dealTrackers.shouldWritePositionClosed(d, opts);
+    const deals = await processFile(file, sessions, maxAgeDays, fetchBars, include);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
@@ -198,6 +315,8 @@ function start(config = cfg) {
         tradeRisk: d.tradeRisk,
         tradeSession: d.tradeSession,
         placingDate: d.placingDate,
+        moveActualEP: d.moveActualEP,
+        moveReverse: d.moveReverse,
         _key: d._key
       }, opts);
     }
@@ -219,7 +338,7 @@ function start(config = cfg) {
     return out;
   }
 
-  function tick() {
+  async function tick() {
     for (const acc of accounts) {
       const dir = acc.dir || acc.path;
       if (!dir) continue;
@@ -232,21 +351,21 @@ function start(config = cfg) {
       }
       if (!info.initialized) {
         const latest = files[files.length - 1].file;
-        processAndNotify(latest, acc, info);
+        await processAndNotify(latest, acc, info);
         info.files.add(latest);
         info.initialized = true;
       } else {
         for (const { file } of files) {
           if (info.files.has(file)) continue;
-          processAndNotify(file, acc, info);
+          await processAndNotify(file, acc, info);
           info.files.add(file);
         }
       }
     }
   }
 
-  tick();
-  const timer = setInterval(tick, pollMs);
+  tick().catch(e => console.error('mt5Logs tick error', e));
+  const timer = setInterval(() => { tick().catch(e => console.error('mt5Logs tick error', e)); }, pollMs);
   return { stop() { clearInterval(timer); } };
 }
 
