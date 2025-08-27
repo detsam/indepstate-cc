@@ -273,28 +273,45 @@ function buildHtmlPositionsOnly(rows) {
   return header + positionsHeader + rowsHtml + footer;
 }
 
-const tmp = path.join(os.tmpdir(), 'mt5-report.html');
-fs.writeFileSync(tmp, Buffer.from('\ufeff' + buildHtml(rows), 'utf16le'));
+async function run() {
+  const tmp = path.join(os.tmpdir(), 'mt5-report.html');
+  fs.writeFileSync(tmp, Buffer.from('\ufeff' + buildHtml(rows), 'utf16le'));
 
-const deals = processFile(tmp, undefined, Infinity);
+  const fetchBars = async (symbol) => {
+    if (symbol === 'KDP') {
+      return [
+        { time: '2025.08.26 16:30', high: 30.95, low: 30.80 },
+        { time: '2025.08.26 16:35', high: 31.00, low: 30.88 },
+        { time: '2025.08.26 16:40', high: 31.20, low: 30.90 },
+        { time: '2025.08.26 16:45', high: 31.10, low: 30.76 }
+      ];
+    }
+    return [];
+  };
 
-assert.strictEqual(deals.length, rows.length);
-assert.deepStrictEqual(deals[0].symbol, { ticker: 'KDP' });
-assert.strictEqual(deals[0].profit, -83.46);
-assert.strictEqual(deals[0].placingDate, '2025-08-26');
-assert.deepStrictEqual(deals[deals.length - 1].symbol, { ticker: 'CCL' });
-assert.strictEqual(deals[deals.length - 1].profit, -33.72);
-assert.strictEqual(deals[0].stopPoints, 13);
-assert.strictEqual(deals[1].takePoints, 80);
-assert.strictEqual(deals[0].commission, 7.7);
-assert.strictEqual(deals[1].commission, 3);
-assert.strictEqual(deals[7].commission, 6);
-assert.strictEqual(deals[14].commission, 10.99);
+  const deals = await processFile(tmp, undefined, Infinity, fetchBars);
 
-const tmp2 = path.join(os.tmpdir(), 'mt5-report-positions-only.html');
-fs.writeFileSync(tmp2, Buffer.from('\ufeff' + buildHtmlPositionsOnly(rows), 'utf16le'));
-const deals2 = processFile(tmp2, undefined, Infinity);
-assert.strictEqual(deals2.length, rows.length);
+  assert.strictEqual(deals.length, rows.length);
+  assert.deepStrictEqual(deals[0].symbol, { ticker: 'KDP' });
+  assert.strictEqual(deals[0].profit, -83.46);
+  assert.strictEqual(deals[0].placingDate, '2025-08-26');
+  assert.deepStrictEqual(deals[deals.length - 1].symbol, { ticker: 'CCL' });
+  assert.strictEqual(deals[deals.length - 1].profit, -33.72);
+  assert.strictEqual(deals[0].stopPoints, 13);
+  assert.strictEqual(deals[1].takePoints, 80);
+  assert.strictEqual(deals[0].commission, 7.7);
+  assert.strictEqual(deals[1].commission, 3);
+  assert.strictEqual(deals[7].commission, 6);
+  assert.strictEqual(deals[14].commission, 10.99);
+  assert.strictEqual(deals[0].moveActualEP, 30);
 
-console.log('mt5Logs parsing test passed');
+  const tmp2 = path.join(os.tmpdir(), 'mt5-report-positions-only.html');
+  fs.writeFileSync(tmp2, Buffer.from('\ufeff' + buildHtmlPositionsOnly(rows), 'utf16le'));
+  const deals2 = await processFile(tmp2, undefined, Infinity, fetchBars);
+  assert.strictEqual(deals2.length, rows.length);
+
+  console.log('mt5Logs parsing test passed');
+}
+
+run().catch(err => { console.error(err); process.exit(1); });
 

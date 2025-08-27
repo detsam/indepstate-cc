@@ -16,7 +16,7 @@ class ObsidianDealTracker extends DealTracker {
   }
 
   async onPositionClosed(info = {}, opts = {}) {
-    const { symbol, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession, placingDate } = info;
+    const { symbol, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession, placingDate, moveActualEP } = info;
     const ticker = symbol && symbol.ticker;
     const vault = this.vaultPath;
     const targetDir = this.journalPath;
@@ -100,6 +100,9 @@ class ObsidianDealTracker extends DealTracker {
     if (tradeRisk != null && tradeRisk !== 0) {
       const roundedRisk = Math.round(tradeRisk * 100) / 100;
       content = content.replace(/^- Trade Risk::.*$/m, `- Trade Risk:: ${roundedRisk}`);
+    }
+    if (moveActualEP != null && moveActualEP !== 0) {
+      content = content.replace(/^- Move Actual EP::.*$/m, `- Move Actual EP:: ${moveActualEP}`);
     }
     if (status === 'take') {
       content = content.replace(/^- Homework::.*$/m, '- Homework:: [[Analysis. Right Direction]]');
