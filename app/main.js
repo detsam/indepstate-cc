@@ -33,10 +33,22 @@ if (tvLogsCfg.enabled !== false) {
   tvLogs.start(tvLogsCfg);
 }
 if (mt5LogsCfg.enabled !== false) {
-  const providerName = mt5LogsCfg.provider;
-  const adapter = providerName ? getAdapter(providerName) : undefined;
-  const providerCfg = providerName ? getProviderConfig(providerName) : undefined;
-  mt5Logs.start({ ...mt5LogsCfg, dwx: providerCfg }, { dwxClient: adapter?.client });
+  const names = new Set();
+  if (mt5LogsCfg.dwxProvider) names.add(mt5LogsCfg.dwxProvider);
+  if (Array.isArray(mt5LogsCfg.accounts)) {
+    for (const acc of mt5LogsCfg.accounts) {
+      if (acc.dwxProvider) names.add(acc.dwxProvider);
+    }
+  }
+  const dwxClients = {};
+  const dwxConfigs = {};
+  for (const name of names) {
+    const adapter = getAdapter(name);
+    if (adapter?.client) dwxClients[name] = adapter.client;
+    const providerCfg = getProviderConfig(name);
+    if (providerCfg) dwxConfigs[name] = providerCfg;
+  }
+  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients });
 }
 
 function envBool(name, fallback = false) {

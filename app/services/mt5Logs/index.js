@@ -218,7 +218,7 @@ function waitFor(fn, timeout = 5000, interval = 100) {
   });
 }
 
-function start(config = cfg, { dwxClient } = {}) {
+function start(config = cfg, { dwxClients = {} } = {}) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
   const pollMs = resolved.pollMs || 5000;
@@ -226,29 +226,45 @@ function start(config = cfg, { dwxClient } = {}) {
   const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
   const state = new Map();
 
-  let client = dwxClient;
-  if (!client && resolved.dwx && resolved.dwx.metatraderDirPath) {
-    try {
-      const { dwx_client } = require('../../adapters/dwx/dwx_client');
-      client = new dwx_client({ metatrader_dir_path: resolved.dwx.metatraderDirPath });
-      client.start();
-    } catch (e) {
-      console.error('mt5Logs: failed to init dwx_client', e);
-    }
-  }
+  const providerConfigs = typeof resolved.dwx === 'object' ? resolved.dwx : {};
+  const clients = { ...dwxClients };
+  const fetchBarsCache = new Map();
+  const defaultProvider = resolved.dwxProvider;
 
-  const fetchBars = client ? async (symbol, date) => {
-    const startTs = Math.floor(parseMtTime(`${date} 00:00`) / 1000);
-    const endTs = startTs + 86400;
-    try { await client.get_historic_data({ symbol, time_frame: 'M5', start: startTs, end: endTs }); } catch {}
-    const key = `${symbol}_M5`;
-    const data = await waitFor(() => client.historic_data[key], 5000);
-    if (!data) return [];
-    return Object.entries(data).map(([time, o]) => ({ time, ...o }));
-  } : undefined;
+  function getFetchBars(name) {
+    const provider = name || defaultProvider;
+    if (!provider) return undefined;
+    if (fetchBarsCache.has(provider)) return fetchBarsCache.get(provider);
+    let client = clients[provider];
+    if (!client) {
+      const cfg = providerConfigs[provider];
+      if (cfg?.metatraderDirPath) {
+        try {
+          const { dwx_client } = require('../../adapters/dwx/dwx_client');
+          client = new dwx_client({ metatrader_dir_path: cfg.metatraderDirPath });
+          client.start();
+          clients[provider] = client;
+        } catch (e) {
+          console.error('mt5Logs: failed to init dwx_client', e);
+        }
+      }
+    }
+    const fb = client ? async (symbol, date) => {
+      const startTs = Math.floor(parseMtTime(`${date} 00:00`) / 1000);
+      const endTs = startTs + 86400;
+      try { await client.get_historic_data({ symbol, time_frame: 'M5', start: startTs, end: endTs }); } catch {}
+      const key = `${symbol}_M5`;
+      const data = await waitFor(() => client.historic_data[key], 5000);
+      if (!data) return [];
+      return Object.entries(data).map(([time, o]) => ({ time, ...o }));
+    } : undefined;
+    fetchBarsCache.set(provider, fb);
+    return fb;
+  }
 
   async function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
+    const fetchBars = getFetchBars(acc.dwxProvider);
     const deals = await processFile(file, sessions, maxAgeDays, fetchBars);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');

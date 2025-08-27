@@ -1,7 +1,6 @@
 {
   "enabled": true,
   "pollMs": 5000,
-  "provider": "dwx",
   "skipExisting": [
     { "field": "MT5-LOG-KEY", "prop": "_key" }
   ],
@@ -14,7 +13,8 @@
     {
       "tactic": "example",
       "dir": "${ENV:MT5_LOG_EXAMPLE}",
-      "maxAgeDays": 2
+      "maxAgeDays": 2,
+      "dwxProvider": "dwx"
     }
   ]
 }

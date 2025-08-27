@@ -10,7 +10,6 @@ Settings live in `app/config/mt5-logs.json`:
 {
   "enabled": true,
   "pollMs": 5000,
-  "provider": "dwx",
   "skipExisting": [
     { "field": "MT5-LOG-KEY", "prop": "_key" }
   ],
@@ -19,8 +18,8 @@ Settings live in `app/config/mt5-logs.json`:
     "06:00-16:30": 2,
     "16:30-02:00": 3
   },
-"accounts": [
-    { "tactic": "example", "dir": "${ENV:MT5_LOG_EXAMPLE}", "maxAgeDays": 2 }
+  "accounts": [
+    { "tactic": "example", "dir": "${ENV:MT5_LOG_EXAMPLE}", "maxAgeDays": 2, "dwxProvider": "dwx" }
   ]
 }
 ```
@@ -31,8 +30,8 @@ Settings live in `app/config/mt5-logs.json`:
 - `accounts[n].maxAgeDays` – only emit deals with a placing date within this many days for the given account. Set to `0` to allow all deals (default `2`).
 - `skipExisting` – array mapping front‑matter fields to trade properties so trackers can detect existing notes.
 - `sessions` – optional mapping of `"HH:MM-HH:MM"` ranges to session numbers used for the `tradeSession` field.
-- `provider` – optional name of an execution provider whose DWX adapter supplies historic bars. When omitted the service can init its own `dwx_client` if `dwx.metatraderDirPath` is configured.
-- `dwx.metatraderDirPath` – optional path to the MetaTrader `MQLx/Files` directory. When provided the service uses `dwx_client` to retrieve 5‑minute bars for computing `moveActualEP`.
+- `accounts[n].dwxProvider` – optional name of an execution provider whose DWX adapter supplies historic bars for that account. When omitted the service can init its own `dwx_client` if `dwx[provider].metatraderDirPath` is configured.
+- `dwx[provider].metatraderDirPath` – optional path to the MetaTrader `MQLx/Files` directory for the given provider. When provided the service uses `dwx_client` to retrieve 5‑minute bars for computing `moveActualEP`.
 
 On startup the service processes the most recently created file in each directory; any newly created files are processed as they appear.
 
