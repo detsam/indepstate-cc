@@ -51,6 +51,14 @@ class ObsidianDealTracker extends DealTracker {
 
   async onPositionClosed(info = {}, opts = {}) {
     if (!this.shouldWrite(info, opts)) return;
+
+    const criteria = Array.isArray(opts?.skipExisting) ? opts.skipExisting : [];
+    const getProp = (obj, p) => p.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
+    const canCheck = criteria.length > 0 && criteria.every(c => {
+      const v = getProp(info, c.prop);
+      return v != null && v !== '';
+    });
+
     const { symbol, tp, sp, status, profit, commission, takePoints, stopPoints, side, tactic, tradeRisk, tradeSession, placingDate, moveActualEP } = info;
     const ticker = symbol && symbol.ticker;
     const vault = this.vaultPath;
