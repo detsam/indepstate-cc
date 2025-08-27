@@ -327,7 +327,7 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
   return deals;
 }
 
-function start(config = cfg, { dealTrackersEnabled = true } = {}) {
+function start(config = cfg) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
   const pollMs = resolved.pollMs || 5000;
@@ -343,7 +343,7 @@ function start(config = cfg, { dealTrackersEnabled = true } = {}) {
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
       info.keys.add(key);
-      if (dealTrackersEnabled) {
+      if (dealTrackers.isEnabled()) {
         dealTrackers.notifyPositionClosed({
           symbol: d.symbol,
           tp: d.tp,

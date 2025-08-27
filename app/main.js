@@ -16,7 +16,6 @@ const loadConfig = require('./config/load');
 const execCfg = loadConfig('execution.json');
 const orderCardsCfg = loadConfig('order-cards.json');
 const dealTrackersCfg = loadConfig('deal-trackers.json');
-const dealTrackersEnabled = dealTrackersCfg?.enabled !== false;
 const dealTrackers = require('./services/dealTrackers');
 const { calcDealData } = require('./services/dealTrackers/calc');
 const tvLogs = require('./services/tvLogs');
@@ -31,7 +30,7 @@ catch { mt5LogsCfg = {}; }
 initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
 if (tvLogsCfg.enabled !== false) {
-  tvLogs.start(tvLogsCfg, { dealTrackersEnabled });
+  tvLogs.start(tvLogsCfg);
 }
 if (mt5LogsCfg.enabled !== false) {
   const names = new Set();
@@ -49,7 +48,7 @@ if (mt5LogsCfg.enabled !== false) {
     const providerCfg = getProviderConfig(name);
     if (providerCfg) dwxConfigs[name] = providerCfg;
   }
-  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients, dealTrackersEnabled });
+  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients });
 }
 
 function envBool(name, fallback = false) {
@@ -181,7 +180,7 @@ function wireAdapter(adapter, providerName) {
         commission: hist?.commission,
         profit
       });
-      if (dealTrackersEnabled) {
+      if (dealTrackers.isEnabled()) {
         dealTrackers.notifyPositionClosed(payload);
       }
       trackerIndex.delete(String(ticket));

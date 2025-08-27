@@ -247,7 +247,7 @@ function waitFor(fn, timeout = 5000, interval = 100) {
   });
 }
 
-function start(config = cfg, { dwxClients = {}, dealTrackersEnabled = true } = {}) {
+function start(config = cfg, { dwxClients = {} } = {}) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
   const pollMs = resolved.pollMs || 5000;
@@ -294,16 +294,16 @@ function start(config = cfg, { dwxClients = {}, dealTrackersEnabled = true } = {
   async function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
     const fetchBars = getFetchBars(acc.dwxProvider);
-    const include = !dealTrackersEnabled
-      ? () => false
-      : d => dealTrackers.shouldWritePositionClosed(d, opts);
+    const include = dealTrackers.isEnabled()
+      ? d => dealTrackers.shouldWritePositionClosed(d, opts)
+      : () => false;
     const deals = await processFile(file, sessions, maxAgeDays, fetchBars, include);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
       info.keys.add(key);
-      if (dealTrackersEnabled) {
+      if (dealTrackers.isEnabled()) {
         dealTrackers.notifyPositionClosed({
           symbol: d.symbol,
           tp: d.tp,

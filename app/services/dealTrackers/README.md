@@ -19,6 +19,8 @@ the note is written.
 
 `dealTrackers.notifyPositionClosed(info, opts)` dispatches the `info` object to all configured trackers. Each tracker implements `onPositionClosed(info, opts)` to handle the data.
 
+`dealTrackers.isEnabled()` returns whether report generation is enabled based on configuration.
+
 ### Duplicate protection
 
 Pass a `skipExisting` array in the `opts` object to request duplicate checks. Each element has:

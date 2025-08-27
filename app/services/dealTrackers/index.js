@@ -2,6 +2,7 @@
 // Registry for deal trackers interested in position close events
 
 const trackers = [];
+let enabled = true;
 
 // Support secrets like "$ENV:NAME" or "${ENV:NAME}" similar to adapter config
 function resolveEnvRef(str) {
@@ -34,6 +35,7 @@ function buildChartComposer(cfg = {}) {
 }
 
 function init(cfg = {}) {
+  enabled = cfg?.enabled !== false;
   trackers.length = 0;
   const list = Array.isArray(cfg.trackers) ? cfg.trackers : [];
   for (const t of list) {
@@ -55,6 +57,7 @@ function init(cfg = {}) {
 }
 
 function notifyPositionClosed(info, opts) {
+  if (!enabled) return;
   for (const t of trackers) {
     try {
       const res = t.onPositionClosed(info, opts);
@@ -66,6 +69,7 @@ function notifyPositionClosed(info, opts) {
 }
 
 function shouldWritePositionClosed(info, opts) {
+  if (!enabled) return false;
   for (const t of trackers) {
     try {
       if (typeof t.shouldWrite === 'function' && t.shouldWrite(info, opts)) return true;
@@ -76,4 +80,6 @@ function shouldWritePositionClosed(info, opts) {
   return false;
 }
 
-module.exports = { init, notifyPositionClosed, shouldWritePositionClosed };
+function isEnabled() { return enabled; }
+
+module.exports = { init, notifyPositionClosed, shouldWritePositionClosed, isEnabled };
