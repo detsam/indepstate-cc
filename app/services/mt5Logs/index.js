@@ -293,8 +293,9 @@ function start(config = cfg, { dwxClients = {} } = {}) {
 
   async function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
-    const fetchBars = getFetchBars(acc.dwxProvider);
-    const include = d => dealTrackers.shouldWritePositionClosed(d, opts);
+    const writingEnabled = dealTrackers.isEnabled();
+    const fetchBars = writingEnabled ? getFetchBars(acc.dwxProvider) : undefined;
+    const include = writingEnabled ? d => dealTrackers.shouldWritePositionClosed(d, opts) : undefined;
     const deals = await processFile(file, sessions, maxAgeDays, fetchBars, include);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
