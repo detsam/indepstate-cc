@@ -28,6 +28,9 @@ class PendingOrderHub {
     this.strategies = { consolidation: ConsolidationStrategy, falseBreak: FalseBreakStrategy, ...strategies };
     this.services = new Map(); // key: provider:symbol -> service
     this.subscriptions = new Map(); // provider -> Set(symbol)
+    if (typeof queuePlaceOrder !== 'function') {
+      throw new Error('queuePlaceOrder callback required');
+    }
     this.queuePlaceOrder = queuePlaceOrder;
     this.wireAdapter = wireAdapter;
     this.mainWindow = mainWindow;
@@ -97,7 +100,7 @@ class PendingOrderHub {
           meta: { ...payload.meta, stopPts }
         };
         try {
-          await this.queuePlaceOrder?.(finalPayload);
+          await this.queuePlaceOrder(finalPayload);
         } catch (err) {
           console.error('pending order execution failed', err);
         }
