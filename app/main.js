@@ -11,7 +11,7 @@ const { getAdapter, initExecutionConfig, getProviderConfig } = require('./servic
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
-const { createPendingOrderService } = require('./services/pendingOrders');
+const { createPendingOrderHub } = require('./services/pendingOrders');
 const tradeRules = require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const execCfg = loadConfig('execution.json');
@@ -53,13 +53,11 @@ if (mt5LogsCfg.enabled !== false) {
   mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients });
 }
 
-const pendingServices = new Map(); // key: provider:symbol -> PendingOrderService
-const barSubscriptions = new Map(); // provider -> Set(symbol)
-
-events.on('bar', ({ provider, symbol, tf, open, high, low, close }) => {
-  if (tf !== 'M1') return;
-  const svc = pendingServices.get(`${provider}:${symbol}`);
-  if (svc) svc.onBar({ open, high, low, close });
+const pendingHub = createPendingOrderHub({
+  subscribe: (provider, symbols) => {
+    const adapter = getAdapter(provider);
+    try { adapter.client?.subscribe_symbols_bar_data(symbols.map(s => [s, 'M1'])); } catch {}
+  }
 });
 
 function envBool(name, fallback = false) {
@@ -545,14 +543,7 @@ function setupIpc(orderSvc) {
     if (!payload.meta) payload.meta = {};
     payload.meta.requestId = reqId;
 
-    const key = `${providerName}:${symbol}`;
-    let svc = pendingServices.get(key);
-    if (!svc) {
-      svc = createPendingOrderService();
-      pendingServices.set(key, svc);
-    }
-
-    const pendingLocalId = svc.addOrder({
+    const pendingId = pendingHub.addOrder(providerName, symbol, {
       price: Number(payload.price),
       side: payload.side,
       onExecute: ({ limitPrice, stopLoss }) => {
@@ -569,15 +560,6 @@ function setupIpc(orderSvc) {
         queuePlaceOrderInternal(finalPayload);
       }
     });
-
-    const pendingId = `${key}:${pendingLocalId}`;
-
-    const subs = barSubscriptions.get(providerName) || new Set();
-    if (!subs.has(symbol)) {
-      subs.add(symbol);
-      barSubscriptions.set(providerName, subs);
-      try { await adapter.client?.subscribe_symbols_bar_data([...subs].map(s => [s, 'M1'])); } catch {}
-    }
 
     appendJsonl(EXEC_LOG, {
       t: ts,
