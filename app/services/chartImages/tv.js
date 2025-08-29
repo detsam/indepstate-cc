@@ -24,7 +24,8 @@ class TvChartImageComposer extends ChartImageComposer {
       throw new Error('TvChartImageComposer misconfigured');
     }
     const safe = sanitizeFileName(symbol);
-    const name = `${Date.now()}-${safe}.png`;
+    const layoutSafe = sanitizeFileName(layoutId);
+    const name = `${Date.now()}-${layoutSafe}-${safe}.png`;
     this._queue.push({ symbol, name, layoutId });
     this._schedule();
     return name;

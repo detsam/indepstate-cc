@@ -3,10 +3,12 @@
 A chart image composer creates a screenshot for a given fully qualified symbol
 (e.g. `NYSE:AAPL`) and stores it on disk. The low level
 `compose(symbol, layout)` method queues a request and immediately returns the
-file name that will be written once the image downloads. A default composer can
-be configured via `app/config/chart-images.json` which also provides helper
-functions `compose1D(symbol)` and `compose5M(symbol)` using the configured
-`layout1D` and `layout5M` values.
+file name that will be written once the image downloads. The name includes the
+layout identifier to avoid collisions when capturing multiple layouts
+simultaneously. A default composer can be configured via
+`app/config/chart-images.json` which also provides helper functions
+`compose1D(symbol)` and `compose5M(symbol)` using the configured `layout1D` and
+`layout5M` values.
 
 ## TV composer
 
