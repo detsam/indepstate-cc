@@ -11,12 +11,15 @@ class PendingOrderService {
       side,
       strategy = 'consolidation',
       tickSize,
+      rangeRule,
+      limitPriceFn,
+      stopLossFn,
       onExecute,
       onCancel
     } = opts;
     const Strategy = this.strategies[strategy];
     if (!Strategy) throw new Error(`Unknown strategy: ${strategy}`);
-    const strategyInst = new Strategy({ price, side, tickSize });
+    const strategyInst = new Strategy({ price, side, tickSize, rangeRule, limitPriceFn, stopLossFn });
     const id = this.nextId++;
     this.orders.set(id, { id, side, strategy: strategyInst, onExecute, onCancel });
     return id;

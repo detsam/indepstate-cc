@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { createPendingOrderService } = require('../app/services/pendingOrders');
+const { createPendingOrderService, B1_RANGE_CONSOLIDATION } = require('../app/services/pendingOrders');
 
 async function run() {
   // long order triggers after 3 bars
@@ -44,7 +44,8 @@ async function run() {
   // long order fails if price extends too far above level
   exec = undefined;
   const svc5 = createPendingOrderService();
-  svc5.addOrder({ price: 100, side: 'long', onExecute: r => { exec = r; } });
+  svc5.addOrder({ price: 100, side: 'long', rangeRule: B1_RANGE_CONSOLIDATION,
+    onExecute: r => { exec = r; } });
   const bars5 = [
     { open: 99, high: 101, low: 99, close: 100.5 },
     { open: 100.6, high: 103.1, low: 100.5, close: 101 }, // high beyond allowed range
@@ -56,7 +57,8 @@ async function run() {
   // short order fails if price extends too far below level
   exec = undefined;
   const svc6 = createPendingOrderService();
-  svc6.addOrder({ price: 200, side: 'short', onExecute: r => { exec = r; } });
+  svc6.addOrder({ price: 200, side: 'short', rangeRule: B1_RANGE_CONSOLIDATION,
+    onExecute: r => { exec = r; } });
   const bars6 = [
     { open: 200.5, high: 201, low: 199, close: 199.5 },
     { open: 199.4, high: 199.6, low: 197, close: 198.5 }, // low beyond allowed range
@@ -64,6 +66,16 @@ async function run() {
   ];
   bars6.forEach(b => svc6.onBar(b));
   assert.strictEqual(exec, undefined);
+
+  // custom price and stop functions
+  exec = undefined;
+  const svcCustom = createPendingOrderService();
+  svcCustom.addOrder({ price: 100, side: 'long',
+    limitPriceFn: () => 105,
+    stopLossFn: () => 95,
+    onExecute: r => { exec = r; } });
+  bars1.forEach(b => svcCustom.onBar(b));
+  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 105, stopLoss: 95 });
 
   // cancelled order does not execute
   exec = undefined;

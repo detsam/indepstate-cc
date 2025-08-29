@@ -1,5 +1,5 @@
 const { PendingOrderService } = require('./service');
-const { ConsolidationStrategy } = require('./strategies/consolidation');
+const { ConsolidationStrategy, B1_RANGE_CONSOLIDATION } = require('./strategies/consolidation');
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
 const { PendingOrderHub, createPendingOrderHub } = require('./hub');
 
@@ -16,6 +16,7 @@ module.exports = {
   createPendingOrderService,
   PendingOrderService,
   ConsolidationStrategy,
+  B1_RANGE_CONSOLIDATION,
   FalseBreakStrategy,
   PendingOrderHub,
   createPendingOrderHub
