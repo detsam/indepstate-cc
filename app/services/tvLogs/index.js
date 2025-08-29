@@ -35,16 +35,40 @@ function parseCsvText(text) {
     return { num: Number(str), int, dec, raw: str };
   }
 
+  function splitLine(str) {
+    const out = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+      if (ch === '"') {
+        if (inQuotes && str[i + 1] === '"') { // escaped quote
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === ',' && !inQuotes) {
+        out.push(cur.trim());
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
   const lines = String(text).split(/\r?\n/);
   const rows = [];
   for (const line of lines) {
     if (!line.trim() || line.startsWith('Symbol')) continue;
-    const parts = line.split(',');
+    const parts = splitLine(line);
     if (parts.length < 13) continue;
     const [
       symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr,
       status, commissionStr, _lev, _margin, placingTime, closingTime, orderIdStr
-    ] = parts.map(p => p.trim());
+    ] = parts;
 
     const limit = parsePrice(limitPriceStr);
     const stop = parsePrice(stopPriceStr);
