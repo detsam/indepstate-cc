@@ -369,6 +369,7 @@ function start(config = cfg) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
+      if (!dealTrackers.shouldWritePositionClosed(d, opts)) continue;
       info.keys.add(key);
       const chart1D = symKey ? compose1D(symKey) : undefined;
       const chart5M = symKey ? compose5M(symKey) : undefined;
