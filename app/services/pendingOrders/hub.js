@@ -96,12 +96,6 @@ class PendingOrderHub {
         this.pendingIndex.delete(pendingId);
 
         let stopPts = toPoints(payload.tickSize, symbol, Math.abs(limitPrice - stopLoss), limitPrice);
-        let takePts = takeProfit == null ? undefined :
-          toPoints(payload.tickSize, symbol, Math.abs(takeProfit - limitPrice), limitPrice);
-        if (takePts == null && payload.meta?.takePts != null) {
-          const t = Number(payload.meta.takePts);
-          takePts = Number.isFinite(t) ? t : undefined;
-        }
 
         const { MinStopPointsRule } = tradeRules;
         const minRule = tradeRules.rules?.find(r => r instanceof MinStopPointsRule);
@@ -109,6 +103,8 @@ class PendingOrderHub {
         if (Number.isFinite(minPts) && Number.isFinite(stopPts) && stopPts < minPts) {
           stopPts = minPts;
         }
+
+        const takePts = Number.isFinite(stopPts) ? stopPts * 3 : undefined;
 
         let qty;
         const risk = Number(payload.meta?.riskUsd);

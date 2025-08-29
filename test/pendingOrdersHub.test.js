@@ -45,6 +45,8 @@ async function run() {
   assert.strictEqual(placed.qty, 1);
   assert.strictEqual(placed.sl, 6);
   assert.strictEqual(placed.meta.stopPts, 6);
+  assert.strictEqual(placed.tp, 18);
+  assert.strictEqual(placed.meta.takePts, 18);
 
   // strategy providing takeProfit and tickSize requiring conversion
   placed = undefined;
@@ -80,9 +82,9 @@ async function run() {
 
   assert.ok(placed, 'takeProfit order was not executed');
   assert.strictEqual(placed.sl, 6); // diff 2 -> 4 pts -> clamped to 6
-  assert.strictEqual(placed.tp, 8); // diff 4 -> 8 pts
+  assert.strictEqual(placed.tp, 18); // stop*3 rule
   assert.strictEqual(placed.meta.stopPts, 6);
-  assert.strictEqual(placed.meta.takePts, 8);
+  assert.strictEqual(placed.meta.takePts, 18);
   console.log('pendingOrdersHub tests passed');
 }
 
