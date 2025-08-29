@@ -1,8 +1,8 @@
 class FalseBreakStrategy {
-  constructor({ price, side, tickSize = 0.0001 }) {
+  constructor({ price, side, tickSize = 0.01 }) {
     this.price = Number(price);
     this.side = side;
-    this.tick = Number(tickSize) || 0.0001;
+    this.tick = Number(tickSize) || 0.01;
     this.stage = 0; // 0 initial, 1 waiting for bar2
     this.done = false;
   }

@@ -121,6 +121,19 @@ async function run() {
   assert.strictEqual(exec, undefined);
   assert.strictEqual(cancelled, true);
 
+  // false break default tick size
+  exec = undefined;
+  cancelled = false;
+  const svc11 = createPendingOrderService();
+  svc11.addOrder({ price: 100, side: 'long', strategy: 'falseBreak',
+    onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
+  svc11.onBar({ open: 101, high: 101.5, low: 99.8, close: 101.2 });
+  assert.strictEqual(exec.id, 1);
+  assert.strictEqual(exec.side, 'long');
+  assert.strictEqual(exec.limitPrice, 101.2);
+  assert.ok(Math.abs(exec.stopLoss - 99.79) < 1e-9);
+  assert.strictEqual(cancelled, false);
+
   console.log('pendingOrders tests passed');
 }
 
