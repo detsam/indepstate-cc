@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const dealTrackers = require('../dealTrackers');
 const { calcDealData } = require('../dealTrackers/calc');
+const { compose1D, compose5M } = require('../chartImages');
 const loadConfig = require('../../config/load');
 const DEFAULT_MAX_AGE_DAYS = 2;
 let cfg = {};
@@ -335,6 +336,8 @@ function start(config = cfg) {
   const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
   const state = new Map(); // dir -> { files:Set, keys:Set, initialized:bool }
 
+  // chart image composer handled by default service
+
   function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
     const deals = processFile(file, sessions, maxAgeDays);
@@ -343,6 +346,8 @@ function start(config = cfg) {
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
       info.keys.add(key);
+      const chart1D = symKey ? compose1D(symKey) : undefined;
+      const chart5M = symKey ? compose5M(symKey) : undefined;
       dealTrackers.notifyPositionClosed({
         symbol: d.symbol,
         tp: d.tp,
@@ -357,6 +362,8 @@ function start(config = cfg) {
         tradeRisk: d.tradeRisk,
         tradeSession: d.tradeSession,
         placingDate: d.placingDate,
+        chart1D,
+        chart5M,
         _key: d._key
       }, opts);
     }

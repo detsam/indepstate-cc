@@ -3,6 +3,7 @@ const path = require('path');
 const dealTrackers = require('../dealTrackers');
 const { calcDealData } = require('../dealTrackers/calc');
 const loadConfig = require('../../config/load');
+const { compose1D, compose5M } = require('../chartImages');
 const DEFAULT_MAX_AGE_DAYS = 2;
 let cfg = {};
 try {
@@ -291,6 +292,8 @@ function start(config = cfg, { dwxClients = {} } = {}) {
     return fb;
   }
 
+  // chart image composer handled by default service
+
   async function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
     const fetchBars = getFetchBars(acc.dwxProvider);
@@ -301,6 +304,8 @@ function start(config = cfg, { dwxClients = {} } = {}) {
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
       info.keys.add(key);
+      const chart1D = symKey ? compose1D(symKey) : undefined;
+      const chart5M = symKey ? compose5M(symKey) : undefined;
       dealTrackers.notifyPositionClosed({
         symbol: d.symbol,
         tp: d.tp,
@@ -317,6 +322,8 @@ function start(config = cfg, { dwxClients = {} } = {}) {
         placingDate: d.placingDate,
         moveActualEP: d.moveActualEP,
         moveReverse: d.moveReverse,
+        chart1D,
+        chart5M,
         _key: d._key
       }, opts);
     }

@@ -1,5 +1,5 @@
 class ChartImageComposer {
-  compose(symbol) {
+  compose(symbol, layout) {
     throw new Error('compose() not implemented');
   }
 }
