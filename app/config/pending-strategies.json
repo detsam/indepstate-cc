@@ -1,0 +1,8 @@
+{
+  "consolidation": {
+    "bars": 3
+  },
+  "falseBreak": {
+    "tickSize": 0.01
+  }
+}

@@ -14,6 +14,17 @@ async function run() {
   bars1.forEach(b => svc1.onBar(b));
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101, stopLoss: 98 });
 
+  // long order triggers after 2 bars via service config
+  exec = undefined;
+  const svcCfg = createPendingOrderService({ strategyConfig: { consolidation: { bars: 2 } } });
+  svcCfg.addOrder({ price: 100, side: 'long', onExecute: r => { exec = r; } });
+  const barsCfg = [
+    { open: 99, high: 101, low: 98, close: 100.5 },
+    { open: 100.2, high: 100.8, low: 100, close: 100.7 }
+  ];
+  barsCfg.forEach(b => svcCfg.onBar(b));
+  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101, stopLoss: 98 });
+
   // long order triggers after 1 bar when configured
   exec = undefined;
   const svc1a = createPendingOrderService();

@@ -1,6 +1,9 @@
 class PendingOrderService {
-  constructor({ strategies = {} } = {}) {
-    this.strategies = strategies;
+  constructor({ createStrategy } = {}) {
+    if (typeof createStrategy !== 'function') {
+      throw new Error('createStrategy callback required');
+    }
+    this.createStrategy = createStrategy;
     this.orders = new Map();
     this.nextId = 1;
   }
@@ -18,9 +21,13 @@ class PendingOrderService {
       onExecute,
       onCancel
     } = opts;
-    const Strategy = this.strategies[strategy];
-    if (!Strategy) throw new Error(`Unknown strategy: ${strategy}`);
-    const strategyInst = new Strategy({ price, side, tickSize, bars, rangeRule, limitPriceFn, stopLossFn });
+    const params = { price, side };
+    if (tickSize != null) params.tickSize = tickSize;
+    if (bars != null) params.bars = bars;
+    if (rangeRule != null) params.rangeRule = rangeRule;
+    if (limitPriceFn != null) params.limitPriceFn = limitPriceFn;
+    if (stopLossFn != null) params.stopLossFn = stopLossFn;
+    const strategyInst = this.createStrategy(strategy, params);
     const id = this.nextId++;
     this.orders.set(id, { id, side, strategy: strategyInst, onExecute, onCancel });
     return id;

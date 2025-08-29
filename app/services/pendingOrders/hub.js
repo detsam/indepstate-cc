@@ -2,8 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const events = require('../events');
 const { PendingOrderService } = require('./service');
-const { ConsolidationStrategy } = require('./strategies/consolidation');
-const { FalseBreakStrategy } = require('./strategies/falseBreak');
+const { createStrategyFactory } = require('./factory');
 const { getAdapter: defaultGetAdapter } = require('../adapterRegistry');
 const { toPoints } = require('../points');
 const tradeRules = require('../tradeRules');
@@ -25,9 +24,9 @@ function pickProviderName(instrumentType) {
 }
 
 class PendingOrderHub {
-  constructor({ strategies = {}, subscribe, ipcMain, queuePlaceOrder, wireAdapter, mainWindow, getAdapter = defaultGetAdapter } = {}) {
+  constructor({ strategies = {}, strategyConfig, subscribe, ipcMain, queuePlaceOrder, wireAdapter, mainWindow, getAdapter = defaultGetAdapter } = {}) {
     this.subscribe = subscribe;
-    this.strategies = { consolidation: ConsolidationStrategy, falseBreak: FalseBreakStrategy, ...strategies };
+    this.createStrategy = createStrategyFactory(strategyConfig, strategies);
     this.services = new Map(); // key: provider:symbol -> service
     this.subscriptions = new Map(); // provider -> Set(symbol)
     this.pendingIndex = new Map(); // pendingId -> { reqId, provider, symbol, side }
@@ -58,7 +57,7 @@ class PendingOrderHub {
     const key = `${provider}:${symbol}`;
     let svc = this.services.get(key);
     if (!svc) {
-      svc = new PendingOrderService({ strategies: this.strategies });
+      svc = new PendingOrderService({ createStrategy: this.createStrategy });
       this.services.set(key, svc);
     }
     const subs = this.subscriptions.get(provider) || new Set();

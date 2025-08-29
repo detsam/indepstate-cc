@@ -74,6 +74,21 @@ Each entry specifies the button text (`label`) and the action (`action`) sent
 when it is clicked. If omitted, the default buttons are `BL`, `BC`, `BFB`, `SL`,
 `SC` and `SFB`.
 
+## Pending Order Strategies
+
+`pending-strategies.json` defines default options for pending‑order execution
+strategies. Each top‑level key corresponds to a strategy name and its value
+contains options that are merged with per‑order parameters:
+
+```json
+{
+  "consolidation": { "bars": 3, "rangeRule": "B1_RANGE_CONSOLIDATION" },
+  "falseBreak": { "tickSize": 0.01 }
+}
+```
+
+Override this file in `config/pending-strategies.json` to customize the defaults.
+
 ## Source types
 
 ### `webhook`
