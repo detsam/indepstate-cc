@@ -3,6 +3,7 @@ const path = require('path');
 const events = require('../events');
 const { PendingOrderService } = require('./service');
 const { ConsolidationStrategy } = require('./strategies/consolidation');
+const { FalseBreakStrategy } = require('./strategies/falseBreak');
 const { getAdapter: defaultGetAdapter } = require('../adapterRegistry');
 const loadConfig = require('../../config/load');
 
@@ -24,7 +25,7 @@ function pickProviderName(instrumentType) {
 class PendingOrderHub {
   constructor({ strategies = {}, subscribe, ipcMain, queuePlaceOrder, wireAdapter, mainWindow, getAdapter = defaultGetAdapter } = {}) {
     this.subscribe = subscribe;
-    this.strategies = { consolidation: ConsolidationStrategy, ...strategies };
+    this.strategies = { consolidation: ConsolidationStrategy, falseBreak: FalseBreakStrategy, ...strategies };
     this.services = new Map(); // key: provider:symbol -> service
     this.subscriptions = new Map(); // provider -> Set(symbol)
     this.queuePlaceOrder = queuePlaceOrder;
@@ -82,6 +83,8 @@ class PendingOrderHub {
     const pendingId = this.addOrder(providerName, symbol, {
       price: Number(payload.price),
       side: payload.side,
+      strategy: payload.strategy,
+      tickSize: payload.tickSize,
       onExecute: ({ limitPrice, stopLoss }) => {
         const stopPts = Math.abs(limitPrice - stopLoss);
         const finalPayload = {
@@ -96,6 +99,24 @@ class PendingOrderHub {
         const res = this.queuePlaceOrder?.(finalPayload);
         if (res && typeof res.then === 'function') {
           res.catch(err => console.error('pending order execution failed', err));
+        }
+      },
+      onCancel: () => {
+        appendJsonl(EXEC_LOG, {
+          t: nowTs(),
+          kind: 'pending-cancelled',
+          reqId,
+          provider: providerName,
+          pendingId,
+          order: { symbol, side: payload.side, strategy: payload.strategy || 'falseBreak' }
+        });
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('execution:result', {
+            status: 'rejected',
+            reason: 'trigger not satisfied',
+            reqId,
+            order: { symbol, side: payload.side, meta: payload.meta }
+          });
         }
       }
     });

@@ -25,6 +25,7 @@ const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ig
 const DEFAULT_CARD_BUTTONS = [
   { label: 'BL', action: 'BL' },
   { label: 'BC', action: 'BC' },
+  { label: 'FB', action: 'FB' },
   { label: 'SL', action: 'SL' },
   { label: 'SC', action: 'SC' }
 ];
@@ -1350,13 +1351,14 @@ async function place(kind, row, v, instrumentType) {
 
   let res;
   try {
-    if (kind === 'BC' || kind === 'SC') {
+    if (kind === 'BC' || kind === 'SC' || kind === 'FB') {
+      const isLong = kind === 'BC' || (kind === 'FB' && isUpEvent(row.event));
       const pendPayload = {
         ticker: row.ticker,
         event: row.event,
         price: Number(priceVal),
-        side: kind === 'BC' ? 'long' : 'short',
-        strategy: 'consolidation',
+        side: isLong ? 'long' : 'short',
+        strategy: kind === 'FB' ? 'falseBreak' : 'consolidation',
         instrumentType: instrumentType,
         tickSize: tick,
         meta: baseMeta,

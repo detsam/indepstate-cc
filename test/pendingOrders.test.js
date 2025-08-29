@@ -73,6 +73,54 @@ async function run() {
   bars1.forEach(b => svc4.onBar(b));
   assert.strictEqual(exec, undefined);
 
+  // false break immediate trigger long
+  exec = undefined;
+  let cancelled = false;
+  const svc7 = createPendingOrderService();
+  svc7.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
+    onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
+  svc7.onBar({ open: 101, high: 101.5, low: 99.8, close: 101.2 });
+  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101.2, stopLoss: 99.7 });
+  assert.strictEqual(cancelled, false);
+
+  // false break immediate trigger short
+  exec = undefined;
+  cancelled = false;
+  const svc8 = createPendingOrderService();
+  svc8.addOrder({ price: 200, side: 'short', strategy: 'falseBreak', tickSize: 0.1,
+    onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
+  svc8.onBar({ open: 199, high: 200.2, low: 198.5, close: 199.4 });
+  assert.strictEqual(exec.id, 1);
+  assert.strictEqual(exec.side, 'short');
+  assert.strictEqual(exec.limitPrice, 199.4);
+  assert.ok(Math.abs(exec.stopLoss - 200.3) < 1e-9);
+  assert.strictEqual(cancelled, false);
+
+  // false break two-bar trigger long
+  exec = undefined;
+  cancelled = false;
+  const svc9 = createPendingOrderService();
+  svc9.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
+    onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
+  svc9.onBar({ open: 99.5, high: 100.5, low: 99.2, close: 100.3 });
+  svc9.onBar({ open: 100.2, high: 100.6, low: 100, close: 100.4 });
+  assert.strictEqual(exec.id, 1);
+  assert.strictEqual(exec.side, 'long');
+  assert.strictEqual(exec.limitPrice, 100.4);
+  assert.ok(Math.abs(exec.stopLoss - 99.9) < 1e-9);
+  assert.strictEqual(cancelled, false);
+
+  // false break two-bar fails and cancels
+  exec = undefined;
+  cancelled = false;
+  const svc10 = createPendingOrderService();
+  svc10.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
+    onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
+  svc10.onBar({ open: 99.5, high: 100.5, low: 99.2, close: 100.3 });
+  svc10.onBar({ open: 100.2, high: 100.4, low: 99.7, close: 99.8 });
+  assert.strictEqual(exec, undefined);
+  assert.strictEqual(cancelled, true);
+
   console.log('pendingOrders tests passed');
 }
 

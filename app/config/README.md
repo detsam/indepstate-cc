@@ -48,6 +48,7 @@ each card:
   "buttons": [
     { "label": "BL", "action": "BL" },
     { "label": "BC", "action": "BC" },
+    { "label": "FB", "action": "FB" },
     { "label": "SL", "action": "SL" },
     { "label": "SC", "action": "SC" }
   ]
@@ -69,8 +70,8 @@ card with the fresh data, making it ready for a new order.
 
 `buttons` lets you customize the set of buttons rendered on each order card.
 Each entry specifies the button text (`label`) and the action (`action`) sent
-when it is clicked. If omitted, the default buttons are `BL`, `BC`, `SL` and
-`SC`.
+when it is clicked. If omitted, the default buttons are `BL`, `BC`, `FB`, `SL`
+and `SC`.
 
 ## Source types
 
