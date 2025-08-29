@@ -28,6 +28,7 @@ class PendingOrderHub {
     this.strategies = { consolidation: ConsolidationStrategy, falseBreak: FalseBreakStrategy, ...strategies };
     this.services = new Map(); // key: provider:symbol -> service
     this.subscriptions = new Map(); // provider -> Set(symbol)
+    this.pendingIndex = new Map(); // pendingId -> { reqId, provider, symbol, side }
     if (typeof queuePlaceOrder !== 'function') {
       throw new Error('queuePlaceOrder callback required');
     }
@@ -47,6 +48,7 @@ class PendingOrderHub {
         ipcMain.handle('queue-place-order', async (_evt, payload) => queuePlaceOrder(payload));
       }
       ipcMain.handle('queue-place-pending', async (_evt, payload) => this.queuePlacePending(payload));
+      ipcMain.handle('pending:cancel', async (_evt, pendingId) => this.cancelPending(pendingId));
     }
   }
 
@@ -89,6 +91,7 @@ class PendingOrderHub {
       strategy: payload.strategy,
       tickSize: payload.tickSize,
       onExecute: async ({ limitPrice, stopLoss }) => {
+        this.pendingIndex.delete(pendingId);
         const stopPts = Math.abs(limitPrice - stopLoss);
         const finalPayload = {
           ticker: symbol,
@@ -106,6 +109,7 @@ class PendingOrderHub {
         }
       },
       onCancel: () => {
+        this.pendingIndex.delete(pendingId);
         appendJsonl(EXEC_LOG, {
           t: nowTs(),
           kind: 'pending-cancelled',
@@ -134,6 +138,8 @@ class PendingOrderHub {
       order: { symbol, side: payload.side, strategy: payload.strategy || 'consolidation' }
     });
 
+    this.pendingIndex.set(pendingId, { reqId, provider: providerName, symbol, side: payload.side });
+
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('execution:pending', {
         ts,
@@ -145,6 +151,34 @@ class PendingOrderHub {
     }
 
     return { status: 'ok', provider: providerName, providerOrderId: `pending:${pendingId}` };
+  }
+
+  cancelPending(pendingId) {
+    const rec = this.pendingIndex.get(pendingId);
+    if (!rec) return { status: 'not-found' };
+    this.pendingIndex.delete(pendingId);
+    const [provider, symbol, local] = pendingId.split(':');
+    const svc = this.services.get(`${provider}:${symbol}`);
+    if (svc) svc.cancelOrder(Number(local));
+
+    appendJsonl(EXEC_LOG, {
+      t: nowTs(),
+      kind: 'pending-cancelled',
+      reqId: rec.reqId,
+      provider: rec.provider,
+      pendingId,
+      order: { symbol: rec.symbol, side: rec.side }
+    });
+
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('execution:result', {
+        status: 'cancelled',
+        reason: 'cancelled',
+        reqId: rec.reqId,
+        order: { symbol: rec.symbol, side: rec.side, meta: { requestId: rec.reqId } }
+      });
+    }
+    return { status: 'ok' };
   }
 }
 

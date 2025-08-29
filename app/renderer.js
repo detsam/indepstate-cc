@@ -73,10 +73,11 @@ const uiState = new Map();
 // Per-card execution state (pending/placed/executing/profit/loss)
 const cardStates = new Map();
 // Order for sorting cards by execution state
-const cardStateOrder = {pending: 1, placed: 2, executing: 3, profit: 4, loss: 5};
+const cardStateOrder = {pending: 1, 'pending-exec': 2, placed: 3, executing: 4, profit: 5, loss: 6};
 
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
+const pendingIdByReqId = new Map();
 const ticketToKey = new Map(); // ticket -> rowKey
 const retryCounts = new Map(); // reqId -> retry count
 
@@ -228,7 +229,8 @@ function setCardState(key, state) {
     cardStates.set(key, state);
     status.style.display = 'inline-block';
     status.className = `card__status card__status--${state}`;
-    card.classList.toggle('card--pending', state === 'pending');
+    status.textContent = state === 'pending-exec' ? 'pending execution' : '';
+    card.classList.toggle('card--pending', state === 'pending' || state === 'pending-exec');
     if (close) close.style.display = 'none';
     if (spreadEl) spreadEl.style.display = 'none';
     inputs.forEach(inp => {
@@ -248,14 +250,31 @@ function setCardState(key, state) {
         setCardState(key, null);
         render();
       };
+    } else if (state === 'pending-exec') {
+      status.style.cursor = 'pointer';
+      status.title = 'Отменить pending execution';
+      status.onclick = () => {
+        const reqId = card.dataset.reqId;
+        const pendingId = card.dataset.pendingId || (reqId ? pendingIdByReqId.get(reqId) : null);
+        if (pendingId) ipcRenderer.invoke('pending:cancel', pendingId).catch(() => {});
+        if (reqId) {
+          pendingByReqId.delete(reqId);
+          pendingIdByReqId.delete(reqId);
+          retryCounts.delete(reqId);
+          delete card.dataset.reqId;
+        }
+        delete card.dataset.pendingId;
+        setCardState(key, null);
+        render();
+      };
     } else {
       status.style.cursor = '';
       status.title = '';
       status.onclick = null;
     }
 
-    if (state === 'pending') {
-      // restore full card for pending state
+    if (state === 'pending' || state === 'pending-exec') {
+      // restore full card for pending states
       card.classList.remove('card--mini');
       if (card._removedParts) {
         for (const {node, next} of card._removedParts) {
@@ -270,9 +289,13 @@ function setCardState(key, state) {
       card.querySelectorAll('input').forEach(inp => inp.disabled = true);
       card.querySelectorAll('button.btn').forEach(btn => btn.disabled = true);
       if (retryBtn) {
-        retryBtn.style.display = 'inline-block';
-        const rid = card.dataset.reqId;
-        if (rid && retryCounts.has(rid)) retryBtn.textContent = String(retryCounts.get(rid));
+        if (state === 'pending') {
+          retryBtn.style.display = 'inline-block';
+          const rid = card.dataset.reqId;
+          if (rid && retryCounts.has(rid)) retryBtn.textContent = String(retryCounts.get(rid));
+        } else {
+          retryBtn.style.display = 'none';
+        }
       }
     } else {
       // shrink card to ticker + status
@@ -293,6 +316,7 @@ function setCardState(key, state) {
     cardStates.delete(key);
     card.classList.remove('card--mini');
     status.style.display = 'none';
+    status.textContent = '';
     status.style.cursor = '';
     status.title = '';
     status.onclick = null;
@@ -1310,7 +1334,8 @@ async function place(kind, row, v, instrumentType) {
   const requestId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   pendingByReqId.set(requestId, key);
   retryCounts.set(requestId, 0);
-  setCardState(key, 'pending');
+  const isPendingExec = kind === 'BC' || kind === 'SC' || kind === 'FB';
+  setCardState(key, isPendingExec ? 'pending-exec' : 'pending');
   const card = cardByKey(key);
   if (card) {
     card.dataset.reqId = requestId;
@@ -1377,6 +1402,9 @@ async function place(kind, row, v, instrumentType) {
       res = await ipcRenderer.invoke('queue-place-order', payload);
     }
     if (res && typeof res.providerOrderId === 'string' && res.providerOrderId.startsWith('pending:')) {
+      const pendId = res.providerOrderId.slice('pending:'.length);
+      pendingIdByReqId.set(requestId, pendId);
+      if (card) card.dataset.pendingId = pendId;
       toast(`… ${row.ticker}: sent, waiting confirmation`);
     }
     if (!res || res.status === 'rejected') {
@@ -1385,7 +1413,7 @@ async function place(kind, row, v, instrumentType) {
       shakeCard(key);
       render();
     } else {
-      setCardState(key, 'pending');
+      setCardState(key, isPendingExec ? 'pending-exec' : 'pending');
       render();
     }
   } catch (e) {
@@ -1400,6 +1428,7 @@ function clearPendingByKey(key) {
   for (const [rid, k] of pendingByReqId.entries()) {
     if (k === key) {
       pendingByReqId.delete(rid);
+      pendingIdByReqId.delete(rid);
       retryCounts.delete(rid);
     }
   }
@@ -1446,22 +1475,25 @@ ipcRenderer.on('execution:pending', (_evt, rec) => {
   const reqId = rec?.reqId;
   if (!reqId) return;
 
-  // 1) попробуем маппинг, созданный в момент клика
   let key = pendingByReqId.get(reqId);
-
-  // 2) если вдруг страница перезагружалась/карточка обновлялась — найдём по тикеру
   if (!key) key = findKeyByTicker(rec?.order?.symbol || rec?.order?.ticker);
-
   if (!key) return;
 
   pendingByReqId.set(reqId, key);
   retryCounts.set(reqId, 0);
-  setCardState(key, 'pending');
+  if (rec.pendingId) {
+    pendingIdByReqId.set(reqId, rec.pendingId);
+    const card = cardByKey(key);
+    if (card) card.dataset.pendingId = rec.pendingId;
+  }
   const card = cardByKey(key);
   if (card) {
     card.dataset.reqId = reqId;
     const rb = card.querySelector('.retry-btn');
     if (rb) rb.textContent = '0';
+  }
+  if (cardStates.get(key) !== 'pending-exec') {
+    setCardState(key, 'pending');
   }
   toast(`… ${rec.order.symbol}: queued`);
 });
@@ -1562,10 +1594,12 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
   if (!key) return;
 
   pendingByReqId.delete(reqId);
+  pendingIdByReqId.delete(reqId);
   retryCounts.delete(reqId);
   const card = cardByKey(key);
   if (card) {
     delete card.dataset.reqId;
+    delete card.dataset.pendingId;
     const rb = card.querySelector('.retry-btn');
     if (rb) rb.textContent = '0';
   }
