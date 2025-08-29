@@ -11,6 +11,7 @@ const { getAdapter, initExecutionConfig, getProviderConfig } = require('./servic
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
+const { createPendingOrderService } = require('./services/pendingOrders');
 const tradeRules = require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const execCfg = loadConfig('execution.json');
@@ -51,6 +52,15 @@ if (mt5LogsCfg.enabled !== false) {
   }
   mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients });
 }
+
+const pendingServices = new Map(); // key: provider:symbol -> PendingOrderService
+const barSubscriptions = new Map(); // provider -> Set(symbol)
+
+events.on('bar', ({ provider, symbol, tf, open, high, low, close }) => {
+  if (tf !== 'M1') return;
+  const svc = pendingServices.get(`${provider}:${symbol}`);
+  if (svc) svc.onBar({ open, high, low, close });
+});
 
 function envBool(name, fallback = false) {
   const v = process.env[name];
@@ -377,7 +387,7 @@ function normalizeEquityOrderForExecution(order) {
 }
 
 function setupIpc(orderSvc) {
-  ipcMain.handle('queue-place-order', async (_evt, payload) => {
+  async function queuePlaceOrderInternal(payload) {
     const order = normalizeOrderPayload(payload);
 
     // серверная валидация (зеркалит UI)
@@ -518,6 +528,77 @@ function setupIpc(orderSvc) {
       events.emit('order:placed', { order: execOrder, result: { status: 'rejected', provider: providerName, reason: rej.reason } });
       return rej;
     }
+  }
+
+  ipcMain.handle('queue-place-order', async (_evt, payload) => {
+    return queuePlaceOrderInternal(payload);
+  });
+
+  ipcMain.handle('queue-place-pending', async (_evt, payload) => {
+    const symbol = String(payload.ticker || payload.symbol || '');
+    const providerName = pickProviderName(payload.instrumentType);
+    const adapter = getAdapter(providerName);
+    wireAdapter(adapter, providerName);
+
+    const ts = nowTs();
+    const reqId = payload?.meta?.requestId || `${ts}_${Math.random().toString(36).slice(2,8)}`;
+    if (!payload.meta) payload.meta = {};
+    payload.meta.requestId = reqId;
+
+    const key = `${providerName}:${symbol}`;
+    let svc = pendingServices.get(key);
+    if (!svc) {
+      svc = createPendingOrderService();
+      pendingServices.set(key, svc);
+    }
+
+    const pendingLocalId = svc.addOrder({
+      price: Number(payload.price),
+      side: payload.side,
+      onExecute: ({ limitPrice, stopLoss }) => {
+        const stopPts = Math.abs(limitPrice - stopLoss);
+        const finalPayload = {
+          ticker: symbol,
+          event: payload.event,
+          price: limitPrice,
+          kind: payload.side === 'long' ? 'BL' : 'SL',
+          instrumentType: payload.instrumentType,
+          tickSize: payload.tickSize,
+          meta: { ...payload.meta, stopPts }
+        };
+        queuePlaceOrderInternal(finalPayload);
+      }
+    });
+
+    const pendingId = `${key}:${pendingLocalId}`;
+
+    const subs = barSubscriptions.get(providerName) || new Set();
+    if (!subs.has(symbol)) {
+      subs.add(symbol);
+      barSubscriptions.set(providerName, subs);
+      try { await adapter.client?.subscribe_symbols_bar_data([...subs].map(s => [s, 'M1'])); } catch {}
+    }
+
+    appendJsonl(EXEC_LOG, {
+      t: ts,
+      kind: 'place-queued',
+      reqId,
+      provider: providerName,
+      pendingId,
+      order: { symbol, side: payload.side, strategy: payload.strategy || 'consolidation' }
+    });
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('execution:pending', {
+        ts,
+        reqId,
+        provider: providerName,
+        pendingId,
+        order: { symbol }
+      });
+    }
+
+    return { status: 'ok', provider: providerName, providerOrderId: `pending:${pendingId}` };
   });
 
   ipcMain.handle('execution:stop-retry', async (_evt, reqId) => {

@@ -581,9 +581,9 @@ function createCard(row, index) {
     return b;
   };
   btns.appendChild(mk('BL', 'bl', 'BL'));
-  btns.appendChild(mk('BSL', 'bsl', 'BSL'));
+  btns.appendChild(mk('BC', 'bc', 'BC'));
   btns.appendChild(mk('SL', 'sl', 'SL'));
-  btns.appendChild(mk('SSL', 'ssl', 'SSL'));
+  btns.appendChild(mk('SC', 'sc', 'SC'));
 
   // assemble
   card.appendChild(head);
@@ -1329,25 +1329,40 @@ async function place(kind, row, v, instrumentType) {
     extra.riskUsd = v.risk;
   }
 
-  // legacy payload (main поддерживает оба формата)
-  const payload = {
-    ticker: row.ticker,
-    event: row.event,
-    price: Number(priceVal),
-    kind,
-    instrumentType: instrumentType,
-    tickSize: tick,
-    meta: {
-      requestId, // связь с execution:result
-      qty: Number(qtyVal),
-      stopPts: Number(slVal),
-      takePts: takeVal == null ? null : Number(takeVal),
-      ...extra
-    }
+  const baseMeta = {
+    requestId, // связь с execution:result
+    qty: Number(qtyVal),
+    stopPts: Number(slVal),
+    takePts: takeVal == null ? null : Number(takeVal),
+    ...extra
   };
 
+  let res;
   try {
-    const res = await ipcRenderer.invoke('queue-place-order', payload);
+    if (kind === 'BC' || kind === 'SC') {
+      const pendPayload = {
+        ticker: row.ticker,
+        event: row.event,
+        price: Number(priceVal),
+        side: kind === 'BC' ? 'long' : 'short',
+        strategy: 'consolidation',
+        instrumentType: instrumentType,
+        tickSize: tick,
+        meta: baseMeta,
+      };
+      res = await ipcRenderer.invoke('queue-place-pending', pendPayload);
+    } else {
+      const payload = {
+        ticker: row.ticker,
+        event: row.event,
+        price: Number(priceVal),
+        kind,
+        instrumentType: instrumentType,
+        tickSize: tick,
+        meta: baseMeta,
+      };
+      res = await ipcRenderer.invoke('queue-place-order', payload);
+    }
     if (res && typeof res.providerOrderId === 'string' && res.providerOrderId.startsWith('pending:')) {
       toast(`… ${row.ticker}: sent, waiting confirmation`);
     }
