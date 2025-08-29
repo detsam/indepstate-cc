@@ -13,6 +13,7 @@ class TvChartImageComposer extends ChartImageComposer {
     this.apiDomain = cfg.apiDomain;
     this.apiKey = cfg.apiKey;
     this.outputDir = cfg.outputDir || process.cwd();
+    this.exchanges = Array.isArray(cfg.exchanges) ? cfg.exchanges.filter(Boolean) : [];
     const rps = Number(cfg.throttlePerSecond) || 9;
     this._interval = 1000 / rps;
     this._queue = [];
@@ -47,16 +48,30 @@ class TvChartImageComposer extends ChartImageComposer {
 
   async _fetchAndSave(symbol, name, layoutId) {
     const url = `https://${this.apiDomain}/v2/tradingview/layout-chart/${layoutId}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'x-api-key': this.apiKey,
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({ symbol })
-    });
-    if (!res.ok) throw new Error(`TV chart request failed: ${res.status}`);
-    const buf = await res.buffer();
+
+    const tryFetch = async s => {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'x-api-key': this.apiKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ symbol: s })
+      });
+      if (res.ok) return res.buffer();
+      if (res.status === 422) return null; // unknown symbol / exchange
+      throw new Error(`TV chart request failed: ${res.status}`);
+    };
+
+    let buf = await tryFetch(symbol);
+    if (!buf) {
+      for (const ex of this.exchanges) {
+        buf = await tryFetch(`${ex}:${symbol}`);
+        if (buf) break;
+      }
+    }
+
+    if (!buf) throw new Error('TV chart request failed: 422');
     const filePath = path.join(this.outputDir, name);
     await fs.promises.writeFile(filePath, buf);
   }
