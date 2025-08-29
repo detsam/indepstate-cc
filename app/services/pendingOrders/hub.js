@@ -3,7 +3,7 @@ const path = require('path');
 const events = require('../events');
 const { PendingOrderService } = require('./service');
 const { ConsolidationStrategy } = require('./strategies/consolidation');
-const { getAdapter } = require('../adapterRegistry');
+const { getAdapter: defaultGetAdapter } = require('../adapterRegistry');
 const loadConfig = require('../../config/load');
 
 const execCfg = loadConfig('execution.json');
@@ -22,7 +22,7 @@ function pickProviderName(instrumentType) {
 }
 
 class PendingOrderHub {
-  constructor({ strategies = {}, subscribe, ipcMain, queuePlaceOrder, wireAdapter, mainWindow } = {}) {
+  constructor({ strategies = {}, subscribe, ipcMain, queuePlaceOrder, wireAdapter, mainWindow, getAdapter = defaultGetAdapter } = {}) {
     this.subscribe = subscribe;
     this.strategies = { consolidation: ConsolidationStrategy, ...strategies };
     this.services = new Map(); // key: provider:symbol -> service
@@ -30,6 +30,7 @@ class PendingOrderHub {
     this.queuePlaceOrder = queuePlaceOrder;
     this.wireAdapter = wireAdapter;
     this.mainWindow = mainWindow;
+    this.getAdapter = getAdapter;
 
     events.on('bar', ({ provider, symbol, tf, open, high, low, close }) => {
       if (tf !== 'M1') return;
@@ -70,7 +71,7 @@ class PendingOrderHub {
   queuePlacePending(payload) {
     const symbol = String(payload.ticker || payload.symbol || '');
     const providerName = pickProviderName(payload.instrumentType);
-    const adapter = getAdapter(providerName);
+    const adapter = this.getAdapter(providerName);
     try { this.wireAdapter?.(adapter, providerName); } catch {}
 
     const ts = nowTs();
@@ -92,7 +93,10 @@ class PendingOrderHub {
           tickSize: payload.tickSize,
           meta: { ...payload.meta, stopPts }
         };
-        this.queuePlaceOrder?.(finalPayload);
+        const res = this.queuePlaceOrder?.(finalPayload);
+        if (res && typeof res.then === 'function') {
+          res.catch(err => console.error('pending order execution failed', err));
+        }
       }
     });
 
