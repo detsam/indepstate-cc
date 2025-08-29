@@ -1506,18 +1506,20 @@ ipcRenderer.on('execution:pending', (_evt, rec) => {
 
   pendingByReqId.set(reqId, key);
   retryCounts.set(reqId, 0);
+  const card = cardByKey(key);
   if (rec.pendingId) {
     pendingIdByReqId.set(reqId, rec.pendingId);
-    const card = cardByKey(key);
     if (card) card.dataset.pendingId = rec.pendingId;
+  } else {
+    pendingIdByReqId.delete(reqId);
+    if (card) delete card.dataset.pendingId;
   }
-  const card = cardByKey(key);
   if (card) {
     card.dataset.reqId = reqId;
     const rb = card.querySelector('.retry-btn');
     if (rb) rb.textContent = '0';
   }
-  if (cardStates.get(key) !== 'pending-exec') {
+  if (!rec.pendingId || cardStates.get(key) !== 'pending-exec') {
     setCardState(key, 'pending');
   }
   toast(`… ${rec.order.symbol}: queued`);
