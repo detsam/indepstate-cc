@@ -53,13 +53,6 @@ if (mt5LogsCfg.enabled !== false) {
   mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients });
 }
 
-const pendingHub = createPendingOrderHub({
-  subscribe: (provider, symbols) => {
-    const adapter = getAdapter(provider);
-    try { adapter.client?.subscribe_symbols_bar_data(symbols.map(s => [s, 'M1'])); } catch {}
-  }
-});
-
 function envBool(name, fallback = false) {
   const v = process.env[name];
   if (v == null) return fallback;
@@ -507,7 +500,7 @@ function setupIpc(orderSvc) {
 
       console.log('[EXEC][RES]', { reqId, status: result?.status, reason: result?.reason, providerOrderId: result?.providerOrderId });
       return result;
-    } catch (err) {
+  } catch (err) {
       const rej = { status: 'rejected', reason: err.message || 'adapter error' };
       appendJsonl(EXEC_LOG, { t: nowTs(), kind: 'place', valid: true, order, error: String(err) });
 
@@ -528,59 +521,15 @@ function setupIpc(orderSvc) {
     }
   }
 
-  ipcMain.handle('queue-place-order', async (_evt, payload) => {
-    return queuePlaceOrderInternal(payload);
-  });
-
-  ipcMain.handle('queue-place-pending', async (_evt, payload) => {
-    const symbol = String(payload.ticker || payload.symbol || '');
-    const providerName = pickProviderName(payload.instrumentType);
-    const adapter = getAdapter(providerName);
-    wireAdapter(adapter, providerName);
-
-    const ts = nowTs();
-    const reqId = payload?.meta?.requestId || `${ts}_${Math.random().toString(36).slice(2,8)}`;
-    if (!payload.meta) payload.meta = {};
-    payload.meta.requestId = reqId;
-
-    const pendingId = pendingHub.addOrder(providerName, symbol, {
-      price: Number(payload.price),
-      side: payload.side,
-      onExecute: ({ limitPrice, stopLoss }) => {
-        const stopPts = Math.abs(limitPrice - stopLoss);
-        const finalPayload = {
-          ticker: symbol,
-          event: payload.event,
-          price: limitPrice,
-          kind: payload.side === 'long' ? 'BL' : 'SL',
-          instrumentType: payload.instrumentType,
-          tickSize: payload.tickSize,
-          meta: { ...payload.meta, stopPts }
-        };
-        queuePlaceOrderInternal(finalPayload);
-      }
-    });
-
-    appendJsonl(EXEC_LOG, {
-      t: ts,
-      kind: 'place-queued',
-      reqId,
-      provider: providerName,
-      pendingId,
-      order: { symbol, side: payload.side, strategy: payload.strategy || 'consolidation' }
-    });
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('execution:pending', {
-        ts,
-        reqId,
-        provider: providerName,
-        pendingId,
-        order: { symbol }
-      });
-    }
-
-    return { status: 'ok', provider: providerName, providerOrderId: `pending:${pendingId}` };
+  const pendingHub = createPendingOrderHub({
+    subscribe: (provider, symbols) => {
+      const adapter = getAdapter(provider);
+      try { adapter.client?.subscribe_symbols_bar_data(symbols.map(s => [s, 'M1'])); } catch {}
+    },
+    ipcMain,
+    queuePlaceOrder: queuePlaceOrderInternal,
+    wireAdapter,
+    mainWindow
   });
 
   ipcMain.handle('execution:stop-retry', async (_evt, reqId) => {
