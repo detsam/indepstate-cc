@@ -220,6 +220,7 @@ function setCardState(key, state) {
   const close = card.querySelector('.card__close');
   const retryBtn = card.querySelector('.retry-btn');
   const spreadEl = card.querySelector('.card__spread');
+  const btnsWrap = card.querySelector('.btns');
   if (!status) return;
 
   const inputs = card.querySelectorAll('input');
@@ -239,6 +240,7 @@ function setCardState(key, state) {
     buttons.forEach(btn => {
       btn.disabled = true;
     });
+    if (btnsWrap) btnsWrap.style.display = state === 'pending-exec' ? 'none' : '';
 
     if (state === 'placed') {
       status.style.cursor = 'pointer';
@@ -332,6 +334,7 @@ function setCardState(key, state) {
     buttons.forEach(btn => {
       btn.disabled = false;
     });
+    if (btnsWrap) btnsWrap.style.display = '';
 
     if (retryBtn) retryBtn.style.display = 'none';
 
