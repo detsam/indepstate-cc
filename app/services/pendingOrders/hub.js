@@ -110,6 +110,24 @@ class PendingOrderHub {
           stopPts = minPts;
         }
 
+        let qty;
+        const risk = Number(payload.meta?.riskUsd);
+        if (Number.isFinite(risk) && risk > 0 && Number.isFinite(stopPts) && stopPts > 0) {
+          const tick = payload.tickSize || 1;
+          if (payload.instrumentType === 'FX') {
+            const lot = Number(payload.lot) || 100000;
+            qty = Math.floor((risk / tick) / stopPts / lot / 0.01) * 0.01;
+          } else if (payload.instrumentType === 'CX') {
+            const lot = Number(payload.lot) || 1;
+            qty = Math.floor((risk / tick) / stopPts / lot / 0.001) * 0.001;
+          } else {
+            qty = Math.floor((risk / tick) / stopPts);
+          }
+          if (!Number.isFinite(qty) || qty < 0) qty = 0;
+        } else {
+          qty = Number(payload.meta?.qty || payload.qty || 0);
+        }
+
         const finalPayload = {
           symbol,
           side: payload.side === 'long' ? 'buy' : 'sell',
@@ -117,7 +135,7 @@ class PendingOrderHub {
           price: limitPrice,
           instrumentType: payload.instrumentType,
           tickSize: payload.tickSize,
-          qty: Number(payload.meta?.qty || payload.qty || 0),
+          qty,
           sl: stopPts,
           tp: takePts,
           meta: { ...payload.meta, stopPts, ...(takePts != null ? { takePts } : {}) }

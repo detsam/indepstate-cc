@@ -25,9 +25,9 @@ async function run() {
     ticker: 'TEST',
     price: 100,
     side: 'long',
-    instrumentType: 'FX',
+    instrumentType: 'EQ',
     tickSize: 1,
-    meta: { qty: 1, stopPts: 1, riskUsd: 1 }
+    meta: { qty: 100, riskUsd: 10 }
   });
 
   const bars = [
@@ -72,7 +72,7 @@ async function run() {
     strategy: 'stub',
     instrumentType: 'FX',
     tickSize: 0.5,
-    meta: { qty: 1, riskUsd: 1 }
+    meta: { qty: 1 }
   });
 
   events.emit('bar', { provider: 'dwx', symbol: 'TPTEST', tf: 'M1', open: 100, high: 101, low: 99, close: 100 });
