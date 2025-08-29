@@ -12,7 +12,10 @@ fs.writeFileSync(execLog, '');
 async function run() {
   let placed;
   const hub = new PendingOrderHub({
-    queuePlaceOrder: (o) => { placed = o; },
+    queuePlaceOrder: async (o) => {
+      await Promise.resolve();
+      placed = o;
+    },
     subscribe: () => {},
     wireAdapter: () => {},
     getAdapter: () => ({})
@@ -33,6 +36,7 @@ async function run() {
     { open: 100.5, high: 101, low: 100.1, close: 100.9 }
   ];
   bars.forEach(b => events.emit('bar', { provider: 'dwx', symbol: 'TEST', tf: 'M1', ...b }));
+  await new Promise(r => setTimeout(r, 0));
 
   assert.ok(placed, 'order was not sent for execution');
   assert.strictEqual(placed.kind, 'BL');

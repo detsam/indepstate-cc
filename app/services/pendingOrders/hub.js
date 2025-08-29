@@ -85,7 +85,7 @@ class PendingOrderHub {
       side: payload.side,
       strategy: payload.strategy,
       tickSize: payload.tickSize,
-      onExecute: ({ limitPrice, stopLoss }) => {
+      onExecute: async ({ limitPrice, stopLoss }) => {
         const stopPts = Math.abs(limitPrice - stopLoss);
         const finalPayload = {
           ticker: symbol,
@@ -96,9 +96,10 @@ class PendingOrderHub {
           tickSize: payload.tickSize,
           meta: { ...payload.meta, stopPts }
         };
-        const res = this.queuePlaceOrder?.(finalPayload);
-        if (res && typeof res.then === 'function') {
-          res.catch(err => console.error('pending order execution failed', err));
+        try {
+          await this.queuePlaceOrder?.(finalPayload);
+        } catch (err) {
+          console.error('pending order execution failed', err);
         }
       },
       onCancel: () => {
