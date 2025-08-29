@@ -20,10 +20,10 @@ no more than `throttlePerSecond` are launched per second. Configuration options:
 - `apiKey` – API key to authorize requests
 - `outputDir` – directory where images are written
 - `throttlePerSecond` – maximum number of requests started per second (defaults to 9)
-- `exchanges` – optional list of exchange prefixes to try when a symbol without an exchange returns 422
+- `fallbackExchanges` – optional list of exchange prefixes to try when a symbol without an exchange returns 422
 
 Environment variables can supply these values via `${ENV:VAR}` references in the
 config.
 
 If a request responds with HTTP 422 (unknown instrument), the composer retries by
-prefixing the symbol with each exchange name in order until one succeeds.
+prefixing the symbol with each fallback exchange name in order until one succeeds.

@@ -13,7 +13,7 @@ class TvChartImageComposer extends ChartImageComposer {
     this.apiDomain = cfg.apiDomain;
     this.apiKey = cfg.apiKey;
     this.outputDir = cfg.outputDir || process.cwd();
-    this.exchanges = Array.isArray(cfg.exchanges) ? cfg.exchanges.filter(Boolean) : [];
+    this.fallbackExchanges = Array.isArray(cfg.fallbackExchanges) ? cfg.fallbackExchanges.filter(Boolean) : [];
     const rps = Number(cfg.throttlePerSecond) || 9;
     this._interval = 1000 / rps;
     this._queue = [];
@@ -65,7 +65,7 @@ class TvChartImageComposer extends ChartImageComposer {
 
     let buf = await tryFetch(symbol);
     if (!buf) {
-      for (const ex of this.exchanges) {
+      for (const ex of this.fallbackExchanges) {
         buf = await tryFetch(`${ex}:${symbol}`);
         if (buf) break;
       }
