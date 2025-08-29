@@ -1,0 +1,12 @@
+{
+  "default": {
+    "type": "tv",
+    "apiDomain": "${ENV:TV_IMGS_API_DOMAIN}",
+    "apiKey": "${ENV:TV_IMGS_API_KEY}",
+    "outputDir": "${ENV:TV_IMGS_OUTPUT_DIR}",
+    "throttlePerSecond": "${ENV:TV_IMGS_THROTTLE}",
+    "fallbackExchanges": ["BINANCE", "BYBIT"],
+    "layout1D": "${ENV:TV_IMGS_LAYOUT_1D}",
+    "layout5M": "${ENV:TV_IMGS_LAYOUT_5M}"
+  }
+}

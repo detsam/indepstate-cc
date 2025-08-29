@@ -5,15 +5,7 @@
       "type": "obsidian",
       "vaultPath": "${ENV:OBSIDIAN_INDEPSTATE_VAULT}",
       "journalPath": "${ENV:OBSIDIAN_INDEPSTATE_DEALS_JOURNAL}",
-      "findJournalPath": "${ENV:OBSIDIAN_INDEPSTATE_DEALS_SEARCH}",
-      "chartImageComposer": {
-        "type": "tv",
-        "apiDomain": "${ENV:TV_IMGS_API_DOMAIN}",
-        "apiKey": "${ENV:TV_IMGS_API_KEY}",
-        "layoutId": "${ENV:TV_IMGS_LAYOUT_ID}",
-        "outputDir": "${ENV:TV_IMGS_OUTPUT_DIR}",
-        "throttlePerSecond": "${ENV:TV_IMGS_THROTTLE}"
-      }
+      "findJournalPath": "${ENV:OBSIDIAN_INDEPSTATE_DEALS_SEARCH}"
     }
   ]
 }

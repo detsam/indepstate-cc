@@ -12,7 +12,6 @@ class ObsidianDealTracker extends DealTracker {
     this.vaultPath = cfg.vaultPath;
     this.journalPath = cfg.journalPath || cfg.vaultPath;
     this.findJournalPath = cfg.findJournalPath;
-    this.chartComposer = cfg.chartImageComposer;
   }
 
   shouldWrite(info = {}, opts = {}) {
@@ -136,16 +135,11 @@ class ObsidianDealTracker extends DealTracker {
     const statusLine = status === 'take' ? '- Status:: [[Result. Take]]' : '- Status:: [[Result. Stop]]';
     content = content.replace(/^- Status::.*$/m, statusLine);
 
-    let chartFile = null;
-    if (this.chartComposer && symbol && symbol.exchange && ticker && canCheck) {
-      try {
-        chartFile = this.chartComposer.compose(`${symbol.exchange}:${ticker}`);
-      } catch (e) {
-        console.error('chart compose failed', e);
-      }
+    if (info.chart1D) {
+      content = content.replace(/\t- 1D.*$/m, `\t- 1D ![[${info.chart1D}]]`);
     }
-    if (chartFile) {
-      content = content.replace(/\t- 1D.*$/m, `\t- 1D ![[${chartFile}]]`);
+    if (info.chart5M) {
+      content = content.replace(/\t- 5M.*$/m, `\t- 5M ![[${info.chart5M}]]`);
     }
 
     if (canCheck) {
