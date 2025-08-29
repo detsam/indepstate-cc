@@ -39,7 +39,8 @@ async function run() {
   await new Promise(r => setTimeout(r, 0));
 
   assert.ok(placed, 'order was not sent for execution');
-  assert.strictEqual(placed.kind, 'BL');
+  assert.strictEqual(placed.side, 'buy');
+  assert.strictEqual(placed.type, 'limit');
   assert.strictEqual(placed.price, 101);
   assert.strictEqual(placed.meta.stopPts, 3);
   console.log('pendingOrdersHub tests passed');

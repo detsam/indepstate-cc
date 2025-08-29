@@ -94,10 +94,10 @@ class PendingOrderHub {
         this.pendingIndex.delete(pendingId);
         const stopPts = Math.abs(limitPrice - stopLoss);
         const finalPayload = {
-          ticker: symbol,
-          event: payload.event,
+          symbol,
+          side: payload.side === 'long' ? 'buy' : 'sell',
+          type: 'limit',
           price: limitPrice,
-          kind: payload.side === 'long' ? 'BL' : 'SL',
           instrumentType: payload.instrumentType,
           tickSize: payload.tickSize,
           meta: { ...payload.meta, stopPts }
