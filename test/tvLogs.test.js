@@ -21,3 +21,35 @@ assert.strictEqual(deals[0].placingDate, '2025-08-26');
 fs.unlinkSync(tmp);
 
 console.log('tvLogs ok');
+
+// ensure tvLogs.start avoids fetching images when trackers skip existing notes
+delete require.cache[require.resolve('../app/services/tvLogs')];
+const chartImagesPath = require.resolve('../app/services/chartImages');
+let composeCount = 0;
+require.cache[chartImagesPath] = {
+  exports: {
+    compose1D: () => { composeCount++; },
+    compose5M: () => { composeCount++; }
+  }
+};
+const dealTrackersPath = require.resolve('../app/services/dealTrackers');
+let notifyCount = 0;
+require.cache[dealTrackersPath] = {
+  exports: {
+    shouldWritePositionClosed: () => false,
+    notifyPositionClosed: () => { notifyCount++; }
+  }
+};
+const tvLogs = require('../app/services/tvLogs');
+(async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tvlogs-'));
+  const file = path.join(dir, 'log.csv');
+  fs.writeFileSync(file, csv);
+  const svc = tvLogs.start({ accounts: [{ dir }], pollMs: 20 });
+  await new Promise(r => setTimeout(r, 50));
+  svc.stop();
+  assert.strictEqual(composeCount, 0);
+  assert.strictEqual(notifyCount, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
+  console.log('tvLogs skipExisting ok');
+})();
