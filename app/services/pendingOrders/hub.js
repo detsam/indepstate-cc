@@ -100,6 +100,9 @@ class PendingOrderHub {
           price: limitPrice,
           instrumentType: payload.instrumentType,
           tickSize: payload.tickSize,
+          qty: Number(payload.meta?.qty || payload.qty || 0),
+          sl: stopPts,
+          tp: payload.meta?.takePts == null ? undefined : Number(payload.meta.takePts),
           meta: { ...payload.meta, stopPts }
         };
         try {

@@ -42,6 +42,8 @@ async function run() {
   assert.strictEqual(placed.side, 'buy');
   assert.strictEqual(placed.type, 'limit');
   assert.strictEqual(placed.price, 101);
+  assert.strictEqual(placed.qty, 1);
+  assert.strictEqual(placed.sl, 3);
   assert.strictEqual(placed.meta.stopPts, 3);
   console.log('pendingOrdersHub tests passed');
 }
