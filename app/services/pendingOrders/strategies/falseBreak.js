@@ -5,12 +5,24 @@ class FalseBreakStrategy {
     this.tick = Number(tickSize) || 0.01;
     this.stage = 0; // 0 initial, 1 waiting for bar2
     this.done = false;
+    this.triggered = false; // wait for first bar that crosses level
   }
 
   onBar(bar) {
     if (this.done) return null;
     const { open, close, high, low } = bar;
     const p = this.price;
+
+    // skip bars that haven't pierced the level yet
+    if (!this.triggered) {
+      if (this.side === 'long') {
+        if (low > p) return null;
+      } else if (high < p) {
+        return null;
+      }
+      this.triggered = true;
+    }
+
     if (this.stage === 0) {
       if (this.side === 'long') {
         if (open > p && close > p && low < p) {

@@ -85,12 +85,17 @@ async function run() {
   bars1.forEach(b => svc4.onBar(b));
   assert.strictEqual(exec, undefined);
 
-  // false break immediate trigger long
+  // false break ignores bars that don't cross level
   exec = undefined;
   let cancelled = false;
   const svc7 = createPendingOrderService();
   svc7.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
     onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
+  // first bar never pierces the level
+  svc7.onBar({ open: 101, high: 101.5, low: 100.5, close: 101.2 });
+  assert.strictEqual(exec, undefined);
+  assert.strictEqual(cancelled, false);
+  // second bar crosses and triggers immediately
   svc7.onBar({ open: 101, high: 101.5, low: 99.8, close: 101.2 });
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101.2, stopLoss: 99.7 });
   assert.strictEqual(cancelled, false);
