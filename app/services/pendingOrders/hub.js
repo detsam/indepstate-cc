@@ -92,6 +92,7 @@ class PendingOrderHub {
       side: payload.side,
       strategy: payload.strategy,
       tickSize: payload.tickSize,
+      bars: payload.bars,
       onExecute: async ({ limitPrice, stopLoss, takeProfit }) => {
         this.pendingIndex.delete(pendingId);
 

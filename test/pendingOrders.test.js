@@ -14,6 +14,26 @@ async function run() {
   bars1.forEach(b => svc1.onBar(b));
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101, stopLoss: 98 });
 
+  // long order triggers after 1 bar when configured
+  exec = undefined;
+  const svc1a = createPendingOrderService();
+  svc1a.addOrder({ price: 100, side: 'long', bars: 1, onExecute: r => { exec = r; } });
+  svc1a.onBar({ open: 99, high: 101, low: 98, close: 100.5 });
+  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101, stopLoss: 98 });
+
+  // long order triggers after 4 bars when configured
+  exec = undefined;
+  const svc1b = createPendingOrderService();
+  svc1b.addOrder({ price: 100, side: 'long', bars: 4, onExecute: r => { exec = r; } });
+  const bars1b = [
+    { open: 99, high: 101, low: 98, close: 100.5 },
+    { open: 100.2, high: 100.8, low: 100, close: 100.7 },
+    { open: 100.5, high: 101, low: 100.1, close: 100.9 },
+    { open: 100.6, high: 101.1, low: 100.2, close: 100.95 },
+  ];
+  bars1b.forEach(b => svc1b.onBar(b));
+  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101.1, stopLoss: 98 });
+
   // long order: first attempt invalid, then later trigger
   exec = undefined;
   const svc2 = createPendingOrderService();
