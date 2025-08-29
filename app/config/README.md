@@ -33,8 +33,9 @@ contents onto the defaults bundled in this directory.
 
 The `order-cards.json` file lists every source that can feed order cards into the
 application. The file contains a single object with a `sources` array and optional
-settings such as a default stop value in dollars for equity cards or how to treat
-events for cards already in a final state:
+settings such as a default stop value in dollars for equity cards, how to treat
+events for cards already in a final state or which action buttons to show on
+each card:
 
 ```json
 {
@@ -43,7 +44,13 @@ events for cards already in a final state:
     { "type": "file", "pathEnvVar": "ORDER_CARDS_PATH", "pollMs": 1000 }
   ],
   "defaultEquityStopUsd": 50,
-  "closedCardEventStrategy": "ignore"
+  "closedCardEventStrategy": "ignore",
+  "buttons": [
+    { "label": "BL", "action": "BL" },
+    { "label": "BC", "action": "BC" },
+    { "label": "SL", "action": "SL" },
+    { "label": "SC", "action": "SC" }
+  ]
 }
 ```
 
@@ -59,6 +66,11 @@ pre-filled Risk $ field for new equity order cards. The
 ticker whose card is already closed (`take`/`stop`). When set to `"ignore"`
 (default) such events are discarded. Setting it to `"revive"` reactivates the
 card with the fresh data, making it ready for a new order.
+
+`buttons` lets you customize the set of buttons rendered on each order card.
+Each entry specifies the button text (`label`) and the action (`action`) sent
+when it is clicked. If omitted, the default buttons are `BL`, `BC`, `SL` and
+`SC`.
 
 ## Source types
 

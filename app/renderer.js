@@ -22,6 +22,17 @@ const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
 
 const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ignore';
 
+const DEFAULT_CARD_BUTTONS = [
+  { label: 'BL', action: 'BL' },
+  { label: 'BC', action: 'BC' },
+  { label: 'SL', action: 'SL' },
+  { label: 'SC', action: 'SC' }
+];
+const CARD_BUTTONS = Array.isArray(orderCardsCfg?.buttons) && orderCardsCfg.buttons.length
+  ? orderCardsCfg.buttons.map((b) => Array.isArray(b) ? { label: b[0], action: b[1] } : b)
+      .filter((b) => b && b.label && b.action)
+  : DEFAULT_CARD_BUTTONS;
+
 const closedCardStrategies = {
   ignore: () => {},
   revive: ({ row, idx, oldRow, oldKey }) => {
@@ -580,10 +591,10 @@ function createCard(row, index) {
     b.setAttribute('data-kind', kind);
     return b;
   };
-  btns.appendChild(mk('BL', 'bl', 'BL'));
-  btns.appendChild(mk('BC', 'bc', 'BC'));
-  btns.appendChild(mk('SL', 'sl', 'SL'));
-  btns.appendChild(mk('SC', 'sc', 'SC'));
+  btns.style.gridTemplateColumns = `repeat(${CARD_BUTTONS.length},1fr)`;
+  for (const { label, action } of CARD_BUTTONS) {
+    btns.appendChild(mk(label, action.toLowerCase(), action));
+  }
 
   // assemble
   card.appendChild(head);
