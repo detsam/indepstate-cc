@@ -75,6 +75,9 @@ const cardStates = new Map();
 // Order for sorting cards by execution state
 const cardStateOrder = {pending: 1, 'pending-exec': 2, placed: 3, executing: 4, profit: 5, loss: 6};
 
+// Short labels for pending execution orders
+const pendingExecLabels = new Map(); // key -> label
+
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
 const pendingIdByReqId = new Map();
@@ -230,7 +233,13 @@ function setCardState(key, state) {
     cardStates.set(key, state);
     status.style.display = 'inline-block';
     status.className = `card__status card__status--${state}`;
-    status.textContent = state === 'pending-exec' ? 'pending execution' : '';
+    if (state === 'pending-exec') {
+      const lbl = pendingExecLabels.get(key);
+      status.textContent = lbl ? `pe (${lbl})` : 'pe';
+    } else {
+      pendingExecLabels.delete(key);
+      status.textContent = '';
+    }
     card.classList.toggle('card--pending', state === 'pending' || state === 'pending-exec');
     if (close) close.style.display = 'none';
     if (spreadEl) spreadEl.style.display = 'none';
@@ -254,7 +263,7 @@ function setCardState(key, state) {
       };
     } else if (state === 'pending-exec') {
       status.style.cursor = 'pointer';
-      status.title = 'Отменить pending execution';
+      status.title = 'Отменить pe';
       status.onclick = () => {
         const reqId = card.dataset.reqId;
         const pendingId = card.dataset.pendingId || (reqId ? pendingIdByReqId.get(reqId) : null);
@@ -319,6 +328,7 @@ function setCardState(key, state) {
     card.classList.remove('card--mini');
     status.style.display = 'none';
     status.textContent = '';
+    pendingExecLabels.delete(key);
     status.style.cursor = '';
     status.title = '';
     status.onclick = null;
@@ -460,6 +470,12 @@ function migrateKey(oldKey, newKey, {preserveUi = false, nextUiPatch = null} = {
   if (cardStates.has(oldKey)) {
     cardStates.set(newKey, cardStates.get(oldKey));
     cardStates.delete(oldKey);
+  }
+
+  // pendingExecLabels
+  if (pendingExecLabels.has(oldKey)) {
+    pendingExecLabels.set(newKey, pendingExecLabels.get(oldKey));
+    pendingExecLabels.delete(oldKey);
   }
 }
 
@@ -614,7 +630,7 @@ function createCard(row, index) {
     const b = btn(label, cls, async () => {
       const v = body.validate();
       if (!v.valid) return;
-      await place(kind, row, v, instrumentType);
+      await place(kind, row, v, instrumentType, label);
     });
     b.setAttribute('data-kind', kind);
     return b;
@@ -1330,7 +1346,7 @@ function revalidateCardsForTicker(ticker) {
 }
 
 // ======= Order placement (shared) =======
-async function place(kind, row, v, instrumentType) {
+async function place(kind, row, v, instrumentType, btnLabel) {
   if (!v.valid) return;
 
   const key = rowKey(row);
@@ -1338,6 +1354,12 @@ async function place(kind, row, v, instrumentType) {
   pendingByReqId.set(requestId, key);
   retryCounts.set(requestId, 0);
   const isPendingExec = kind === 'BC' || kind === 'SC' || kind === 'FB';
+  let isLong = null;
+  if (kind === 'BC') isLong = true;
+  else if (kind === 'SC') isLong = false;
+  else if (kind === 'FB') isLong = isUpEvent(row.event);
+  const alias = isPendingExec ? (kind === 'FB' ? `${isLong ? 'B' : 'S'}${btnLabel}` : btnLabel) : null;
+  if (alias) pendingExecLabels.set(key, alias);
   setCardState(key, isPendingExec ? 'pending-exec' : 'pending');
   const card = cardByKey(key);
   if (card) {
@@ -1380,7 +1402,6 @@ async function place(kind, row, v, instrumentType) {
   let res;
   try {
     if (kind === 'BC' || kind === 'SC' || kind === 'FB') {
-      const isLong = kind === 'BC' || (kind === 'FB' && isUpEvent(row.event));
       const pendPayload = {
         ticker: row.ticker,
         event: row.event,
@@ -1435,6 +1456,7 @@ function clearPendingByKey(key) {
       retryCounts.delete(rid);
     }
   }
+  pendingExecLabels.delete(key);
 }
 
 function removeRow(row) {
