@@ -1519,7 +1519,7 @@ ipcRenderer.on('execution:pending', (_evt, rec) => {
     const rb = card.querySelector('.retry-btn');
     if (rb) rb.textContent = '0';
   }
-  if (!rec.pendingId || cardStates.get(key) !== 'pending-exec') {
+  if (cardStates.get(key) !== 'pending-exec' || rec?.order?.side) {
     setCardState(key, 'pending');
   }
   toast(`… ${rec.order.symbol}: queued`);
@@ -1706,4 +1706,20 @@ $cmdline.addEventListener('keydown', (e) => {
 
 // initial render
 render();
+
+// expose internals for tests
+if (typeof module !== 'undefined') {
+  module.exports.__testing = {
+    setCardState,
+    rowKey,
+    findKeyByTicker,
+    cardByKey,
+    state,
+    pendingByReqId,
+    pendingIdByReqId,
+    retryCounts,
+    cardStates,
+    pendingExecLabels
+  };
+}
 
