@@ -25,9 +25,10 @@ const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ig
 const DEFAULT_CARD_BUTTONS = [
   { label: 'BL', action: 'BL' },
   { label: 'BC', action: 'BC' },
-  { label: 'FB', action: 'FB' },
+  { label: 'BFB', action: 'BFB' },
   { label: 'SL', action: 'SL' },
-  { label: 'SC', action: 'SC' }
+  { label: 'SC', action: 'SC' },
+  { label: 'SFB', action: 'SFB' }
 ];
 const CARD_BUTTONS = Array.isArray(orderCardsCfg?.buttons) && orderCardsCfg.buttons.length
   ? orderCardsCfg.buttons.map((b) => Array.isArray(b) ? { label: b[0], action: b[1] } : b)
@@ -1353,12 +1354,11 @@ async function place(kind, row, v, instrumentType, btnLabel) {
   const requestId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   pendingByReqId.set(requestId, key);
   retryCounts.set(requestId, 0);
-  const isPendingExec = kind === 'BC' || kind === 'SC' || kind === 'FB';
+  const isPendingExec = kind === 'BC' || kind === 'SC' || kind === 'BFB' || kind === 'SFB';
   let isLong = null;
-  if (kind === 'BC') isLong = true;
-  else if (kind === 'SC') isLong = false;
-  else if (kind === 'FB') isLong = isUpEvent(row.event);
-  const alias = isPendingExec ? (kind === 'FB' ? `${isLong ? 'B' : 'S'}${btnLabel}` : btnLabel) : null;
+  if (kind === 'BC' || kind === 'BFB') isLong = true;
+  else if (kind === 'SC' || kind === 'SFB') isLong = false;
+  const alias = isPendingExec ? btnLabel : null;
   if (alias) pendingExecLabels.set(key, alias);
   setCardState(key, isPendingExec ? 'pending-exec' : 'pending');
   const card = cardByKey(key);
@@ -1401,13 +1401,13 @@ async function place(kind, row, v, instrumentType, btnLabel) {
 
   let res;
   try {
-    if (kind === 'BC' || kind === 'SC' || kind === 'FB') {
+    if (kind === 'BC' || kind === 'SC' || kind === 'BFB' || kind === 'SFB') {
       const pendPayload = {
         ticker: row.ticker,
         event: row.event,
         price: Number(priceVal),
         side: isLong ? 'long' : 'short',
-        strategy: kind === 'FB' ? 'falseBreak' : 'consolidation',
+        strategy: (kind === 'BFB' || kind === 'SFB') ? 'falseBreak' : 'consolidation',
         instrumentType: instrumentType,
         tickSize: tick,
         meta: baseMeta,

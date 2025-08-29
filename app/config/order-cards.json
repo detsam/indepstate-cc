@@ -10,8 +10,9 @@
   "buttons": [
     { "label": "BL", "action": "BL" },
     { "label": "BC", "action": "BC" },
-    { "label": "FB", "action": "FB" },
+    { "label": "BFB", "action": "BFB" },
     { "label": "SL", "action": "SL" },
-    { "label": "SC", "action": "SC" }
+    { "label": "SC", "action": "SC" },
+    { "label": "SFB", "action": "SFB" }
   ]
 }
