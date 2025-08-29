@@ -5,6 +5,8 @@ const { PendingOrderService } = require('./service');
 const { ConsolidationStrategy } = require('./strategies/consolidation');
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
 const { getAdapter: defaultGetAdapter } = require('../adapterRegistry');
+const { toPoints } = require('../points');
+const tradeRules = require('../tradeRules');
 const loadConfig = require('../../config/load');
 
 const execCfg = loadConfig('execution.json');
@@ -90,9 +92,24 @@ class PendingOrderHub {
       side: payload.side,
       strategy: payload.strategy,
       tickSize: payload.tickSize,
-      onExecute: async ({ limitPrice, stopLoss }) => {
+      onExecute: async ({ limitPrice, stopLoss, takeProfit }) => {
         this.pendingIndex.delete(pendingId);
-        const stopPts = Math.abs(limitPrice - stopLoss);
+
+        let stopPts = toPoints(payload.tickSize, symbol, Math.abs(limitPrice - stopLoss), limitPrice);
+        let takePts = takeProfit == null ? undefined :
+          toPoints(payload.tickSize, symbol, Math.abs(takeProfit - limitPrice), limitPrice);
+        if (takePts == null && payload.meta?.takePts != null) {
+          const t = Number(payload.meta.takePts);
+          takePts = Number.isFinite(t) ? t : undefined;
+        }
+
+        const { MinStopPointsRule } = tradeRules;
+        const minRule = tradeRules.rules?.find(r => r instanceof MinStopPointsRule);
+        const minPts = minRule ? minRule._min({ instrumentType: payload.instrumentType }) : undefined;
+        if (Number.isFinite(minPts) && Number.isFinite(stopPts) && stopPts < minPts) {
+          stopPts = minPts;
+        }
+
         const finalPayload = {
           symbol,
           side: payload.side === 'long' ? 'buy' : 'sell',
@@ -102,8 +119,8 @@ class PendingOrderHub {
           tickSize: payload.tickSize,
           qty: Number(payload.meta?.qty || payload.qty || 0),
           sl: stopPts,
-          tp: payload.meta?.takePts == null ? undefined : Number(payload.meta.takePts),
-          meta: { ...payload.meta, stopPts }
+          tp: takePts,
+          meta: { ...payload.meta, stopPts, ...(takePts != null ? { takePts } : {}) }
         };
         try {
           await this.queuePlaceOrder(finalPayload);

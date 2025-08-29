@@ -43,8 +43,46 @@ async function run() {
   assert.strictEqual(placed.type, 'limit');
   assert.strictEqual(placed.price, 101);
   assert.strictEqual(placed.qty, 1);
-  assert.strictEqual(placed.sl, 3);
-  assert.strictEqual(placed.meta.stopPts, 3);
+  assert.strictEqual(placed.sl, 6);
+  assert.strictEqual(placed.meta.stopPts, 6);
+
+  // strategy providing takeProfit and tickSize requiring conversion
+  placed = undefined;
+  const hub2 = new PendingOrderHub({
+    queuePlaceOrder: async (o) => { placed = o; },
+    subscribe: () => {},
+    wireAdapter: () => {},
+    getAdapter: () => ({}),
+    strategies: {
+      stub: class {
+        constructor() { this.done = false; }
+        onBar() {
+          if (this.done) return null;
+          this.done = true;
+          return { limitPrice: 101, stopLoss: 99, takeProfit: 105 };
+        }
+      }
+    }
+  });
+
+  hub2.queuePlacePending({
+    ticker: 'TPTEST',
+    price: 100,
+    side: 'long',
+    strategy: 'stub',
+    instrumentType: 'FX',
+    tickSize: 0.5,
+    meta: { qty: 1, riskUsd: 1 }
+  });
+
+  events.emit('bar', { provider: 'dwx', symbol: 'TPTEST', tf: 'M1', open: 100, high: 101, low: 99, close: 100 });
+  await new Promise(r => setTimeout(r, 0));
+
+  assert.ok(placed, 'takeProfit order was not executed');
+  assert.strictEqual(placed.sl, 6); // diff 2 -> 4 pts -> clamped to 6
+  assert.strictEqual(placed.tp, 8); // diff 4 -> 8 pts
+  assert.strictEqual(placed.meta.stopPts, 6);
+  assert.strictEqual(placed.meta.takePts, 8);
   console.log('pendingOrdersHub tests passed');
 }
 
