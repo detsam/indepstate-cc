@@ -19,21 +19,36 @@ const orderCardsCfg = loadConfig('order-cards.json');
 const dealTrackersCfg = loadConfig('deal-trackers.json');
 const dealTrackers = require('./services/dealTrackers');
 const { calcDealData } = require('./services/dealTrackers/calc');
-const tvLogs = require('./services/tvLogs');
 const mt5Logs = require('./services/mt5Logs');
 const { createCommandService } = require('./services/commandLine');
-let tvLogsCfg = {};
-try { tvLogsCfg = loadConfig('tv-logs.json'); }
-catch { tvLogsCfg = {}; }
+
+function loadServices(context = {}) {
+  let dirs = [];
+  try {
+    dirs = loadConfig('services.json');
+  } catch {
+    dirs = [];
+  }
+  if (!Array.isArray(dirs)) return;
+  for (const dir of dirs) {
+    try {
+      const manifest = require(path.join(__dirname, dir, 'manifest.js'));
+      if (typeof manifest?.initService === 'function') {
+        manifest.initService(context);
+      }
+    } catch (err) {
+      console.error('[serviceLoader] Failed to load', dir, err);
+    }
+  }
+}
+
 let mt5LogsCfg = {};
 try { mt5LogsCfg = loadConfig('mt5-logs.json'); }
 catch { mt5LogsCfg = {}; }
 initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
 const dealTrackersEnabled = dealTrackersCfg.enabled !== false;
-if (tvLogsCfg.enabled !== false) {
-  tvLogs.start(tvLogsCfg);
-}
+loadServices({});
 if (mt5LogsCfg.enabled !== false) {
   const names = new Set();
   if (mt5LogsCfg.dwxProvider) names.add(mt5LogsCfg.dwxProvider);

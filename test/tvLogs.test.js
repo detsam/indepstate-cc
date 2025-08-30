@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const assert = require('assert');
 
-const { processFile } = require('../app/services/tvLogs');
+const { processFile } = require('../app/services/tvLogs/comps');
 
 const csv = `Symbol,Side,Type,Qty,Limit Price,Stop Price,Fill Price,Status,Commission,Leverage,Margin,Placing Time,Closing Time,Order ID\n`
 + `BINANCE:TRXUSDT.P,Buy,Market,207118.6406,,,0.34174,Filled,42.4727,50:1,"1,415.61 USD",2025-08-26 04:31:18,2025-08-26 04:31:18,2240088365\n`
@@ -40,7 +40,7 @@ fs.unlinkSync(tmp2);
 console.log('tvLogs short with limit exit ok');
 
 // ensure tvLogs.start avoids fetching images when trackers skip existing notes
-delete require.cache[require.resolve('../app/services/tvLogs')];
+delete require.cache[require.resolve('../app/services/tvLogs/comps')];
 const chartImagesPath = require.resolve('../app/services/chartImages');
 let composeCount = 0;
 require.cache[chartImagesPath] = {
@@ -57,7 +57,7 @@ require.cache[dealTrackersPath] = {
     notifyPositionClosed: () => { notifyCount++; }
   }
 };
-const tvLogs = require('../app/services/tvLogs');
+const tvLogs = require('../app/services/tvLogs/comps');
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tvlogs-'));
   const file = path.join(dir, 'log.csv');
