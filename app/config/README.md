@@ -75,6 +75,7 @@ it is clicked and an optional `style` class applied to the button. When `style`
 is omitted, the lowercase action is used. If `buttons` is omitted entirely, the
 default buttons are `BL`, `BC`, `BFB`, `SL`, `SC` and `SFB`.
 
+
 ## Pending Order Strategies
 
 `pending-strategies.json` defines default options for pending‑order execution

@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "echo Done",
-    "test": "node test/mt5Logs.test.js && node test/dealTrackers.test.js && node test/addCommand.test.js && node test/pendingOrders.test.js && node test/pendingOrdersHub.test.js && node test/retryLabel.test.js && node test/strategyValues.test.js && node test/buttonStyles.test.js"
+    "test": "node test/tvLogs.test.js && node test/mt5Logs.test.js && node test/dealTrackers.test.js && node test/addCommand.test.js && node test/pendingOrders.test.js && node test/pendingOrdersHub.test.js && node test/retryLabel.test.js && node test/strategyValues.test.js && node test/buttonStyles.test.js"
   },
   "dependencies": {
     "chokidar": "^3.6.0",
