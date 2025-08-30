@@ -4,8 +4,8 @@ const events = require('../events');
 const { PendingOrderService } = require('./service');
 const { createStrategyFactory } = require('./factory');
 const { getAdapter: defaultGetAdapter } = require('../adapterRegistry');
-const { toPoints } = require('../points');
 const tradeRules = require('../tradeRules');
+const { OrderCalculator } = require('../orderCalculator');
 const loadConfig = require('../../config/load');
 
 const execCfg = loadConfig('execution.json');
@@ -22,6 +22,8 @@ function appendJsonl(file, obj) {
 function pickProviderName(instrumentType) {
   return execCfg.byInstrumentType?.[instrumentType] || execCfg.default || 'simulated';
 }
+
+const orderCalc = new OrderCalculator({ tradeRules });
 
 class PendingOrderHub {
   constructor({ strategies = {}, strategyConfig, subscribe, ipcMain, queuePlaceOrder, wireAdapter, mainWindow, getAdapter = defaultGetAdapter } = {}) {
@@ -95,31 +97,26 @@ class PendingOrderHub {
       onExecute: async ({ limitPrice, stopLoss, takeProfit }) => {
         this.pendingIndex.delete(pendingId);
 
-        let stopPts = toPoints(payload.tickSize, symbol, Math.abs(limitPrice - stopLoss), limitPrice);
+        const stopPts = orderCalc.stopPts({
+          tickSize: payload.tickSize,
+          symbol,
+          entryPrice: limitPrice,
+          stopPrice: stopLoss,
+          instrumentType: payload.instrumentType
+        });
 
-        const { MinStopPointsRule } = tradeRules;
-        const minRule = tradeRules.rules?.find(r => r instanceof MinStopPointsRule);
-        const minPts = minRule ? minRule._min({ instrumentType: payload.instrumentType }) : undefined;
-        if (Number.isFinite(minPts) && Number.isFinite(stopPts) && stopPts < minPts) {
-          stopPts = minPts;
-        }
-
-        const takePts = Number.isFinite(stopPts) ? stopPts * 3 : undefined;
+        const takePts = orderCalc.takePts(stopPts);
 
         let qty;
         const risk = Number(payload.meta?.riskUsd);
-        if (Number.isFinite(risk) && risk > 0 && Number.isFinite(stopPts) && stopPts > 0) {
-          const tick = payload.tickSize || 1;
-          if (payload.instrumentType === 'FX') {
-            const lot = Number(payload.lot) || 100000;
-            qty = Math.floor((risk / tick) / stopPts / lot / 0.01) * 0.01;
-          } else if (payload.instrumentType === 'CX') {
-            const lot = Number(payload.lot) || 1;
-            qty = Math.floor((risk / tick) / stopPts / lot / 0.001) * 0.001;
-          } else {
-            qty = Math.floor((risk / tick) / stopPts);
-          }
-          if (!Number.isFinite(qty) || qty < 0) qty = 0;
+        if (Number.isFinite(risk) && risk > 0) {
+          qty = orderCalc.qty({
+            riskUsd: risk,
+            stopPts,
+            tickSize: payload.tickSize,
+            lot: payload.lot,
+            instrumentType: payload.instrumentType
+          });
         } else {
           qty = Number(payload.meta?.qty || payload.qty || 0);
         }

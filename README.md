@@ -42,6 +42,7 @@ Notable configuration files include:
 - **Webhooks** – converts raw webhook payloads into order card rows. [Details](app/services/webhooks/README.md)
 - **Command Line** – text interface for quick actions. [Details](docs/command-line.md)
 - **Points** – converts price differences into point values using tick sizes. [Details](app/services/points/README.md)
+- **Order Calculator** – shared stop-loss, take-profit and position sizing math. [Details](docs/order-calculator.md)
 - **Event Bus** – broadcasts order lifecycle events. [Details](docs/events.md)
 
 ## Documentation
