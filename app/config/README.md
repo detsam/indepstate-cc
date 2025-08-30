@@ -46,12 +46,12 @@ each card:
   "defaultEquityStopUsd": 50,
   "closedCardEventStrategy": "ignore",
   "buttons": [
-    { "label": "BL", "action": "BL" },
-    { "label": "BC", "action": "BC" },
-    { "label": "BFB", "action": "BFB" },
-    { "label": "SL", "action": "SL" },
-    { "label": "SC", "action": "SC" },
-    { "label": "SFB", "action": "SFB" }
+    { "label": "BL",  "action": "BL",  "style": "bl" },
+    { "label": "BC",  "action": "BC",  "style": "bc" },
+    { "label": "BFB", "action": "BFB", "style": "bc" },
+    { "label": "SL",  "action": "SL",  "style": "sl" },
+    { "label": "SC",  "action": "SC",  "style": "sc" },
+    { "label": "SFB", "action": "SFB", "style": "sc" }
   ]
 }
 ```
@@ -70,9 +70,10 @@ ticker whose card is already closed (`take`/`stop`). When set to `"ignore"`
 card with the fresh data, making it ready for a new order.
 
 `buttons` lets you customize the set of buttons rendered on each order card.
-Each entry specifies the button text (`label`) and the action (`action`) sent
-when it is clicked. If omitted, the default buttons are `BL`, `BC`, `BFB`, `SL`,
-`SC` and `SFB`.
+Each entry specifies the button text (`label`), the action (`action`) sent when
+it is clicked and an optional `style` class applied to the button. When `style`
+is omitted, the lowercase action is used. If `buttons` is omitted entirely, the
+default buttons are `BL`, `BC`, `BFB`, `SL`, `SC` and `SFB`.
 
 ## Pending Order Strategies
 

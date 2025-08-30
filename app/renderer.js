@@ -23,15 +23,15 @@ const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
 const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ignore';
 
 const DEFAULT_CARD_BUTTONS = [
-  { label: 'BL', action: 'BL' },
-  { label: 'BC', action: 'BC' },
-  { label: 'BFB', action: 'BFB' },
-  { label: 'SL', action: 'SL' },
-  { label: 'SC', action: 'SC' },
-  { label: 'SFB', action: 'SFB' }
+  { label: 'BL',  action: 'BL',  style: 'bl' },
+  { label: 'BC',  action: 'BC',  style: 'bc' },
+  { label: 'BFB', action: 'BFB', style: 'bc' },
+  { label: 'SL',  action: 'SL',  style: 'sl' },
+  { label: 'SC',  action: 'SC',  style: 'sc' },
+  { label: 'SFB', action: 'SFB', style: 'sc' }
 ];
 const CARD_BUTTONS = Array.isArray(orderCardsCfg?.buttons) && orderCardsCfg.buttons.length
-  ? orderCardsCfg.buttons.map((b) => Array.isArray(b) ? { label: b[0], action: b[1] } : b)
+  ? orderCardsCfg.buttons.map((b) => Array.isArray(b) ? { label: b[0], action: b[1], style: b[2] } : b)
       .filter((b) => b && b.label && b.action)
   : DEFAULT_CARD_BUTTONS;
 
@@ -637,8 +637,8 @@ function createCard(row, index) {
     return b;
   };
   btns.style.gridTemplateColumns = `repeat(${CARD_BUTTONS.length},1fr)`;
-  for (const { label, action } of CARD_BUTTONS) {
-    btns.appendChild(mk(label, action.toLowerCase(), action));
+  for (const { label, action, style } of CARD_BUTTONS) {
+    btns.appendChild(mk(label, (style || action).toLowerCase(), action));
   }
 
   // assemble

@@ -8,11 +8,11 @@
   "showBidAsk": false,
   "showSpread": false,
   "buttons": [
-    { "label": "BL", "action": "BL" },
-    { "label": "BC", "action": "BC" },
-    { "label": "BFB", "action": "BFB" },
-    { "label": "SL", "action": "SL" },
-    { "label": "SC", "action": "SC" },
-    { "label": "SFB", "action": "SFB" }
+    { "label": "BL",  "action": "BL",  "style": "bl" },
+    { "label": "BC",  "action": "BC",  "style": "bc" },
+    { "label": "BFB", "action": "BFB", "style": "bc" },
+    { "label": "SL",  "action": "SL",  "style": "sl" },
+    { "label": "SC",  "action": "SC",  "style": "sc" },
+    { "label": "SFB", "action": "SFB", "style": "sc" }
   ]
 }
