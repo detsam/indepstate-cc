@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const assert = require('assert');
 
-const { processFile } = require('../app/services/mt5Logs');
+const { processFile } = require('../app/services/mt5Logs/comps');
 
 const rows = [
   {

@@ -1,3 +1,4 @@
 [
-  "services/tvLogs"
+  "services/tvLogs",
+  "services/mt5Logs"
 ]

@@ -19,7 +19,6 @@ const orderCardsCfg = loadConfig('order-cards.json');
 const dealTrackersCfg = loadConfig('deal-trackers.json');
 const dealTrackers = require('./services/dealTrackers');
 const { calcDealData } = require('./services/dealTrackers/calc');
-const mt5Logs = require('./services/mt5Logs');
 const { createCommandService } = require('./services/commandLine');
 
 function loadServices(context = {}) {
@@ -42,31 +41,10 @@ function loadServices(context = {}) {
   }
 }
 
-let mt5LogsCfg = {};
-try { mt5LogsCfg = loadConfig('mt5-logs.json'); }
-catch { mt5LogsCfg = {}; }
 initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
 const dealTrackersEnabled = dealTrackersCfg.enabled !== false;
-loadServices({});
-if (mt5LogsCfg.enabled !== false) {
-  const names = new Set();
-  if (mt5LogsCfg.dwxProvider) names.add(mt5LogsCfg.dwxProvider);
-  if (Array.isArray(mt5LogsCfg.accounts)) {
-    for (const acc of mt5LogsCfg.accounts) {
-      if (acc.dwxProvider) names.add(acc.dwxProvider);
-    }
-  }
-  const dwxClients = {};
-  const dwxConfigs = {};
-  for (const name of names) {
-    const adapter = getAdapter(name);
-    if (adapter?.client) dwxClients[name] = adapter.client;
-    const providerCfg = getProviderConfig(name);
-    if (providerCfg) dwxConfigs[name] = providerCfg;
-  }
-  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients });
-}
+loadServices({ providers: { getAdapter, getProviderConfig } });
 
 function envBool(name, fallback = false) {
   const v = process.env[name];
