@@ -35,16 +35,40 @@ function parseCsvText(text) {
     return { num: Number(str), int, dec, raw: str };
   }
 
+  function splitLine(str) {
+    const out = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+      if (ch === '"') {
+        if (inQuotes && str[i + 1] === '"') { // escaped quote
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === ',' && !inQuotes) {
+        out.push(cur.trim());
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
   const lines = String(text).split(/\r?\n/);
   const rows = [];
   for (const line of lines) {
     if (!line.trim() || line.startsWith('Symbol')) continue;
-    const parts = line.split(',');
+    const parts = splitLine(line);
     if (parts.length < 13) continue;
     const [
       symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr,
       status, commissionStr, _lev, _margin, placingTime, closingTime, orderIdStr
-    ] = parts.map(p => p.trim());
+    ] = parts;
 
     const limit = parsePrice(limitPriceStr);
     const stop = parsePrice(stopPriceStr);
@@ -92,13 +116,19 @@ function groupOrders(rows) {
     const type = String(r.type).toLowerCase();
     const status = String(r.status).toLowerCase();
 
-    // TradingView assigns a new placing time to market exit orders.
-    // If we see a filled market order and there is an existing open group
-    // for the same symbol, merge it into that group so the deal closes properly.
-    if (type === 'market' && status === 'filled') {
-      const prev = lastKey.get(r.symbol);
-      if (prev && prev !== key && map.has(prev)) {
+    // TradingView assigns a new placing time to exit orders. If there is an
+    // existing open group for this symbol, merge subsequent opposite-side
+    // orders into that group so the deal closes properly.
+    const prev = lastKey.get(r.symbol);
+    if (prev && prev !== key && map.has(prev)) {
+      if (type === 'market' && status === 'filled') {
         key = prev;
+      } else {
+        const prevArr = map.get(prev);
+        const entry = prevArr && prevArr[0];
+        if (entry && String(entry.side).toLowerCase() !== String(r.side).toLowerCase()) {
+          key = prev;
+        }
       }
     }
 
@@ -345,6 +375,7 @@ function start(config = cfg) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
+      if (!dealTrackers.shouldWritePositionClosed(d, opts)) continue;
       info.keys.add(key);
       const chart1D = symKey ? compose1D(symKey) : undefined;
       const chart5M = symKey ? compose5M(symKey) : undefined;
