@@ -55,4 +55,9 @@ class ConsolidationStrategy {
   }
 }
 
-module.exports = { ConsolidationStrategy, B1_RANGE_CONSOLIDATION };
+module.exports = {
+  ConsolidationStrategy,
+  B1_RANGE_CONSOLIDATION,
+  defaultLimitPrice,
+  defaultStopLoss
+};

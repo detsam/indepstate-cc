@@ -1,5 +1,10 @@
 const { PendingOrderService } = require('./service');
-const { ConsolidationStrategy, B1_RANGE_CONSOLIDATION } = require('./strategies/consolidation');
+const {
+  ConsolidationStrategy,
+  B1_RANGE_CONSOLIDATION,
+  defaultLimitPrice,
+  defaultStopLoss
+} = require('./strategies/consolidation');
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
 const { PendingOrderHub, createPendingOrderHub } = require('./hub');
 const { createStrategyFactory } = require('./factory');
@@ -14,6 +19,8 @@ module.exports = {
   PendingOrderService,
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
+  defaultLimitPrice,
+  defaultStopLoss,
   FalseBreakStrategy,
   PendingOrderHub,
   createPendingOrderHub,

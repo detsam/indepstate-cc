@@ -1,5 +1,9 @@
 const assert = require('assert');
-const { createPendingOrderService, B1_RANGE_CONSOLIDATION } = require('../app/services/pendingOrders');
+const {
+  createPendingOrderService,
+  B1_RANGE_CONSOLIDATION,
+  createStrategyFactory
+} = require('../app/services/pendingOrders');
 
 async function run() {
   // long order triggers after 3 bars
@@ -107,6 +111,21 @@ async function run() {
     onExecute: r => { exec = r; } });
   bars1.forEach(b => svcCustom.onBar(b));
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 105, stopLoss: 95 });
+
+  // limit and stop functions via config names
+  exec = undefined;
+  const factory = createStrategyFactory(
+    { consolidation: { limitPriceFn: 'cfgLimit', stopLossFn: 'cfgStop' } },
+    undefined,
+    {
+      cfgLimit: () => 106,
+      cfgStop: () => 94
+    }
+  );
+  const svcCfgFns = createPendingOrderService({ strategyFactory: factory });
+  svcCfgFns.addOrder({ price: 100, side: 'long', onExecute: r => { exec = r; } });
+  bars1.forEach(b => svcCfgFns.onBar(b));
+  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 106, stopLoss: 94 });
 
   // cancelled order does not execute
   exec = undefined;
