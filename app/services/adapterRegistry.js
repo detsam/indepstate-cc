@@ -70,6 +70,17 @@ function buildAdapter(providerName, cfg){
     }
     case 'dwx': {
       const { DWXAdapter } = require('../adapters/dwx/dwx');
+      const events = require('./events');
+      const userHandler = adapterCfg.event_handler || {};
+      adapterCfg.event_handler = {
+        ...userHandler,
+        on_bar_data(symbol, tf, time, open, high, low, close, vol) {
+          try {
+            events.emit('bar', { provider: providerName, symbol, tf, time, open, high, low, close, vol });
+          } catch {}
+          userHandler.on_bar_data?.(symbol, tf, time, open, high, low, close, vol);
+        }
+      };
       const inst = new DWXAdapter(adapterCfg);
       inst.provider = providerName;
       return inst;

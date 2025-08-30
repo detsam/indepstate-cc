@@ -11,6 +11,7 @@ const { getAdapter, initExecutionConfig, getProviderConfig } = require('./servic
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
+const { createPendingOrderHub } = require('./services/pendingOrders');
 const tradeRules = require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const execCfg = loadConfig('execution.json');
@@ -301,6 +302,7 @@ function normalizeOrderPayload(payload) {
         instrumentType ,                // 'CX' | 'EQ' | 'FX'
       symbol,                        // 'BTCUSDT.P' | 'AAPL'
       side: payload.kind,            // 'BL'|'BSL'|'SL'|'SSL'
+      type: payload.type,
       tickSize: payload.tickSize,
       qty: instrumentType === 'EQ'
         ? Math.floor(Number(payload.meta.qty || 0))
@@ -319,6 +321,7 @@ function normalizeOrderPayload(payload) {
     instrumentType,
     symbol,
     side: payload.side || payload.action, // 'BL'|'BSL'|'SL'|'SSL'
+    type: payload.type,
     tickSize: payload.tickSize,
     qty: instrumentType === 'EQ'
       ? Math.floor(Number(payload.qty || 0))
@@ -335,13 +338,11 @@ function validateOrder(order) {
     const ok = order.qty > 0 && order.price > 0 && order.sl > 0;
     return ok ? { ok: true } : { ok: false, reason: 'CX: qty>0, price>0, sl>0 required' };
   } else if (order.instrumentType === 'FX') {
-    const sideCodeOk = ['BL','BSL','SL','SSL'].includes(String(order.side || '').toUpperCase());
-    const ok = (order.meta?.riskUsd > 0) && order.sl > 0 && order.price > 0 && order.qty > 0 && sideCodeOk;
-    return ok ? { ok: true } : { ok: false, reason: 'FX: riskUsd>0, sl>0, price>0, qty>0 and side in BL/BSL/SL/SSL' };
+    const ok = (order.meta?.riskUsd > 0) && order.sl > 0 && order.price > 0 && order.qty > 0;
+    return ok ? { ok: true } : { ok: false, reason: 'FX: riskUsd>0, sl>0, price>0, qty>0 required' };
   } else {
-    const sideCodeOk = ['BL','BSL','SL','SSL'].includes(String(order.side || '').toUpperCase());
-    const ok = (order.meta?.riskUsd > 0) && order.sl > 0 && order.price > 0 && (order.qty >= 1) && sideCodeOk;
-    return ok ? { ok: true } : { ok: false, reason: 'EQ: riskUsd>0, sl>0, price>0, qty>=1 and side in BL/BSL/SL/SSL' };
+    const ok = (order.meta?.riskUsd > 0) && order.sl > 0 && order.price > 0 && (order.qty >= 1);
+    return ok ? { ok: true } : { ok: false, reason: 'EQ: riskUsd>0, sl>0, price>0, qty>=1 required' };
   }
 }
 
@@ -377,7 +378,7 @@ function normalizeEquityOrderForExecution(order) {
 }
 
 function setupIpc(orderSvc) {
-  ipcMain.handle('queue-place-order', async (_evt, payload) => {
+  async function queuePlaceOrderInternal(payload) {
     const order = normalizeOrderPayload(payload);
 
     // серверная валидация (зеркалит UI)
@@ -499,7 +500,7 @@ function setupIpc(orderSvc) {
 
       console.log('[EXEC][RES]', { reqId, status: result?.status, reason: result?.reason, providerOrderId: result?.providerOrderId });
       return result;
-    } catch (err) {
+  } catch (err) {
       const rej = { status: 'rejected', reason: err.message || 'adapter error' };
       appendJsonl(EXEC_LOG, { t: nowTs(), kind: 'place', valid: true, order, error: String(err) });
 
@@ -518,6 +519,17 @@ function setupIpc(orderSvc) {
       events.emit('order:placed', { order: execOrder, result: { status: 'rejected', provider: providerName, reason: rej.reason } });
       return rej;
     }
+  }
+
+  const pendingHub = createPendingOrderHub({
+    subscribe: (provider, symbols) => {
+      const adapter = getAdapter(provider);
+      try { adapter.client?.subscribe_symbols_bar_data(symbols.map(s => [s, 'M1'])); } catch {}
+    },
+    ipcMain,
+    queuePlaceOrder: queuePlaceOrderInternal,
+    wireAdapter,
+    mainWindow
   });
 
   ipcMain.handle('execution:stop-retry', async (_evt, reqId) => {

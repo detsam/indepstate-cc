@@ -22,6 +22,19 @@ const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
 
 const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ignore';
 
+const DEFAULT_CARD_BUTTONS = [
+  { label: 'BL', action: 'BL' },
+  { label: 'BC', action: 'BC' },
+  { label: 'BFB', action: 'BFB' },
+  { label: 'SL', action: 'SL' },
+  { label: 'SC', action: 'SC' },
+  { label: 'SFB', action: 'SFB' }
+];
+const CARD_BUTTONS = Array.isArray(orderCardsCfg?.buttons) && orderCardsCfg.buttons.length
+  ? orderCardsCfg.buttons.map((b) => Array.isArray(b) ? { label: b[0], action: b[1] } : b)
+      .filter((b) => b && b.label && b.action)
+  : DEFAULT_CARD_BUTTONS;
+
 const closedCardStrategies = {
   ignore: () => {},
   revive: ({ row, idx, oldRow, oldKey }) => {
@@ -61,10 +74,14 @@ const uiState = new Map();
 // Per-card execution state (pending/placed/executing/profit/loss)
 const cardStates = new Map();
 // Order for sorting cards by execution state
-const cardStateOrder = {pending: 1, placed: 2, executing: 3, profit: 4, loss: 5};
+const cardStateOrder = {pending: 1, 'pending-exec': 2, placed: 3, executing: 4, profit: 5, loss: 6};
+
+// Short labels for pending execution orders
+const pendingExecLabels = new Map(); // key -> label
 
 // --- pending заявки по requestId ---
 const pendingByReqId = new Map();
+const pendingIdByReqId = new Map();
 const ticketToKey = new Map(); // ticket -> rowKey
 const retryCounts = new Map(); // reqId -> retry count
 
@@ -207,6 +224,7 @@ function setCardState(key, state) {
   const close = card.querySelector('.card__close');
   const retryBtn = card.querySelector('.retry-btn');
   const spreadEl = card.querySelector('.card__spread');
+  const btnsWrap = card.querySelector('.btns');
   if (!status) return;
 
   const inputs = card.querySelectorAll('input');
@@ -216,7 +234,14 @@ function setCardState(key, state) {
     cardStates.set(key, state);
     status.style.display = 'inline-block';
     status.className = `card__status card__status--${state}`;
-    card.classList.toggle('card--pending', state === 'pending');
+    if (state === 'pending-exec') {
+      const lbl = pendingExecLabels.get(key);
+      status.textContent = lbl ? `pe (${lbl})` : 'pe';
+    } else {
+      pendingExecLabels.delete(key);
+      status.textContent = '';
+    }
+    card.classList.toggle('card--pending', state === 'pending' || state === 'pending-exec');
     if (close) close.style.display = 'none';
     if (spreadEl) spreadEl.style.display = 'none';
     inputs.forEach(inp => {
@@ -225,6 +250,7 @@ function setCardState(key, state) {
     buttons.forEach(btn => {
       btn.disabled = true;
     });
+    if (btnsWrap) btnsWrap.style.display = state === 'pending-exec' ? 'none' : '';
 
     if (state === 'placed') {
       status.style.cursor = 'pointer';
@@ -236,14 +262,31 @@ function setCardState(key, state) {
         setCardState(key, null);
         render();
       };
+    } else if (state === 'pending-exec') {
+      status.style.cursor = 'pointer';
+      status.title = 'Отменить pe';
+      status.onclick = () => {
+        const reqId = card.dataset.reqId;
+        const pendingId = card.dataset.pendingId || (reqId ? pendingIdByReqId.get(reqId) : null);
+        if (pendingId) ipcRenderer.invoke('pending:cancel', pendingId).catch(() => {});
+        if (reqId) {
+          pendingByReqId.delete(reqId);
+          pendingIdByReqId.delete(reqId);
+          retryCounts.delete(reqId);
+          delete card.dataset.reqId;
+        }
+        delete card.dataset.pendingId;
+        setCardState(key, null);
+        render();
+      };
     } else {
       status.style.cursor = '';
       status.title = '';
       status.onclick = null;
     }
 
-    if (state === 'pending') {
-      // restore full card for pending state
+    if (state === 'pending' || state === 'pending-exec') {
+      // restore full card for pending states
       card.classList.remove('card--mini');
       if (card._removedParts) {
         for (const {node, next} of card._removedParts) {
@@ -258,9 +301,13 @@ function setCardState(key, state) {
       card.querySelectorAll('input').forEach(inp => inp.disabled = true);
       card.querySelectorAll('button.btn').forEach(btn => btn.disabled = true);
       if (retryBtn) {
-        retryBtn.style.display = 'inline-block';
-        const rid = card.dataset.reqId;
-        if (rid && retryCounts.has(rid)) retryBtn.textContent = String(retryCounts.get(rid));
+        if (state === 'pending') {
+          retryBtn.style.display = 'inline-block';
+          const rid = card.dataset.reqId;
+          if (rid && retryCounts.has(rid)) retryBtn.textContent = String(retryCounts.get(rid));
+        } else {
+          retryBtn.style.display = 'none';
+        }
       }
     } else {
       // shrink card to ticker + status
@@ -281,6 +328,8 @@ function setCardState(key, state) {
     cardStates.delete(key);
     card.classList.remove('card--mini');
     status.style.display = 'none';
+    status.textContent = '';
+    pendingExecLabels.delete(key);
     status.style.cursor = '';
     status.title = '';
     status.onclick = null;
@@ -296,6 +345,7 @@ function setCardState(key, state) {
     buttons.forEach(btn => {
       btn.disabled = false;
     });
+    if (btnsWrap) btnsWrap.style.display = '';
 
     if (retryBtn) retryBtn.style.display = 'none';
 
@@ -421,6 +471,12 @@ function migrateKey(oldKey, newKey, {preserveUi = false, nextUiPatch = null} = {
   if (cardStates.has(oldKey)) {
     cardStates.set(newKey, cardStates.get(oldKey));
     cardStates.delete(oldKey);
+  }
+
+  // pendingExecLabels
+  if (pendingExecLabels.has(oldKey)) {
+    pendingExecLabels.set(newKey, pendingExecLabels.get(oldKey));
+    pendingExecLabels.delete(oldKey);
   }
 }
 
@@ -575,15 +631,15 @@ function createCard(row, index) {
     const b = btn(label, cls, async () => {
       const v = body.validate();
       if (!v.valid) return;
-      await place(kind, row, v, instrumentType);
+      await place(kind, row, v, instrumentType, label);
     });
     b.setAttribute('data-kind', kind);
     return b;
   };
-  btns.appendChild(mk('BL', 'bl', 'BL'));
-  btns.appendChild(mk('BSL', 'bsl', 'BSL'));
-  btns.appendChild(mk('SL', 'sl', 'SL'));
-  btns.appendChild(mk('SSL', 'ssl', 'SSL'));
+  btns.style.gridTemplateColumns = `repeat(${CARD_BUTTONS.length},1fr)`;
+  for (const { label, action } of CARD_BUTTONS) {
+    btns.appendChild(mk(label, action.toLowerCase(), action));
+  }
 
   // assemble
   card.appendChild(head);
@@ -1291,14 +1347,20 @@ function revalidateCardsForTicker(ticker) {
 }
 
 // ======= Order placement (shared) =======
-async function place(kind, row, v, instrumentType) {
+async function place(kind, row, v, instrumentType, btnLabel) {
   if (!v.valid) return;
 
   const key = rowKey(row);
   const requestId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   pendingByReqId.set(requestId, key);
   retryCounts.set(requestId, 0);
-  setCardState(key, 'pending');
+  const isPendingExec = kind === 'BC' || kind === 'SC' || kind === 'BFB' || kind === 'SFB';
+  let isLong = null;
+  if (kind === 'BC' || kind === 'BFB') isLong = true;
+  else if (kind === 'SC' || kind === 'SFB') isLong = false;
+  const alias = isPendingExec ? btnLabel : null;
+  if (alias) pendingExecLabels.set(key, alias);
+  setCardState(key, isPendingExec ? 'pending-exec' : 'pending');
   const card = cardByKey(key);
   if (card) {
     card.dataset.reqId = requestId;
@@ -1329,26 +1391,44 @@ async function place(kind, row, v, instrumentType) {
     extra.riskUsd = v.risk;
   }
 
-  // legacy payload (main поддерживает оба формата)
-  const payload = {
-    ticker: row.ticker,
-    event: row.event,
-    price: Number(priceVal),
-    kind,
-    instrumentType: instrumentType,
-    tickSize: tick,
-    meta: {
-      requestId, // связь с execution:result
-      qty: Number(qtyVal),
-      stopPts: Number(slVal),
-      takePts: takeVal == null ? null : Number(takeVal),
-      ...extra
-    }
+  const baseMeta = {
+    requestId, // связь с execution:result
+    qty: Number(qtyVal),
+    stopPts: Number(slVal),
+    takePts: takeVal == null ? null : Number(takeVal),
+    ...extra
   };
 
+  let res;
   try {
-    const res = await ipcRenderer.invoke('queue-place-order', payload);
+    if (kind === 'BC' || kind === 'SC' || kind === 'BFB' || kind === 'SFB') {
+      const pendPayload = {
+        ticker: row.ticker,
+        event: row.event,
+        price: Number(priceVal),
+        side: isLong ? 'long' : 'short',
+        strategy: (kind === 'BFB' || kind === 'SFB') ? 'falseBreak' : 'consolidation',
+        instrumentType: instrumentType,
+        tickSize: tick,
+        meta: baseMeta,
+      };
+      res = await ipcRenderer.invoke('queue-place-pending', pendPayload);
+    } else {
+      const payload = {
+        ticker: row.ticker,
+        event: row.event,
+        price: Number(priceVal),
+        kind,
+        instrumentType: instrumentType,
+        tickSize: tick,
+        meta: baseMeta,
+      };
+      res = await ipcRenderer.invoke('queue-place-order', payload);
+    }
     if (res && typeof res.providerOrderId === 'string' && res.providerOrderId.startsWith('pending:')) {
+      const pendId = res.providerOrderId.slice('pending:'.length);
+      pendingIdByReqId.set(requestId, pendId);
+      if (card) card.dataset.pendingId = pendId;
       toast(`… ${row.ticker}: sent, waiting confirmation`);
     }
     if (!res || res.status === 'rejected') {
@@ -1357,7 +1437,7 @@ async function place(kind, row, v, instrumentType) {
       shakeCard(key);
       render();
     } else {
-      setCardState(key, 'pending');
+      setCardState(key, isPendingExec ? 'pending-exec' : 'pending');
       render();
     }
   } catch (e) {
@@ -1372,9 +1452,11 @@ function clearPendingByKey(key) {
   for (const [rid, k] of pendingByReqId.entries()) {
     if (k === key) {
       pendingByReqId.delete(rid);
+      pendingIdByReqId.delete(rid);
       retryCounts.delete(rid);
     }
   }
+  pendingExecLabels.delete(key);
 }
 
 function removeRow(row) {
@@ -1418,22 +1500,51 @@ ipcRenderer.on('execution:pending', (_evt, rec) => {
   const reqId = rec?.reqId;
   if (!reqId) return;
 
-  // 1) попробуем маппинг, созданный в момент клика
   let key = pendingByReqId.get(reqId);
-
-  // 2) если вдруг страница перезагружалась/карточка обновлялась — найдём по тикеру
   if (!key) key = findKeyByTicker(rec?.order?.symbol || rec?.order?.ticker);
-
   if (!key) return;
 
   pendingByReqId.set(reqId, key);
   retryCounts.set(reqId, 0);
-  setCardState(key, 'pending');
   const card = cardByKey(key);
+  if (rec.pendingId) {
+    pendingIdByReqId.set(reqId, rec.pendingId);
+    if (card) card.dataset.pendingId = rec.pendingId;
+  } else {
+    pendingIdByReqId.delete(reqId);
+    if (card) delete card.dataset.pendingId;
+  }
   if (card) {
     card.dataset.reqId = reqId;
     const rb = card.querySelector('.retry-btn');
     if (rb) rb.textContent = '0';
+  }
+  if (cardStates.get(key) !== 'pending-exec' || rec?.order?.side) {
+    setCardState(key, 'pending');
+  }
+  if (card && rec?.order) {
+    const ui = uiState.get(key) || {};
+    if (rec.order.qty != null) {
+      ui.qty = String(rec.order.qty);
+      const $q = card.querySelector('input.qty');
+      if ($q) $q.value = ui.qty;
+    }
+    if (rec.order.price != null) {
+      ui.price = String(rec.order.price);
+      const $p = card.querySelector('input.pr');
+      if ($p) $p.value = ui.price;
+    }
+    if (rec.order.sl != null) {
+      ui.sl = String(rec.order.sl);
+      const $s = card.querySelector('input.sl');
+      if ($s) $s.value = ui.sl;
+    }
+    if (rec.order.tp != null) {
+      ui.tp = String(rec.order.tp);
+      const $t = card.querySelector('input.tp');
+      if ($t) $t.value = ui.tp;
+    }
+    uiState.set(key, ui);
   }
   toast(`… ${rec.order.symbol}: queued`);
 });
@@ -1534,10 +1645,12 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
   if (!key) return;
 
   pendingByReqId.delete(reqId);
+  pendingIdByReqId.delete(reqId);
   retryCounts.delete(reqId);
   const card = cardByKey(key);
   if (card) {
     delete card.dataset.reqId;
+    delete card.dataset.pendingId;
     const rb = card.querySelector('.retry-btn');
     if (rb) rb.textContent = '0';
   }
@@ -1617,4 +1730,20 @@ $cmdline.addEventListener('keydown', (e) => {
 
 // initial render
 render();
+
+// expose internals for tests
+if (typeof module !== 'undefined') {
+  module.exports.__testing = {
+    setCardState,
+    rowKey,
+    findKeyByTicker,
+    cardByKey,
+    state,
+    pendingByReqId,
+    pendingIdByReqId,
+    retryCounts,
+    cardStates,
+    pendingExecLabels
+  };
+}
 
