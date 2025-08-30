@@ -3,7 +3,7 @@ const { toPoints } = require('../../points');
 
 const NUM = '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
 const RE_NESTED = new RegExp(
-  String.raw`@ATR\s*\(\s*\(\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*\)[\s\S]*?\)\s*Crossing\s*(${NUM})\s*on\s*([^,\s]+)`,
+  String.raw`@ATR\s*\(\s*\(\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*\)[\s\S]*?\)\s*(?:Crossing|EP\sat)\s*(${NUM})\s*on\s*([^,\s]+)`,
   'i'
 );
 
