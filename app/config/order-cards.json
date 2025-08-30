@@ -6,5 +6,13 @@
   "defaultEquityStopUsd": 50,
   "closedCardEventStrategy": "ignore",
   "showBidAsk": false,
-  "showSpread": false
+  "showSpread": false,
+  "buttons": [
+    { "label": "BL", "action": "BL" },
+    { "label": "BC", "action": "BC" },
+    { "label": "BFB", "action": "BFB" },
+    { "label": "SL", "action": "SL" },
+    { "label": "SC", "action": "SC" },
+    { "label": "SFB", "action": "SFB" }
+  ]
 }
