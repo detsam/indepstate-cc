@@ -4,7 +4,9 @@ const loadConfig = require('./config/load');
 const tradeRules = require('./services/tradeRules');
 const {detectInstrumentType} = require("./services/instruments");
 const { findTickSizeFromConfig } = require('./services/points');
+const { OrderCalculator } = require('./services/orderCalculator');
 const orderCardsCfg = loadConfig('order-cards.json');
+const orderCalc = new OrderCalculator();
 const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
 const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
@@ -705,7 +707,7 @@ function createCryptoBody(row, key) {
     if (!tpTouched) {
       const slv = priceToPoints($sl, _normNum($price.value), row);
       autoTpUpdate = true;
-      $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      $tp.value = (slv && slv > 0) ? String(orderCalc.takePts(slv)) : '';
       autoTpUpdate = false;
       persist();
     }
@@ -717,9 +719,7 @@ function createCryptoBody(row, key) {
     const tick = tickSize(row) || 1; //safe tick 1
 
     if (isPos(r) && isSL(sl)) {
-      // Та сама формула, що й у FX: дискретність 0.01
-      let q = Math.floor((r / tick) / sl / lot / 0.001) * 0.001;
-      if (!Number.isFinite(q) || q < 0) q = 0;
+      const q = orderCalc.qty({ riskUsd: r, stopPts: sl, tickSize: tick, lot, instrumentType: 'CX' });
       $qty.value = String(q);
     }
     persist();
@@ -887,8 +887,7 @@ function createFxBody(row, key) {
       if (isPos(r) && isSL(sl)) {
         const tick = tickSize(row);
         const lot = row.lot || 100000;
-        let q = Math.floor((r / tick) / sl / lot / 0.01) * 0.01;
-        if (!Number.isFinite(q) || q < 0) q = 0;
+        const q = orderCalc.qty({ riskUsd: r, stopPts: sl, tickSize: tick, lot, instrumentType: 'FX' });
         $qty.value = String(q);
       }
       persist();
@@ -897,7 +896,7 @@ function createFxBody(row, key) {
     if (!tpTouched) {
       const slv = priceToPoints($sl, _normNum($price.value), row);
       autoTpUpdate = true;
-      $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      $tp.value = (slv && slv > 0) ? String(orderCalc.takePts(slv)) : '';
       autoTpUpdate = false;
       persist();
     }
@@ -1065,8 +1064,7 @@ function createEquitiesBody(row, key) {
     const sl = priceToPoints($sl, _normNum($price.value), row);
     if (isPos(r) && isSL(sl)) {
       const tick = tickSize(row);
-      let q = Math.floor((r / tick) / sl);
-      if (!Number.isFinite(q) || q < 0) q = 0;
+      const q = orderCalc.qty({ riskUsd: r, stopPts: sl, tickSize: tick, instrumentType: 'EQ' });
       $qty.value = String(q);
     }
     persist();
@@ -1075,7 +1073,7 @@ function createEquitiesBody(row, key) {
     if (!tpTouched) {
       const slv = priceToPoints($sl, _normNum($price.value), row);
       autoTpUpdate = true;
-      $tp.value = (slv && slv > 0) ? String(slv * 3) : '';
+      $tp.value = (slv && slv > 0) ? String(orderCalc.takePts(slv)) : '';
       autoTpUpdate = false;
       persist();
     }
