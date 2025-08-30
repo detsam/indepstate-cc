@@ -116,13 +116,19 @@ function groupOrders(rows) {
     const type = String(r.type).toLowerCase();
     const status = String(r.status).toLowerCase();
 
-    // TradingView assigns a new placing time to market exit orders.
-    // If we see a filled market order and there is an existing open group
-    // for the same symbol, merge it into that group so the deal closes properly.
-    if (type === 'market' && status === 'filled') {
-      const prev = lastKey.get(r.symbol);
-      if (prev && prev !== key && map.has(prev)) {
+    // TradingView assigns a new placing time to exit orders. If there is an
+    // existing open group for this symbol, merge subsequent opposite-side
+    // orders into that group so the deal closes properly.
+    const prev = lastKey.get(r.symbol);
+    if (prev && prev !== key && map.has(prev)) {
+      if (type === 'market' && status === 'filled') {
         key = prev;
+      } else {
+        const prevArr = map.get(prev);
+        const entry = prevArr && prevArr[0];
+        if (entry && String(entry.side).toLowerCase() !== String(r.side).toLowerCase()) {
+          key = prev;
+        }
       }
     }
 

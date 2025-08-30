@@ -22,6 +22,23 @@ fs.unlinkSync(tmp);
 
 console.log('tvLogs ok');
 
+const csv2 = `Symbol,Side,Type,Qty,Limit Price,Stop Price,Fill Price,Status,Commission,Leverage,Margin,Placing Time,Closing Time,Order ID\n`
+  + `SAXO:GBPCAD,Buy,Limit,19841,1.85325,,1.85325,Filled,,,,2025-08-29 05:05:34,2025-08-29 11:13:05,2248789119\n`
+  + `SAXO:GBPCAD,Buy,Stop,19841,,1.85767,,Cancelled,,,,2025-08-29 05:05:19,2025-08-29 11:13:05,2248788762\n`
+  + `SAXO:GBPCAD,Sell,Market,19841,,,1.85634,Filled,,50:1,535.90 USD,2025-08-29 05:05:19,2025-08-29 05:05:19,2248788761\n`;
+
+const tmp2 = path.join(os.tmpdir(), `tvlog-${Date.now()}-2.csv`);
+fs.writeFileSync(tmp2, csv2);
+
+const deals2 = processFile(tmp2, undefined, 999);
+
+assert.strictEqual(deals2.length, 1);
+assert.strictEqual(deals2[0].symbol.ticker, 'GBPCAD');
+assert.strictEqual(deals2[0].side, 'short');
+
+fs.unlinkSync(tmp2);
+console.log('tvLogs short with limit exit ok');
+
 // ensure tvLogs.start avoids fetching images when trackers skip existing notes
 delete require.cache[require.resolve('../app/services/tvLogs')];
 const chartImagesPath = require.resolve('../app/services/chartImages');
