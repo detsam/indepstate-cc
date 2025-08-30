@@ -1522,6 +1522,30 @@ ipcRenderer.on('execution:pending', (_evt, rec) => {
   if (cardStates.get(key) !== 'pending-exec' || rec?.order?.side) {
     setCardState(key, 'pending');
   }
+  if (card && rec?.order) {
+    const ui = uiState.get(key) || {};
+    if (rec.order.qty != null) {
+      ui.qty = String(rec.order.qty);
+      const $q = card.querySelector('input.qty');
+      if ($q) $q.value = ui.qty;
+    }
+    if (rec.order.price != null) {
+      ui.price = String(rec.order.price);
+      const $p = card.querySelector('input.pr');
+      if ($p) $p.value = ui.price;
+    }
+    if (rec.order.sl != null) {
+      ui.sl = String(rec.order.sl);
+      const $s = card.querySelector('input.sl');
+      if ($s) $s.value = ui.sl;
+    }
+    if (rec.order.tp != null) {
+      ui.tp = String(rec.order.tp);
+      const $t = card.querySelector('input.tp');
+      if ($t) $t.value = ui.tp;
+    }
+    uiState.set(key, ui);
+  }
   toast(`… ${rec.order.symbol}: queued`);
 });
 
