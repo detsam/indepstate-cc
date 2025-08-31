@@ -150,14 +150,10 @@ function wireAdapter(adapter, providerName) {
     }
   });
 
-  adapter.on('position:closed', async ({ ticket, trade }) => {
+  adapter.on('position:closed', ({ ticket, trade }) => {
     events.emit('position:closed', { ticket, trade, provider: providerName });
     const info = trackerIndex.get(String(ticket));
-    let hist;
-    if (info?.cid && typeof adapter.findClosedTradeByCid === 'function') {
-      try { hist = await adapter.findClosedTradeByCid(info.cid); } catch {}
-    }
-    const profit = hist?.pnl ?? trade?.profit;
+    const profit = trade?.profit;
     if (info) {
       trackerIndex.delete(String(ticket));
     }
