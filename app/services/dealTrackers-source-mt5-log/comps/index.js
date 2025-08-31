@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const dealTrackers = require('../../dealTrackers');
-const { calcDealData } = require('../../dealTrackers/calc');
+const dealTrackers = require('../../dealTrackers/comps');
+const { calcDealData } = require('../../dealTrackers/comps/calc');
 const loadConfig = require('../../../config/load');
 const { compose1D, compose5M } = require('../../chartImages');
 const DEFAULT_MAX_AGE_DAYS = 2;

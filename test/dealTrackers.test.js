@@ -3,8 +3,8 @@ const path = require('path');
 const os = require('os');
 const assert = require('assert');
 
-const dealTrackers = require('../app/services/dealTrackers');
-const { ObsidianDealTracker } = require('../app/services/dealTrackers/obsidian');
+const dealTrackers = require('../app/services/dealTrackers/comps');
+const { ObsidianDealTracker } = require('../app/services/dealTrackers/comps/obsidian');
 
 async function run() {
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'vault-'));

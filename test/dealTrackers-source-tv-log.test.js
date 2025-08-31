@@ -49,7 +49,7 @@ require.cache[chartImagesPath] = {
     compose5M: () => { composeCount++; }
   }
 };
-const dealTrackersPath = require.resolve('../app/services/dealTrackers');
+const dealTrackersPath = require.resolve('../app/services/dealTrackers/comps');
 let notifyCount = 0;
 require.cache[dealTrackersPath] = {
   exports: {

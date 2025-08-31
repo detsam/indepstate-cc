@@ -16,9 +16,6 @@ const tradeRules = require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const execCfg = loadConfig('execution.json');
 const orderCardsCfg = loadConfig('order-cards.json');
-const dealTrackersCfg = loadConfig('deal-trackers.json');
-const dealTrackers = require('./services/dealTrackers');
-const { calcDealData } = require('./services/dealTrackers/calc');
 const { createCommandService } = require('./services/commandLine');
 
 function loadServices(servicesApi = {}) {
@@ -41,8 +38,6 @@ function loadServices(servicesApi = {}) {
   }
 }
 
-dealTrackers.init(dealTrackersCfg);
-const dealTrackersEnabled = dealTrackersCfg.enabled !== false;
 loadServices(servicesApi);
 const { getAdapter, getProviderConfig } = servicesApi.brokerage || {};
 
@@ -164,19 +159,19 @@ function wireAdapter(adapter, providerName) {
     }
     const profit = hist?.pnl ?? trade?.profit;
     if (info) {
-      const payload = calcDealData({
-        symbol: { ticker: info.ticker },
-        side: info.side,
-        entryPrice: hist?.entry?.deal_price ?? info.price,
-        exitPrice: hist?.deal_price,
-        qty: info.qty,
-        takeSetup: info.tp,
-        stopSetup: info.sp,
-        commission: hist?.commission,
-        profit
-      });
-      if (dealTrackersEnabled) {
-        dealTrackers.notifyPositionClosed(payload);
+      if (servicesApi.dealTrackers) {
+        const payload = servicesApi.dealTrackers.calcDealData({
+          symbol: { ticker: info.ticker },
+          side: info.side,
+          entryPrice: hist?.entry?.deal_price ?? info.price,
+          exitPrice: hist?.deal_price,
+          qty: info.qty,
+          takeSetup: info.tp,
+          stopSetup: info.sp,
+          commission: hist?.commission,
+          profit
+        });
+        servicesApi.dealTrackers.notifyPositionClosed(payload);
       }
       trackerIndex.delete(String(ticket));
     }

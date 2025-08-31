@@ -1,7 +1,8 @@
-// services/dealTrackers/index.js
+// services/dealTrackers/comps/index.js
 // Registry for deal trackers interested in position close events
 
 const trackers = [];
+const { calcDealData } = require('./calc');
 
 // Support secrets like "$ENV:NAME" or "${ENV:NAME}" similar to adapter config
 function resolveEnvRef(str) {
@@ -60,4 +61,4 @@ function shouldWritePositionClosed(info, opts) {
   return false;
 }
 
-module.exports = { init, notifyPositionClosed, shouldWritePositionClosed };
+module.exports = { init, notifyPositionClosed, shouldWritePositionClosed, calcDealData };
