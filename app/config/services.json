@@ -4,7 +4,6 @@
   "services/brokerage-adapter-dwx",
   "services/brokerage-adapter-j2t",
   "services/brokerage-adapter-simulated",
-  "services/dealTrackers",
   "services/dealTrackers-chartImages",
   "services/dealTrackers-source-tv-log",
   "services/dealTrackers-source-mt5-log"

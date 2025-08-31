@@ -42,6 +42,7 @@ console.log('dealTrackers-source-tv-log short with limit exit ok');
 // ensure dealTrackers-source-tv-log.start avoids fetching images when trackers skip existing notes
 delete require.cache[require.resolve('../app/services/dealTrackers-source-tv-log/comps')];
 const chartImagesPath = require.resolve('../app/services/dealTrackers-chartImages/comps');
+
 let composeCount = 0;
 require.cache[chartImagesPath] = {
   exports: {
@@ -49,6 +50,7 @@ require.cache[chartImagesPath] = {
     compose5M: () => { composeCount++; }
   }
 };
+
 const dealTrackersPath = require.resolve('../app/services/dealTrackers/comps');
 let notifyCount = 0;
 require.cache[dealTrackersPath] = {

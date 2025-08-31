@@ -1,5 +1,6 @@
 // services/brokerage-adapter-dwx/comps/dwx.js
 const { ExecutionAdapter } = require('../../brokerage/comps/base');
+
 const { dwx_client } = require('./dwx_client');
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
