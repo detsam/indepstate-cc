@@ -7,8 +7,8 @@ This directory contains high-level notes about the codebase.
 - `app/renderer.js` – UI layer showing order cards and status indicators
 - `app/services/events.js` – lightweight event bus for `order:placed`, `position:opened`, `position:closed` and `order:cancelled`
 - `app/services/dealTrackers/*` – pluggable trackers invoked when a position closes. See `app/services/dealTrackers/README.md` for configuration.
-- `app/services/tvLogs/*` – parses TradingView CSV order logs, watches account directories for new log files and emits closed trades to deal trackers. See `app/services/tvLogs/README.md` for details.
-- `app/services/mt5Logs/*` – parses MetaTrader 5 HTML trade history reports, watches account directories for new report files and emits closed trades to deal trackers. See `app/services/mt5Logs/README.md` for details.
+- `app/services/dealTrackers-source-tv-log/*` – parses TradingView CSV order logs, watches account directories for new log files and emits closed trades to deal trackers. See `app/services/dealTrackers-source-tv-log/README.md` for details.
+- `app/services/dealTrackers-source-mt5-log/*` – parses MetaTrader 5 HTML trade history reports, watches account directories for new report files and emits closed trades to deal trackers. See `app/services/dealTrackers-source-mt5-log/README.md` for details.
 - `app/config/deal-trackers.json` – local configuration for deal trackers
 - `app/config/tv-logs.json` – tactic account configuration (with `enabled`, `pollMs`, `sessions`, per‑account `tactic` names and `skipExisting`) pointing to directories with order log CSV files
 - `app/config/mt5-logs.json` – tactic account configuration (with `enabled`, `pollMs`, `sessions`, per‑account `tactic` names and `skipExisting`) pointing to directories with MT5 HTML reports
