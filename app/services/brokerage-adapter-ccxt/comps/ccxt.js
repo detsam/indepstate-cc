@@ -1,7 +1,5 @@
 // services/brokerage-adapter-ccxt/comps/ccxt.js
 const { ExecutionAdapter } = require('../../brokerage/comps/base');
-const ccxt = require('ccxt');
-const crypto = require('crypto');
 
 class CCXTExecutionAdapter extends ExecutionAdapter {
   /**
