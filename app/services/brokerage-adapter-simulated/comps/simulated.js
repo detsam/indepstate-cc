@@ -1,4 +1,4 @@
-const { ExecutionAdapter } = require('./base');
+const { ExecutionAdapter } = require('../brokerage/comps/base');
 
 class SimulatedAdapter extends ExecutionAdapter {
   constructor({ latencyMs = [120, 350] } = {}) {

@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const dealTrackers = require('../dealTrackers');
-const { calcDealData } = require('../dealTrackers/calc');
-const { compose1D, compose5M } = require('../chartImages');
-const loadConfig = require('../../config/load');
+const dealTrackers = require('../../dealTrackers/comps');
+const { calcDealData } = require('../../dealTrackers/comps/calc');
+const { compose1D, compose5M } = require('../../chartImages');
+const loadConfig = require('../../../config/load');
 const DEFAULT_MAX_AGE_DAYS = 2;
 let cfg = {};
 try {
