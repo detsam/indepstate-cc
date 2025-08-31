@@ -1,4 +1,4 @@
-# TradingView Log Service
+# Deal Trackers: TradingView Log Source
 
 This service converts TradingView order CSV logs into closed trade events consumed by deal trackers.
 

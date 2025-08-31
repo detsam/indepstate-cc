@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const dealTrackers = require('../dealTrackers');
-const { calcDealData } = require('../dealTrackers/calc');
-const loadConfig = require('../../config/load');
-const { compose1D, compose5M } = require('../chartImages');
+const dealTrackers = require('../../dealTrackers/comps');
+const { calcDealData } = require('../../dealTrackers/comps/calc');
+const loadConfig = require('../../../config/load');
+const { compose1D, compose5M } = require('../../chartImages');
 const DEFAULT_MAX_AGE_DAYS = 2;
 let cfg = {};
 try {
@@ -270,7 +270,7 @@ function start(config = cfg, { dwxClients = {} } = {}) {
       const cfg = providerConfigs[provider];
       if (cfg?.metatraderDirPath) {
         try {
-          const { dwx_client } = require('../../adapters/dwx/dwx_client');
+          const { dwx_client } = require('../../brokerage-adapter-dwx/comps/dwx_client');
           client = new dwx_client({ metatrader_dir_path: cfg.metatraderDirPath });
           client.start();
           clients[provider] = client;

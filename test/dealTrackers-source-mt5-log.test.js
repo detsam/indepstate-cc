@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const assert = require('assert');
 
-const { processFile } = require('../app/services/mt5Logs');
+const { processFile } = require('../app/services/dealTrackers-source-mt5-log/comps');
 
 const rows = [
   {
@@ -330,7 +330,7 @@ async function run() {
   assert.strictEqual(called, 1);
   assert.strictEqual(deals3.length, 1);
 
-  console.log('mt5Logs parsing test passed');
+  console.log('dealTrackers-source-mt5-log parsing test passed');
 }
 
 run().catch(err => { console.error(err); process.exit(1); });
