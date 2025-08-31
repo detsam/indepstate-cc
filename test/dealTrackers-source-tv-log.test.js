@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const assert = require('assert');
 
-const { processFile } = require('../app/services/tvLogs');
+const { processFile } = require('../app/services/dealTrackers-source-tv-log/comps');
 
 const csv = `Symbol,Side,Type,Qty,Limit Price,Stop Price,Fill Price,Status,Commission,Leverage,Margin,Placing Time,Closing Time,Order ID\n`
 + `BINANCE:TRXUSDT.P,Buy,Market,207118.6406,,,0.34174,Filled,42.4727,50:1,"1,415.61 USD",2025-08-26 04:31:18,2025-08-26 04:31:18,2240088365\n`
@@ -20,7 +20,7 @@ assert.strictEqual(deals[0].placingDate, '2025-08-26');
 
 fs.unlinkSync(tmp);
 
-console.log('tvLogs ok');
+console.log('dealTrackers-source-tv-log ok');
 
 const csv2 = `Symbol,Side,Type,Qty,Limit Price,Stop Price,Fill Price,Status,Commission,Leverage,Margin,Placing Time,Closing Time,Order ID\n`
   + `SAXO:GBPCAD,Buy,Limit,19841,1.85325,,1.85325,Filled,,,,2025-08-29 05:05:34,2025-08-29 11:13:05,2248789119\n`
@@ -37,11 +37,11 @@ assert.strictEqual(deals2[0].symbol.ticker, 'GBPCAD');
 assert.strictEqual(deals2[0].side, 'short');
 
 fs.unlinkSync(tmp2);
-console.log('tvLogs short with limit exit ok');
+console.log('dealTrackers-source-tv-log short with limit exit ok');
 
-// ensure tvLogs.start avoids fetching images when trackers skip existing notes
-delete require.cache[require.resolve('../app/services/tvLogs')];
-const chartImagesPath = require.resolve('../app/services/chartImages');
+// ensure dealTrackers-source-tv-log.start avoids fetching images when trackers skip existing notes
+delete require.cache[require.resolve('../app/services/dealTrackers-source-tv-log/comps')];
+const chartImagesPath = require.resolve('../app/services/dealTrackers-chartImages/comps');
 let composeCount = 0;
 require.cache[chartImagesPath] = {
   exports: {
@@ -49,7 +49,7 @@ require.cache[chartImagesPath] = {
     compose5M: () => { composeCount++; }
   }
 };
-const dealTrackersPath = require.resolve('../app/services/dealTrackers');
+const dealTrackersPath = require.resolve('../app/services/dealTrackers/comps');
 let notifyCount = 0;
 require.cache[dealTrackersPath] = {
   exports: {
@@ -57,7 +57,7 @@ require.cache[dealTrackersPath] = {
     notifyPositionClosed: () => { notifyCount++; }
   }
 };
-const tvLogs = require('../app/services/tvLogs');
+const tvLogs = require('../app/services/dealTrackers-source-tv-log/comps');
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tvlogs-'));
   const file = path.join(dir, 'log.csv');
@@ -68,5 +68,5 @@ const tvLogs = require('../app/services/tvLogs');
   assert.strictEqual(composeCount, 0);
   assert.strictEqual(notifyCount, 0);
   fs.rmSync(dir, { recursive: true, force: true });
-  console.log('tvLogs skipExisting ok');
+  console.log('dealTrackers-source-tv-log skipExisting ok');
 })();

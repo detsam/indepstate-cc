@@ -1,4 +1,4 @@
-# Chart Image Composers
+# Deal Trackers: Chart Images
 
 A chart image composer creates a screenshot for a given fully qualified symbol
 (e.g. `NYSE:AAPL`) and stores it on disk. The low level

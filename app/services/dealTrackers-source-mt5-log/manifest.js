@@ -1,0 +1,39 @@
+const mt5Logs = require('./comps');
+const loadConfig = require('../../config/load');
+
+/**
+ * @param {import('../servicesApi').ServicesApi} servicesApi
+ */
+function initService(servicesApi = {}) {
+  let cfg = {};
+  try {
+    cfg = loadConfig('mt5-logs.json');
+  } catch {
+    cfg = {};
+  }
+  if (cfg.enabled === false) return;
+
+  const getAdapter = servicesApi.brokerage?.getAdapter;
+  const getProviderConfig = servicesApi.brokerage?.getProviderConfig;
+  const compose1D = servicesApi.dealTrackersChartImages?.compose1D;
+  const compose5M = servicesApi.dealTrackersChartImages?.compose5M;
+
+  const names = new Set();
+  if (cfg.dwxProvider) names.add(cfg.dwxProvider);
+  if (Array.isArray(cfg.accounts)) {
+    for (const acc of cfg.accounts) {
+      if (acc.dwxProvider) names.add(acc.dwxProvider);
+    }
+  }
+  const dwxClients = {};
+  const dwxConfigs = {};
+  for (const name of names) {
+    const adapter = typeof getAdapter === 'function' ? getAdapter(name) : undefined;
+    if (adapter?.client) dwxClients[name] = adapter.client;
+    const providerCfg = typeof getProviderConfig === 'function' ? getProviderConfig(name) : undefined;
+    if (providerCfg) dwxConfigs[name] = providerCfg;
+  }
+  mt5Logs.start({ ...cfg, dwx: dwxConfigs }, { dwxClients, compose1D, compose5M });
+}
+
+module.exports = { initService };

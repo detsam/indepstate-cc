@@ -1,4 +1,4 @@
-const loadConfig = require('../../config/load');
+const loadConfig = require('../../../config/load');
 
 function buildChartComposer(cfg = {}) {
   const type = String(cfg.type || '').toLowerCase();
