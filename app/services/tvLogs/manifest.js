@@ -1,7 +1,7 @@
 const tvLogs = require('./comps');
 const loadConfig = require('../../config/load');
 
-function initService(context = {}) {
+function initService(servicesApi = {}) {
   let cfg = {};
   try {
     cfg = loadConfig('tv-logs.json');

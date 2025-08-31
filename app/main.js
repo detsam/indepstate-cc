@@ -1,5 +1,5 @@
 // app/main.js
-// Electron main: Express(3210) + JSONL logs + IPC "queue-place-order" + execution adapters (из ./services/brokerage/adapterRegistry)
+// Electron main: Express(3210) + JSONL logs + IPC "queue-place-order" + execution adapters via the brokerage service
 
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
@@ -7,7 +7,7 @@ const fs = require('fs');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..','.env') });
 
-const { getAdapter, getProviderConfig } = require('./services/brokerage/adapterRegistry');
+const servicesApi = require('./services/servicesApi');
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
@@ -21,7 +21,7 @@ const dealTrackers = require('./services/dealTrackers');
 const { calcDealData } = require('./services/dealTrackers/calc');
 const { createCommandService } = require('./services/commandLine');
 
-function loadServices(context = {}) {
+function loadServices(servicesApi = {}) {
   let dirs = [];
   try {
     dirs = loadConfig('services.json');
@@ -33,7 +33,7 @@ function loadServices(context = {}) {
     try {
       const manifest = require(path.join(__dirname, dir, 'manifest.js'));
       if (typeof manifest?.initService === 'function') {
-        manifest.initService(context);
+        manifest.initService(servicesApi);
       }
     } catch (err) {
       console.error('[serviceLoader] Failed to load', dir, err);
@@ -43,7 +43,8 @@ function loadServices(context = {}) {
 
 dealTrackers.init(dealTrackersCfg);
 const dealTrackersEnabled = dealTrackersCfg.enabled !== false;
-loadServices({ providers: { getAdapter, getProviderConfig } });
+loadServices(servicesApi);
+const { getAdapter, getProviderConfig } = servicesApi.brokerage || {};
 
 function envBool(name, fallback = false) {
   const v = process.env[name];

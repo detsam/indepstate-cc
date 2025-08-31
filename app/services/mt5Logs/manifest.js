@@ -2,9 +2,9 @@ const mt5Logs = require('./comps');
 const loadConfig = require('../../config/load');
 
 /**
- * @param {import('../serviceContext').ServiceContext} context
+ * @param {import('../servicesApi').ServicesApi} servicesApi
  */
-function initService(context = {}) {
+function initService(servicesApi = {}) {
   let cfg = {};
   try {
     cfg = loadConfig('mt5-logs.json');
@@ -13,8 +13,8 @@ function initService(context = {}) {
   }
   if (cfg.enabled === false) return;
 
-  const getAdapter = context.providers?.getAdapter;
-  const getProviderConfig = context.providers?.getProviderConfig;
+  const getAdapter = servicesApi.brokerage?.getAdapter;
+  const getProviderConfig = servicesApi.brokerage?.getProviderConfig;
 
   const names = new Set();
   if (cfg.dwxProvider) names.add(cfg.dwxProvider);

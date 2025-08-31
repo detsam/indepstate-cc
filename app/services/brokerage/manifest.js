@@ -1,10 +1,10 @@
-const { initExecutionConfig } = require('./adapterRegistry');
+const { initExecutionConfig, getAdapter, getProviderConfig } = require('./adapterRegistry');
 const loadConfig = require('../../config/load');
 
 /**
- * @param {import('../serviceContext').ServiceContext} context
+ * @param {import('../servicesApi').ServicesApi} servicesApi
  */
-function initService(context = {}) {
+function initService(servicesApi = {}) {
   let cfg = {};
   try {
     cfg = loadConfig('execution.json');
@@ -12,6 +12,7 @@ function initService(context = {}) {
     cfg = {};
   }
   initExecutionConfig(cfg);
+  servicesApi.brokerage = { getAdapter, getProviderConfig };
 }
 
 module.exports = { initService };

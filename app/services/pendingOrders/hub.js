@@ -3,7 +3,7 @@ const path = require('path');
 const events = require('../events');
 const { PendingOrderService } = require('./service');
 const { createStrategyFactory } = require('./factory');
-const { getAdapter: defaultGetAdapter } = require('../brokerage/adapterRegistry');
+const servicesApi = require('../servicesApi');
 const tradeRules = require('../tradeRules');
 const { OrderCalculator } = require('../orderCalculator');
 const loadConfig = require('../../config/load');
@@ -26,7 +26,7 @@ function pickProviderName(instrumentType) {
 const orderCalc = new OrderCalculator({ tradeRules });
 
 class PendingOrderHub {
-  constructor({ strategies = {}, strategyConfig, subscribe, ipcMain, queuePlaceOrder, wireAdapter, mainWindow, getAdapter = defaultGetAdapter } = {}) {
+  constructor({ strategies = {}, strategyConfig, subscribe, ipcMain, queuePlaceOrder, wireAdapter, mainWindow, getAdapter } = {}) {
     this.subscribe = subscribe;
     this.createStrategy = createStrategyFactory(strategyConfig, strategies);
     this.services = new Map(); // key: provider:symbol -> service
@@ -38,7 +38,7 @@ class PendingOrderHub {
     this.queuePlaceOrder = queuePlaceOrder;
     this.wireAdapter = wireAdapter;
     this.mainWindow = mainWindow;
-    this.getAdapter = getAdapter;
+    this.getAdapter = getAdapter || servicesApi.brokerage?.getAdapter;
 
     events.on('bar', ({ provider, symbol, tf, open, high, low, close }) => {
       if (tf !== 'M1') return;
