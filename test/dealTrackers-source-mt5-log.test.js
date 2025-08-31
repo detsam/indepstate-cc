@@ -5,6 +5,28 @@ const assert = require('assert');
 
 const { processFile } = require('../app/services/dealTrackers-source-mt5-log/comps');
 
+function testManifest() {
+  const manifestPath = require.resolve('../app/services/dealTrackers-source-mt5-log/manifest.js');
+  const compsPath = require.resolve('../app/services/dealTrackers-source-mt5-log/comps');
+  const loadPath = require.resolve('../app/config/load.js');
+
+  const origComps = require.cache[compsPath];
+  const origLoad = require.cache[loadPath];
+  let passed;
+  require.cache[compsPath] = { exports: { start: (cfg, deps) => { passed = deps; } } };
+  require.cache[loadPath] = { exports: () => ({}) };
+  delete require.cache[manifestPath];
+  const manifest = require(manifestPath);
+  const c1 = () => {};
+  const c5 = () => {};
+  manifest.initService({ dealTrackersChartImages: { compose1D: c1, compose5M: c5 } });
+  assert.strictEqual(passed.compose1D, c1);
+  assert.strictEqual(passed.compose5M, c5);
+  if (origComps) require.cache[compsPath] = origComps; else delete require.cache[compsPath];
+  if (origLoad) require.cache[loadPath] = origLoad; else delete require.cache[loadPath];
+  console.log('dealTrackers-source-mt5-log manifest wiring ok');
+}
+
 const rows = [
   {
     openTime: '2025.08.26 16:30:47',
@@ -274,6 +296,7 @@ function buildHtmlPositionsOnly(rows) {
 }
 
 async function run() {
+  testManifest();
   const tmp = path.join(os.tmpdir(), 'mt5-report.html');
   fs.writeFileSync(tmp, Buffer.from('\ufeff' + buildHtml(rows), 'utf16le'));
 

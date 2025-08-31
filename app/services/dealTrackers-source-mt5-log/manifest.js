@@ -15,6 +15,7 @@ function initService(servicesApi = {}) {
 
   const getAdapter = servicesApi.brokerage?.getAdapter;
   const getProviderConfig = servicesApi.brokerage?.getProviderConfig;
+  const { compose1D, compose5M } = servicesApi.dealTrackersChartImages || {};
 
   const names = new Set();
   if (cfg.dwxProvider) names.add(cfg.dwxProvider);
