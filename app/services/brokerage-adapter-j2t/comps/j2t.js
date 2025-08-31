@@ -1,5 +1,6 @@
 // services/brokerage-adapter-j2t/comps/j2t.js
-const { ExecutionAdapter } = require('../brokerage/comps/base'); // путь как у вас
+const { ExecutionAdapter } = require('../../brokerage/comps/base'); // путь как у вас
+
 const fetch = require('node-fetch'); // или axios, как удобнее
 
 class J2TExecutionAdapter extends ExecutionAdapter {

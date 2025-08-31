@@ -31,7 +31,7 @@ function initService(servicesApi = {}) {
     const providerCfg = typeof getProviderConfig === 'function' ? getProviderConfig(name) : undefined;
     if (providerCfg) dwxConfigs[name] = providerCfg;
   }
-  mt5Logs.start({ ...cfg, dwx: dwxConfigs }, { dwxClients });
+  mt5Logs.start({ ...cfg, dwx: dwxConfigs }, { dwxClients, compose1D, compose5M });
 }
 
 module.exports = { initService };

@@ -3,7 +3,7 @@ const path = require('path');
 const dealTrackers = require('../../dealTrackers/comps');
 const { calcDealData } = require('../../dealTrackers/comps/calc');
 const loadConfig = require('../../../config/load');
-const { compose1D, compose5M } = require('../../chartImages');
+
 const DEFAULT_MAX_AGE_DAYS = 2;
 let cfg = {};
 try {
@@ -248,7 +248,7 @@ function waitFor(fn, timeout = 5000, interval = 100) {
   });
 }
 
-function start(config = cfg, { dwxClients = {} } = {}) {
+function start(config = cfg, { dwxClients = {}, compose1D, compose5M } = {}) {
   const resolved = resolveSecrets(config);
   const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
   const pollMs = resolved.pollMs || 5000;
@@ -304,8 +304,8 @@ function start(config = cfg, { dwxClients = {} } = {}) {
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
       if (info.keys.has(key)) continue;
       info.keys.add(key);
-      const chart1D = symKey ? compose1D(symKey) : undefined;
-      const chart5M = symKey ? compose5M(symKey) : undefined;
+      const chart1D = symKey && typeof compose1D === 'function' ? compose1D(symKey) : undefined;
+      const chart5M = symKey && typeof compose5M === 'function' ? compose5M(symKey) : undefined;
       dealTrackers.notifyPositionClosed({
         symbol: d.symbol,
         tp: d.tp,

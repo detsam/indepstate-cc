@@ -12,9 +12,18 @@
  */
 
 /**
+ * @typedef {Object} DealTrackersChartImagesApi
+ * @property {(cfg?: any) => any} buildChartComposer
+ * @property {any} [defaultComposer]
+ * @property {(symbol: string) => string|undefined} compose1D
+ * @property {(symbol: string) => string|undefined} compose5M
+ */
+
+/**
  * @typedef {Object} ServicesApi
  * @property {BrokerageApi} [brokerage]
  * @property {DealTrackersApi} [dealTrackers]
+ * @property {DealTrackersChartImagesApi} [dealTrackersChartImages]
  */
 
 module.exports = {};
