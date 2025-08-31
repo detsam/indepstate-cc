@@ -1,5 +1,5 @@
 // app/main.js
-// Electron main: Express(3210) + JSONL logs + IPC "queue-place-order" + execution adapters (из ./services/adapterRegistry)
+// Electron main: Express(3210) + JSONL logs + IPC "queue-place-order" + execution adapters (из ./services/brokerage/adapterRegistry)
 
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
@@ -7,7 +7,7 @@ const fs = require('fs');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..','.env') });
 
-const { getAdapter, initExecutionConfig, getProviderConfig } = require('./services/adapterRegistry');
+const { getAdapter, getProviderConfig } = require('./services/brokerage/adapterRegistry');
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
@@ -41,7 +41,6 @@ function loadServices(context = {}) {
   }
 }
 
-initExecutionConfig(execCfg);
 dealTrackers.init(dealTrackersCfg);
 const dealTrackersEnabled = dealTrackersCfg.enabled !== false;
 loadServices({ providers: { getAdapter, getProviderConfig } });

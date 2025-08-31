@@ -270,7 +270,7 @@ function start(config = cfg, { dwxClients = {} } = {}) {
       const cfg = providerConfigs[provider];
       if (cfg?.metatraderDirPath) {
         try {
-          const { dwx_client } = require('../../../adapters/dwx/dwx_client');
+          const { dwx_client } = require('../../brokerage/comps/dwx/dwx_client');
           client = new dwx_client({ metatrader_dir_path: cfg.metatraderDirPath });
           client.start();
           clients[provider] = client;

@@ -1,4 +1,4 @@
-// services/adapters/j2t.js
+// services/brokerage/comps/j2t.js
 const { ExecutionAdapter } = require('./base'); // путь как у вас
 const fetch = require('node-fetch'); // или axios, как удобнее
 

@@ -3,7 +3,7 @@
 Modules:
 
 - **`dwx_client.js`** — Node.js port of the Python `dwx_client.py`. File-based IPC with MT4/MT5 EA/Script. Original **file names** and **command format** are preserved.
-- **`adapters/dwx.js`** — Adapter for `ExecutionAdapter.placeOrder()`. Adds **pending/confirmation** semantics and **retry** support for `OPEN_ORDER`.
+- **`dwx.js`** — Adapter for `ExecutionAdapter.placeOrder()`. Adds **pending/confirmation** semantics and **retry** support for `OPEN_ORDER`.
 
 ### Position lifecycle
 

@@ -1,8 +1,8 @@
-// services/adapterRegistry.js
+// services/brokerage/adapterRegistry.js
 // Creates and caches adapter instances by provider name and injects config
 // from config/execution.json (or via initExecutionConfig).
 
-const loadConfig = require('../config/load');
+const loadConfig = require('../../config/load');
 
 let executionConfig = null; // set via initExecutionConfig() or lazy‑loaded from disk
 const instances = new Map(); // name -> adapter instance
@@ -54,7 +54,7 @@ function buildAdapter(providerName, cfg){
 
   // CCXT сімейство: дозволяємо імена 'ccxt', 'ccxt:binance', 'ccxt-binance-futures' тощо
   if (n === 'ccxt' || n.startsWith('ccxt:') || n.startsWith('ccxt-')) {
-    const { CCXTExecutionAdapter } = require('../adapters/ccxt');
+    const { CCXTExecutionAdapter } = require('./comps/ccxt');
     const inst = new CCXTExecutionAdapter(adapterCfg);
     // зберігаємо оригінальну назву провайдера (корисно для логів/подій)
     inst.provider = providerName;
@@ -63,14 +63,14 @@ function buildAdapter(providerName, cfg){
 
   switch (n) {
     case 'j2t': {
-      const { J2TExecutionAdapter } = require('../adapters/j2t');
+      const { J2TExecutionAdapter } = require('./comps/j2t');
       const inst = new J2TExecutionAdapter(adapterCfg);
       inst.provider = providerName;
       return inst;
     }
     case 'dwx': {
-      const { DWXAdapter } = require('../adapters/dwx/dwx');
-      const events = require('./events');
+      const { DWXAdapter } = require('./comps/dwx/dwx');
+      const events = require('../events');
       const userHandler = adapterCfg.event_handler || {};
       adapterCfg.event_handler = {
         ...userHandler,
@@ -86,7 +86,7 @@ function buildAdapter(providerName, cfg){
       return inst;
     }
     case 'simulated': {
-      const { SimulatedExecutionAdapter } = require('../adapters/simulated');
+      const { SimulatedExecutionAdapter } = require('./comps/simulated');
       const inst = new SimulatedExecutionAdapter(adapterCfg);
       inst.provider = providerName;
       return inst;

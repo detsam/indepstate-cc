@@ -13,7 +13,7 @@ This directory contains high-level notes about the codebase.
 - `app/config/tv-logs.json` – tactic account configuration (with `enabled`, `pollMs`, `sessions`, per‑account `tactic` names and `skipExisting`) pointing to directories with order log CSV files
 - `app/config/mt5-logs.json` – tactic account configuration (with `enabled`, `pollMs`, `sessions`, per‑account `tactic` names and `skipExisting`) pointing to directories with MT5 HTML reports
 - `OBSIDIAN_INDEPSTATE_VAULT`, `OBSIDIAN_INDEPSTATE_DEALS_JOURNAL` and `OBSIDIAN_INDEPSTATE_DEALS_SEARCH` – environment variables consumed by the Obsidian deal tracker
-- `app/adapters/*` – execution adapters such as the DWX connector and the CCXT adapter; each can provide `listOpenOrders()` and `listClosedPositions()`
+- `app/services/brokerage/comps/*` – execution adapters such as the DWX connector and the CCXT adapter; each can provide `listOpenOrders()` and `listClosedPositions()`
 - `app/services/commandLine.js` – parses text commands sent from the renderer. See [command-line.md](command-line.md) for available commands.
 - `app/services/orderCalculator.js` – shared service computing stop-loss, take-profit and position size for cards and pending orders.
 
