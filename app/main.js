@@ -159,20 +159,6 @@ function wireAdapter(adapter, providerName) {
     }
     const profit = hist?.pnl ?? trade?.profit;
     if (info) {
-      if (servicesApi.dealTrackers) {
-        const payload = servicesApi.dealTrackers.calcDealData({
-          symbol: { ticker: info.ticker },
-          side: info.side,
-          entryPrice: hist?.entry?.deal_price ?? info.price,
-          exitPrice: hist?.deal_price,
-          qty: info.qty,
-          takeSetup: info.tp,
-          stopSetup: info.sp,
-          commission: hist?.commission,
-          profit
-        });
-        servicesApi.dealTrackers.notifyPositionClosed(payload);
-      }
       trackerIndex.delete(String(ticket));
     }
     if (mainWindow && !mainWindow.isDestroyed()) {
