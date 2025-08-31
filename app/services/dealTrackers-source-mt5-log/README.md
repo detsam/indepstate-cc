@@ -1,4 +1,4 @@
-# MT5 Log Service
+# Deal Trackers: MT5 Log Source
 
 This service converts MetaTrader 5 HTML trade history reports into closed trade events consumed by deal trackers.
 

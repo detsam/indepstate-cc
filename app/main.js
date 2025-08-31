@@ -1,5 +1,5 @@
 // app/main.js
-// Electron main: Express(3210) + JSONL logs + IPC "queue-place-order" + execution adapters (из ./services/adapterRegistry)
+// Electron main: Express(3210) + JSONL logs + IPC "queue-place-order" + execution adapters via the brokerage service
 
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
@@ -7,7 +7,7 @@ const fs = require('fs');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..','.env') });
 
-const { getAdapter, initExecutionConfig, getProviderConfig } = require('./services/adapterRegistry');
+const servicesApi = require('./services/servicesApi');
 const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
@@ -16,42 +16,30 @@ const tradeRules = require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const execCfg = loadConfig('execution.json');
 const orderCardsCfg = loadConfig('order-cards.json');
-const dealTrackersCfg = loadConfig('deal-trackers.json');
-const dealTrackers = require('./services/dealTrackers');
-const { calcDealData } = require('./services/dealTrackers/calc');
-const tvLogs = require('./services/tvLogs');
-const mt5Logs = require('./services/mt5Logs');
 const { createCommandService } = require('./services/commandLine');
-let tvLogsCfg = {};
-try { tvLogsCfg = loadConfig('tv-logs.json'); }
-catch { tvLogsCfg = {}; }
-let mt5LogsCfg = {};
-try { mt5LogsCfg = loadConfig('mt5-logs.json'); }
-catch { mt5LogsCfg = {}; }
-initExecutionConfig(execCfg);
-dealTrackers.init(dealTrackersCfg);
-const dealTrackersEnabled = dealTrackersCfg.enabled !== false;
-if (tvLogsCfg.enabled !== false) {
-  tvLogs.start(tvLogsCfg);
-}
-if (mt5LogsCfg.enabled !== false) {
-  const names = new Set();
-  if (mt5LogsCfg.dwxProvider) names.add(mt5LogsCfg.dwxProvider);
-  if (Array.isArray(mt5LogsCfg.accounts)) {
-    for (const acc of mt5LogsCfg.accounts) {
-      if (acc.dwxProvider) names.add(acc.dwxProvider);
+
+function loadServices(servicesApi = {}) {
+  let dirs = [];
+  try {
+    dirs = loadConfig('services.json');
+  } catch {
+    dirs = [];
+  }
+  if (!Array.isArray(dirs)) return;
+  for (const dir of dirs) {
+    try {
+      const manifest = require(path.join(__dirname, dir, 'manifest.js'));
+      if (typeof manifest?.initService === 'function') {
+        manifest.initService(servicesApi);
+      }
+    } catch (err) {
+      console.error('[serviceLoader] Failed to load', dir, err);
     }
   }
-  const dwxClients = {};
-  const dwxConfigs = {};
-  for (const name of names) {
-    const adapter = getAdapter(name);
-    if (adapter?.client) dwxClients[name] = adapter.client;
-    const providerCfg = getProviderConfig(name);
-    if (providerCfg) dwxConfigs[name] = providerCfg;
-  }
-  mt5Logs.start({ ...mt5LogsCfg, dwx: dwxConfigs }, { dwxClients });
 }
+
+loadServices(servicesApi);
+const { getAdapter, getProviderConfig } = servicesApi.brokerage || {};
 
 function envBool(name, fallback = false) {
   const v = process.env[name];
@@ -162,29 +150,11 @@ function wireAdapter(adapter, providerName) {
     }
   });
 
-  adapter.on('position:closed', async ({ ticket, trade }) => {
+  adapter.on('position:closed', ({ ticket, trade }) => {
     events.emit('position:closed', { ticket, trade, provider: providerName });
     const info = trackerIndex.get(String(ticket));
-    let hist;
-    if (info?.cid && typeof adapter.findClosedTradeByCid === 'function') {
-      try { hist = await adapter.findClosedTradeByCid(info.cid); } catch {}
-    }
-    const profit = hist?.pnl ?? trade?.profit;
+    const profit = trade?.profit;
     if (info) {
-      const payload = calcDealData({
-        symbol: { ticker: info.ticker },
-        side: info.side,
-        entryPrice: hist?.entry?.deal_price ?? info.price,
-        exitPrice: hist?.deal_price,
-        qty: info.qty,
-        takeSetup: info.tp,
-        stopSetup: info.sp,
-        commission: hist?.commission,
-        profit
-      });
-      if (dealTrackersEnabled) {
-        dealTrackers.notifyPositionClosed(payload);
-      }
       trackerIndex.delete(String(ticket));
     }
     if (mainWindow && !mainWindow.isDestroyed()) {

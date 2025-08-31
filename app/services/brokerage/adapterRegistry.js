@@ -1,8 +1,9 @@
-// services/adapterRegistry.js
+// services/brokerage/adapterRegistry.js
 // Creates and caches adapter instances by provider name and injects config
 // from config/execution.json (or via initExecutionConfig).
 
-const loadConfig = require('../config/load');
+const loadConfig = require('../../config/load');
+const brokerageAdapters = require('./brokerageAdapters');
 
 let executionConfig = null; // set via initExecutionConfig() or lazy‑loaded from disk
 const instances = new Map(); // name -> adapter instance
@@ -51,49 +52,14 @@ function buildAdapter(providerName, cfg){
     throw new Error(`[adapterRegistry] provider "${providerName}" must specify an adapter`);
   }
   const n = String(adapterName).toLowerCase();
-
-  // CCXT сімейство: дозволяємо імена 'ccxt', 'ccxt:binance', 'ccxt-binance-futures' тощо
-  if (n === 'ccxt' || n.startsWith('ccxt:') || n.startsWith('ccxt-')) {
-    const { CCXTExecutionAdapter } = require('../adapters/ccxt');
-    const inst = new CCXTExecutionAdapter(adapterCfg);
-    // зберігаємо оригінальну назву провайдера (корисно для логів/подій)
-    inst.provider = providerName;
-    return inst;
+  const key = brokerageAdapters[n] ? n : n.split(/[:\-]/)[0];
+  const factory = brokerageAdapters[key];
+  if (typeof factory !== 'function') {
+    throw new Error(`[adapterRegistry] unknown adapter "${adapterName}" for provider "${providerName}"`);
   }
-
-  switch (n) {
-    case 'j2t': {
-      const { J2TExecutionAdapter } = require('../adapters/j2t');
-      const inst = new J2TExecutionAdapter(adapterCfg);
-      inst.provider = providerName;
-      return inst;
-    }
-    case 'dwx': {
-      const { DWXAdapter } = require('../adapters/dwx/dwx');
-      const events = require('./events');
-      const userHandler = adapterCfg.event_handler || {};
-      adapterCfg.event_handler = {
-        ...userHandler,
-        on_bar_data(symbol, tf, time, open, high, low, close, vol) {
-          try {
-            events.emit('bar', { provider: providerName, symbol, tf, time, open, high, low, close, vol });
-          } catch {}
-          userHandler.on_bar_data?.(symbol, tf, time, open, high, low, close, vol);
-        }
-      };
-      const inst = new DWXAdapter(adapterCfg);
-      inst.provider = providerName;
-      return inst;
-    }
-    case 'simulated': {
-      const { SimulatedExecutionAdapter } = require('../adapters/simulated');
-      const inst = new SimulatedExecutionAdapter(adapterCfg);
-      inst.provider = providerName;
-      return inst;
-    }
-    default:
-      throw new Error(`[adapterRegistry] unknown adapter "${adapterName}" for provider "${providerName}"`);
-  }
+  const inst = factory(adapterCfg, providerName, adapterName);
+  inst.provider = providerName;
+  return inst;
 }
 
 function getAdapter(name){
