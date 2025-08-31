@@ -1,5 +1,9 @@
 [
   "services/brokerage",
+  "services/brokerage-adapter-ccxt",
+  "services/brokerage-adapter-dwx",
+  "services/brokerage-adapter-j2t",
+  "services/brokerage-adapter-simulated",
   "services/tvLogs",
   "services/mt5Logs"
 ]
