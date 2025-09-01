@@ -39,6 +39,22 @@ assert.strictEqual(deals2[0].side, 'short');
 fs.unlinkSync(tmp2);
 console.log('dealTrackers-source-tv-log short with limit exit ok');
 
+const csv3 = `Symbol,Side,Type,Qty,Qty Filled,Limit Price,Stop Price,Fill Price,Status,Time,Reduce Only,Post Only,Close On Trigger,Order ID\n`
+  + `DOLOUSDTPERP,Sell,Limit,8928,8928,0.311158,,0.311158,Filled,2025-09-01 09:10:02,false,false,false,DOLOUSDTPERP-519814721-1-OTOCO\n`
+  + `DOLOUSDTPERP,Buy,Market,8928,8928,,,0.3020084,Filled,2025-09-01 09:50:11,true,false,false,DOLOUSDTPERP-660021105\n`;
+
+const tmp3 = path.join(os.tmpdir(), `tvlog-${Date.now()}-3.csv`);
+fs.writeFileSync(tmp3, csv3);
+
+const deals3 = processFile(tmp3, undefined, 999);
+
+assert.strictEqual(deals3.length, 1);
+assert.strictEqual(deals3[0].symbol.ticker, 'DOLOUSDTPERP');
+assert.strictEqual(deals3[0].placingDate, '2025-09-01');
+
+fs.unlinkSync(tmp3);
+console.log('dealTrackers-source-tv-log new format ok');
+
 // ensure dealTrackers-source-tv-log.start avoids fetching images when trackers skip existing notes
 delete require.cache[require.resolve('../app/services/dealTrackers-source-tv-log/comps')];
 const chartImagesPath = require.resolve('../app/services/dealTrackers-chartImages/comps');

@@ -66,10 +66,20 @@ function parseCsvText(text) {
     if (!line.trim() || line.startsWith('Symbol')) continue;
     const parts = splitLine(line);
     if (parts.length < 13) continue;
-    const [
-      symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr,
-      status, commissionStr, _lev, _margin, placingTime, closingTime, orderIdStr
-    ] = parts;
+    let symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr;
+    let status, commissionStr = '', placingTime, closingTime, orderIdStr;
+
+    // New format: Symbol,Side,Type,Qty,QtyFilled,Limit Price,Stop Price,Fill Price,Status,Time,Reduce Only,Post Only,Close On Trigger,Order ID
+    const looksLikeDate = s => !isNaN(Date.parse(s));
+    const newFmt = parts.length >= 14 && isNaN(Number(parts[8])) && looksLikeDate(parts[9]);
+    if (newFmt) {
+      [symbol, side, type, qtyStr, _filledQty, limitPriceStr, stopPriceStr, fillPriceStr,
+        status, placingTime, _reduceOnly, _postOnly, _closeOnTrigger, orderIdStr] = parts;
+      closingTime = placingTime;
+    } else {
+      [symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr,
+        status, commissionStr, /* _lev */, /* _margin */, placingTime, closingTime, orderIdStr] = parts;
+    }
 
     const limit = parsePrice(limitPriceStr);
     const stop = parsePrice(stopPriceStr);
@@ -96,7 +106,7 @@ function parseCsvText(text) {
       commission: commissionStr === '' ? 0 : Number(commissionStr),
       placingTime,
       closingTime,
-      orderId: Number(orderIdStr)
+      orderId: Number(orderIdStr.replace(/\D+/g, ''))
     };
     rows.push(row);
   }
