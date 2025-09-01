@@ -106,7 +106,15 @@ function parseCsvText(text) {
       commission: commissionStr === '' ? 0 : Number(commissionStr),
       placingTime,
       closingTime,
-      orderId: Number(orderIdStr.replace(/\D+/g, ''))
+      orderId: (function parseOrderId(idStr) {
+        const nums = String(idStr).match(/\d+/g) || [];
+        if (!nums.length) return 0;
+        const base = Number(nums[0]);
+        if (nums.length === 1) return base;
+        const frac = Number(nums[1]);
+        const denom = Math.pow(10, String(frac).length + 1);
+        return base + frac / denom;
+      })(orderIdStr)
     };
     rows.push(row);
   }
@@ -117,7 +125,12 @@ function groupOrders(rows) {
   // Keep rows in chronological order so we can pair market exits
   // with the latest open deal for the symbol.
   rows = Array.isArray(rows) ? [...rows] : [];
-  rows.sort((a, b) => a.orderId - b.orderId);
+  rows.sort((a, b) => {
+    const ta = Date.parse(a.placingTime);
+    const tb = Date.parse(b.placingTime);
+    if (!isNaN(ta) && !isNaN(tb) && ta !== tb) return ta - tb;
+    return a.orderId - b.orderId;
+  });
 
   const map = new Map();
   const lastKey = new Map(); // symbol -> latest group key awaiting close
@@ -161,90 +174,15 @@ function groupOrders(rows) {
   return map;
 }
 
-// ---- tick detection helpers ----
-// BigInt GCD
-function bgcd(a, b) {
-  a = a < 0n ? -a : a;
-  b = b < 0n ? -b : b;
-  while (b) {
-    const t = a % b;
-    a = b;
-    b = t;
-  }
-  return a;
-}
 
-function fracLen(s) {
-  s = String(s);
-  const i = s.indexOf('.');
-  return i === -1 ? 0 : s.length - i - 1;
-}
-
-// convert price to integer units at scale D
-function toUnits(s, D) {
-  s = String(s).trim();
-  let neg = false;
-  if (s[0] === '-') {
-    neg = true;
-    s = s.slice(1);
-  }
-  const [ip = '0', fp = ''] = s.split('.');
-  const fpad = (fp + '0'.repeat(D)).slice(0, D);
-  const digits = (ip.replace(/^0+(?=\d)/, '') || '0') + fpad;
-  const bi = BigInt(digits);
-  return neg ? -bi : bi;
-}
-
-function detectTick(prices, { minDecimals = 8 } = {}) {
-  if (!prices || prices.length < 2) return { D: minDecimals, tickUnits: 1n };
-  let D = Math.max(...prices.map(p => fracLen(String(p))));
-  if (D < minDecimals) D = minDecimals;
-  const U = prices.map(p => toUnits(p, D)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const diffs = [];
-  for (let i = 1; i < U.length; i++) {
-    let d = U[i] - U[i - 1];
-    if (d !== 0n) {
-      if (d < 0n) d = -d;
-      diffs.push(d);
-    }
-  }
-  if (!diffs.length) return { D, tickUnits: 1n };
-  let tickUnits = diffs[0];
-  for (let i = 1; i < diffs.length; i++) tickUnits = bgcd(tickUnits, diffs[i]);
-  if (tickUnits <= 0n) tickUnits = 1n;
-  return { D, tickUnits };
-}
-
-function pointsBetween(a, b, meta) {
-  if (!meta) throw new Error('tick meta required');
-  const { D, tickUnits } = meta;
-  const A = toUnits(a, D);
-  const B = toUnits(b, D);
-  const diffUnits = A > B ? A - B : B - A;
-  const q = diffUnits / tickUnits;
-  const r = diffUnits % tickUnits;
-  return r === 0n ? Number(q) : Number(diffUnits) / Number(tickUnits);
-}
-
-function detectTicks(rows) {
-  const map = new Map();
-  for (const r of rows) {
-    const arr = map.get(r.symbol) || [];
-    if (r.limitPriceStr) arr.push(r.limitPriceStr);
-    if (r.stopPriceStr) arr.push(r.stopPriceStr);
-    if (r.fillPriceStr) arr.push(r.fillPriceStr);
-    map.set(r.symbol, arr);
-  }
-  const out = new Map();
-  for (const [sym, prices] of map) {
-    out.set(sym, detectTick(prices));
-  }
-  return out;
-}
-
-function buildDeal(group, sessions = cfg.sessions, tickMeta) {
+function buildDeal(group, sessions = cfg.sessions) {
   if (!Array.isArray(group) || group.length === 0) return null;
-  group.sort((a, b) => a.orderId - b.orderId);
+  group.sort((a, b) => {
+    const ta = Date.parse(a.placingTime);
+    const tb = Date.parse(b.placingTime);
+    if (!isNaN(ta) && !isNaN(tb) && ta !== tb) return ta - tb;
+    return a.orderId - b.orderId;
+  });
   const entry = group[0];
   const rawSymbol = entry.symbol || '';
   const rawPlacingTime = entry.placingTime || '';
@@ -256,23 +194,13 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
   if (filled.length < 2) return null;
   const closing = filled.find(o => o !== entry) || filled[1];
 
-  if (!tickMeta) {
-    const priceStrs = [];
-    for (const o of group) {
-      if (o.limitPriceStr) priceStrs.push(o.limitPriceStr);
-      if (o.stopPriceStr) priceStrs.push(o.stopPriceStr);
-      if (o.fillPriceStr) priceStrs.push(o.fillPriceStr);
-    }
-    tickMeta = detectTick(priceStrs);
-  }
-
   function pricePoints(aStr, bStr) {
     if (!aStr || !bStr) return undefined;
-    try {
-      return pointsBetween(aStr, bStr, tickMeta);
-    } catch {
-      return undefined;
-    }
+    const D = (String(bStr).split('.')[1] || '').length;
+    const tick = Math.pow(10, -D);
+    const diff = Math.abs(Number(aStr) - Number(bStr));
+    if (!Number.isFinite(diff) || tick === 0) return undefined;
+    return diff / tick;
   }
 
   const side = String(entry.side).toLowerCase() === 'sell' ? 'short' : 'long';
@@ -350,13 +278,10 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
     return [];
   }
   const rows = parseCsvText(text);
-  const metas = detectTicks(rows);
   const groups = groupOrders(rows);
   const deals = [];
   for (const arr of groups.values()) {
-    const sym = arr[0] && arr[0].symbol;
-    const meta = metas.get(sym);
-    const d = buildDeal(arr, sessions, meta);
+    const d = buildDeal(arr, sessions);
     if (d) deals.push(d);
   }
   if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {
