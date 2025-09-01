@@ -57,6 +57,7 @@ assert.strictEqual(deals3[0].placingDate, '2025-09-01');
 assert.strictEqual(deals3[0].tp, 17600);
 assert.strictEqual(deals3[0].sp, 5599);
 assert.strictEqual(deals3[0].takePoints, 9149);
+assert.strictEqual(deals3[0].commission, undefined);
 
 fs.unlinkSync(tmp3);
 console.log('dealTrackers-source-tv-log new format ok');
@@ -68,6 +69,13 @@ assert.strictEqual(deals5[0].symbol.exchange, 'CUSTOM');
 assert.strictEqual(deals5[0].symbol.ticker, 'TICK');
 fs.unlinkSync(tmp5);
 console.log('dealTrackers-source-tv-log custom symbol replacer ok');
+
+const tmp6 = path.join(os.tmpdir(), `tvlog-${Date.now()}-6.csv`);
+fs.writeFileSync(tmp6, csv3);
+const deals6 = processFile(tmp6, undefined, 999, undefined, { maker: 0.02, taker: 0.05 });
+assert.strictEqual(deals6[0].commission, 1.9);
+fs.unlinkSync(tmp6);
+console.log('dealTrackers-source-tv-log commission from config ok');
 
 const csv4 = `Symbol,Side,Type,Qty,Limit Price,Stop Price,Fill Price,Status,Commission,Leverage,Margin,Placing Time,Closing Time,Order ID\n`
   + `BINANCE:STOP,Buy,Market,1,,,10.0000,Filled,0,20:1,100 USD,2025-01-01 00:00:00,2025-01-01 00:00:00,1\n`

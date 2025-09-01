@@ -7,6 +7,8 @@ const { compose1D, compose5M } = require('../../dealTrackers-chartImages/comps')
 const loadConfig = require('../../../config/load');
 const DEFAULT_MAX_AGE_DAYS = 2;
 const DEFAULT_SYMBOL_REPLACE = s => String(s || '').replace(/(.*)PERP$/, 'BINANCE:$1.P');
+const DEFAULT_MAKER_FEE_PCT = 0.02;
+const DEFAULT_TAKER_FEE_PCT = 0.05;
 let cfg = {};
 try {
   cfg = loadConfig('tv-logs.json');
@@ -176,7 +178,7 @@ function groupOrders(rows) {
 }
 
 
-function buildDeal(group, sessions = cfg.sessions) {
+function buildDeal(group, sessions = cfg.sessions, fees) {
   if (!Array.isArray(group) || group.length === 0) return null;
   group.sort((a, b) => {
     const ta = Date.parse(a.placingTime);
@@ -258,7 +260,13 @@ function buildDeal(group, sessions = cfg.sessions) {
     }
   }
 
-  const rawCommission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
+  let rawCommission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
+  if (!rawCommission && fees) {
+    const makerPct = typeof fees.maker === 'number' ? fees.maker : DEFAULT_MAKER_FEE_PCT;
+    const takerPct = typeof fees.taker === 'number' ? fees.taker : DEFAULT_TAKER_FEE_PCT;
+    const rate = t => (/market|stop/i.test(String(t)) ? takerPct : makerPct) / 100;
+    rawCommission = qty * price * rate(entry.type) + qty * closing.fillPrice * rate(closing.type);
+  }
   const result = side === 'long'
     ? (closing.fillPrice > entry.fillPrice ? 'take' : 'stop')
     : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
@@ -290,7 +298,7 @@ function buildDeal(group, sessions = cfg.sessions) {
   return { _key: `${rawSymbol}|${rawPlacingTime}`, placingDate, placingTime, ...base };
 }
 
-function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, symbolReplace = DEFAULT_SYMBOL_REPLACE) {
+function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, symbolReplace = DEFAULT_SYMBOL_REPLACE, fees) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
@@ -304,7 +312,7 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
   const groups = groupOrders(rows);
   const deals = [];
   for (const arr of groups.values()) {
-    const d = buildDeal(arr, sessions);
+    const d = buildDeal(arr, sessions, fees);
     if (d) deals.push(d);
   }
   if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {
@@ -326,7 +334,15 @@ function start(config = cfg) {
         try { fn = new Function('s', fn); } catch { fn = null; }
       }
       if (typeof fn !== 'function') fn = DEFAULT_SYMBOL_REPLACE;
-      return { ...acc, symbolReplace: fn };
+      let fees = acc.fees;
+      if (fees === null || fees === false) {
+        fees = undefined;
+      } else {
+        const maker = fees && typeof fees.maker === 'number' ? fees.maker : DEFAULT_MAKER_FEE_PCT;
+        const taker = fees && typeof fees.taker === 'number' ? fees.taker : DEFAULT_TAKER_FEE_PCT;
+        fees = { maker, taker };
+      }
+      return { ...acc, symbolReplace: fn, fees };
     })
     : [];
   const pollMs = resolved.pollMs || 5000;
@@ -338,7 +354,7 @@ function start(config = cfg) {
 
   function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
-    const deals = processFile(file, sessions, maxAgeDays, acc.symbolReplace);
+    const deals = processFile(file, sessions, maxAgeDays, acc.symbolReplace, acc.fees);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
