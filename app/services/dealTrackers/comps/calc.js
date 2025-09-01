@@ -77,15 +77,20 @@ function calcDealData(data = {}) {
     }
   }
 
-  const takePoints = preTakePoints != null ? preTakePoints : calcTakePoints;
-  const stopPoints = preStopPoints != null ? preStopPoints : calcStopPoints;
+  const takeSetupInt = takeSetup != null ? Math.floor(takeSetup) : undefined;
+  const stopSetupInt = stopSetup != null ? Math.floor(stopSetup) : undefined;
+
+  const takePtsRaw = preTakePoints != null ? preTakePoints : calcTakePoints;
+  const stopPtsRaw = preStopPoints != null ? preStopPoints : calcStopPoints;
+  const takePoints = takePtsRaw != null ? Math.floor(takePtsRaw) : undefined;
+  const stopPoints = stopPtsRaw != null ? Math.floor(stopPtsRaw) : undefined;
 
   let tradeRisk;
-  if (stopSetup != null) {
+  if (stopSetupInt != null) {
     const basePts = status === 'take' ? takePoints : stopPoints;
     if (basePts && basePts !== 0) {
       const pricePerPoint = Math.abs(profit) / basePts;
-      tradeRisk = round2(pricePerPoint * stopSetup);
+      tradeRisk = round2(pricePerPoint * stopSetupInt);
     }
   }
 
@@ -96,8 +101,8 @@ function calcDealData(data = {}) {
 
   const out = {
     symbol,
-    tp: takeSetup,
-    sp: stopSetup,
+    tp: takeSetupInt,
+    sp: stopSetupInt,
     status,
     profit: round2(profit),
     commission: commission ? round2(commission) : undefined,

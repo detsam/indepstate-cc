@@ -263,7 +263,8 @@ function buildDeal(group, sessions = cfg.sessions) {
     : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
 
   let takePoints; let stopPoints;
-  const diffPoints = pricePoints(closing.fillPriceStr, priceStr);
+  let diffPoints = pricePoints(closing.fillPriceStr, priceStr);
+  if (diffPoints != null) diffPoints = Math.floor(diffPoints);
   if (result === 'take') {
     takePoints = diffPoints;
   } else {

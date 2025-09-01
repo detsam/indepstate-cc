@@ -17,6 +17,7 @@ const deals = processFile(tmp, undefined, 999);
 assert.strictEqual(deals.length, 1);
 assert.strictEqual(deals[0].symbol.ticker, 'TRXUSDT.P');
 assert.strictEqual(deals[0].placingDate, '2025-08-26');
+assert.strictEqual(deals[0].takePoints, 109);
 
 fs.unlinkSync(tmp);
 
@@ -55,9 +56,25 @@ assert.strictEqual(deals3[0].symbol.ticker, 'DOLOUSDTPERP');
 assert.strictEqual(deals3[0].placingDate, '2025-09-01');
 assert.strictEqual(deals3[0].tp, 17600);
 assert.strictEqual(deals3[0].sp, 5599);
+assert.strictEqual(deals3[0].takePoints, 9149);
 
 fs.unlinkSync(tmp3);
 console.log('dealTrackers-source-tv-log new format ok');
+
+const csv4 = `Symbol,Side,Type,Qty,Limit Price,Stop Price,Fill Price,Status,Commission,Leverage,Margin,Placing Time,Closing Time,Order ID\n`
+  + `BINANCE:STOP,Buy,Market,1,,,10.0000,Filled,0,20:1,100 USD,2025-01-01 00:00:00,2025-01-01 00:00:00,1\n`
+  + `BINANCE:STOP,Sell,Market,1,,,9.81123,Filled,0,20:1,100 USD,2025-01-01 01:00:00,2025-01-01 01:00:00,2\n`;
+
+const tmp4 = path.join(os.tmpdir(), `tvlog-${Date.now()}-4.csv`);
+fs.writeFileSync(tmp4, csv4);
+
+const deals4 = processFile(tmp4, undefined, 999);
+
+assert.strictEqual(deals4.length, 1);
+assert.strictEqual(deals4[0].stopPoints, 1887);
+
+fs.unlinkSync(tmp4);
+console.log('dealTrackers-source-tv-log stop points rounding ok');
 
 // ensure dealTrackers-source-tv-log.start avoids fetching images when trackers skip existing notes
 delete require.cache[require.resolve('../app/services/dealTrackers-source-tv-log/comps')];
