@@ -40,6 +40,8 @@ fs.unlinkSync(tmp2);
 console.log('dealTrackers-source-tv-log short with limit exit ok');
 
 const csv3 = `Symbol,Side,Type,Qty,Qty Filled,Limit Price,Stop Price,Fill Price,Status,Time,Reduce Only,Post Only,Close On Trigger,Order ID\n`
+  + `DOLOUSDTPERP,Buy,Stop Loss,8928,0,,0.316758,,Cancelled,2025-09-01 09:10:02,true,false,false,DOLOUSDTPERP-519814721-3-OTOCO\n`
+  + `DOLOUSDTPERP,Buy,Take Profit,8928,0,0.293558,0.293558,,Cancelled,2025-09-01 09:10:02,true,false,false,DOLOUSDTPERP-519814721-2-OTOCO\n`
   + `DOLOUSDTPERP,Sell,Limit,8928,8928,0.311158,,0.311158,Filled,2025-09-01 09:10:02,false,false,false,DOLOUSDTPERP-519814721-1-OTOCO\n`
   + `DOLOUSDTPERP,Buy,Market,8928,8928,,,0.3020084,Filled,2025-09-01 09:50:11,true,false,false,DOLOUSDTPERP-660021105\n`;
 
@@ -51,6 +53,8 @@ const deals3 = processFile(tmp3, undefined, 999);
 assert.strictEqual(deals3.length, 1);
 assert.strictEqual(deals3[0].symbol.ticker, 'DOLOUSDTPERP');
 assert.strictEqual(deals3[0].placingDate, '2025-09-01');
+assert.strictEqual(deals3[0].tp, 17600);
+assert.strictEqual(deals3[0].sp, 5599);
 
 fs.unlinkSync(tmp3);
 console.log('dealTrackers-source-tv-log new format ok');

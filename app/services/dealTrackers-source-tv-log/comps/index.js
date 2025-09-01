@@ -106,14 +106,14 @@ function parseCsvText(text) {
       commission: commissionStr === '' ? 0 : Number(commissionStr),
       placingTime,
       closingTime,
-      orderId: (function parseOrderId(idStr) {
+      ...(function parseOrderId(idStr) {
         const nums = String(idStr).match(/\d+/g) || [];
-        if (!nums.length) return 0;
+        if (!nums.length) return { orderId: 0 };
         const base = Number(nums[0]);
-        if (nums.length === 1) return base;
+        if (nums.length === 1) return { orderId: base, groupId: base };
         const frac = Number(nums[1]);
         const denom = Math.pow(10, String(frac).length + 1);
-        return base + frac / denom;
+        return { orderId: base + frac / denom, groupId: base };
       })(orderIdStr)
     };
     rows.push(row);
@@ -136,7 +136,7 @@ function groupOrders(rows) {
   const lastKey = new Map(); // symbol -> latest group key awaiting close
 
   for (const r of rows) {
-    let key = `${r.symbol}|${r.placingTime}`;
+    let key = `${r.symbol}|${r.groupId != null ? r.groupId : r.placingTime}`;
     const type = String(r.type).toLowerCase();
     const status = String(r.status).toLowerCase();
 
@@ -149,7 +149,7 @@ function groupOrders(rows) {
         key = prev;
       } else {
         const prevArr = map.get(prev);
-        const entry = prevArr && prevArr[0];
+        const entry = prevArr && prevArr.find(o => String(o.status).toLowerCase() === 'filled');
         if (entry && String(entry.side).toLowerCase() !== String(r.side).toLowerCase()) {
           key = prev;
         }
@@ -183,16 +183,17 @@ function buildDeal(group, sessions = cfg.sessions) {
     if (!isNaN(ta) && !isNaN(tb) && ta !== tb) return ta - tb;
     return a.orderId - b.orderId;
   });
-  const entry = group[0];
+  const filled = group.filter(o => String(o.status).toLowerCase() === 'filled');
+  const entry = filled.find(o => !/stop loss|take profit/i.test(o.type));
+  if (!entry) return null;
+  const closing = filled.find(o => o !== entry);
+  if (!closing) return null;
   const rawSymbol = entry.symbol || '';
   const rawPlacingTime = entry.placingTime || '';
   const symParts = rawSymbol.split(':');
   const ticker = symParts.pop();
   const exchange = symParts.length ? symParts[0] : undefined;
   const [placingDate, placingTime] = String(rawPlacingTime).split(/\s+/);
-  const filled = group.filter(o => String(o.status).toLowerCase() === 'filled');
-  if (filled.length < 2) return null;
-  const closing = filled.find(o => o !== entry) || filled[1];
 
   function pricePoints(aStr, bStr) {
     if (!aStr || !bStr) return undefined;
@@ -218,25 +219,42 @@ function buildDeal(group, sessions = cfg.sessions) {
   }
   const qty = Number(entry.qty) || 0;
 
-  let takeOrder, stopOrder;
-  for (const o of group.slice(1)) {
-    if (side === 'long') {
-      if (o.limitPrice != null && o.limitPrice > price) takeOrder = o;
-      if (o.stopPrice != null && o.stopPrice < price) stopOrder = o;
-    } else {
-      if (o.limitPrice != null && o.limitPrice < price) takeOrder = o;
-      if (o.stopPrice != null && o.stopPrice > price) stopOrder = o;
+  let takeOrder = group.find(o => /take profit/i.test(o.type));
+  let stopOrder = group.find(o => /stop loss/i.test(o.type));
+  if (!takeOrder || !stopOrder) {
+    for (const o of group) {
+      if (o === entry) continue;
+      if (!takeOrder) {
+        if (side === 'long') {
+          if (o.limitPrice != null && o.limitPrice > price) takeOrder = o;
+        } else {
+          if (o.limitPrice != null && o.limitPrice < price) takeOrder = o;
+        }
+      }
+      if (!stopOrder) {
+        if (side === 'long') {
+          if (o.stopPrice != null && o.stopPrice < price) stopOrder = o;
+        } else {
+          if (o.stopPrice != null && o.stopPrice > price) stopOrder = o;
+        }
+      }
     }
   }
 
   let takeSetup, stopSetup;
-  if (takeOrder && takeOrder.limitPriceStr) {
-    takeSetup = pricePoints(takeOrder.limitPriceStr, priceStr);
-    if (takeSetup != null) takeSetup = Math.floor(takeSetup);
+  if (takeOrder) {
+    const tpStr = takeOrder.limitPriceStr || takeOrder.stopPriceStr || takeOrder.fillPriceStr;
+    if (tpStr) {
+      takeSetup = pricePoints(tpStr, priceStr);
+      if (takeSetup != null) takeSetup = Math.floor(takeSetup);
+    }
   }
-  if (stopOrder && stopOrder.stopPriceStr) {
-    stopSetup = pricePoints(stopOrder.stopPriceStr, priceStr);
-    if (stopSetup != null) stopSetup = Math.floor(stopSetup);
+  if (stopOrder) {
+    const spStr = stopOrder.stopPriceStr || stopOrder.limitPriceStr || stopOrder.fillPriceStr;
+    if (spStr) {
+      stopSetup = pricePoints(spStr, priceStr);
+      if (stopSetup != null) stopSetup = Math.floor(stopSetup);
+    }
   }
 
   const rawCommission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
