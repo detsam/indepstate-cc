@@ -6,6 +6,7 @@ const { compose1D, compose5M } = require('../../dealTrackers-chartImages/comps')
 
 const loadConfig = require('../../../config/load');
 const DEFAULT_MAX_AGE_DAYS = 2;
+const DEFAULT_SYMBOL_REPLACE = s => String(s || '').replace(/(.*)PERP$/, 'BINANCE:$1.P');
 let cfg = {};
 try {
   cfg = loadConfig('tv-logs.json');
@@ -289,7 +290,7 @@ function buildDeal(group, sessions = cfg.sessions) {
   return { _key: `${rawSymbol}|${rawPlacingTime}`, placingDate, placingTime, ...base };
 }
 
-function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS) {
+function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, symbolReplace = DEFAULT_SYMBOL_REPLACE) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
@@ -297,6 +298,9 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
     return [];
   }
   const rows = parseCsvText(text);
+  if (typeof symbolReplace === 'function') {
+    for (const r of rows) r.symbol = symbolReplace(r.symbol);
+  }
   const groups = groupOrders(rows);
   const deals = [];
   for (const arr of groups.values()) {
@@ -315,7 +319,16 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
 
 function start(config = cfg) {
   const resolved = resolveSecrets(config);
-  const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
+  const accounts = Array.isArray(resolved.accounts)
+    ? resolved.accounts.map(acc => {
+      let fn = acc.symbolReplace;
+      if (typeof fn === 'string') {
+        try { fn = new Function('s', fn); } catch { fn = null; }
+      }
+      if (typeof fn !== 'function') fn = DEFAULT_SYMBOL_REPLACE;
+      return { ...acc, symbolReplace: fn };
+    })
+    : [];
   const pollMs = resolved.pollMs || 5000;
   const sessions = resolved.sessions;
   const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
@@ -325,7 +338,7 @@ function start(config = cfg) {
 
   function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
-    const deals = processFile(file, sessions, maxAgeDays);
+    const deals = processFile(file, sessions, maxAgeDays, acc.symbolReplace);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;

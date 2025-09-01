@@ -19,7 +19,12 @@ Settings live in `app/config/tv-logs.json`:
     "16:30-02:00": 3
   },
   "accounts": [
-    { "tactic": "example", "dir": "${ENV:TV_LOG_EXAMPLE}", "maxAgeDays": 2 }
+    {
+      "tactic": "example",
+      "dir": "${ENV:TV_LOG_EXAMPLE}",
+      "maxAgeDays": 2,
+      "symbolReplace": "return s.replace(/(.*)PERP$/, 'BINANCE:$1.P');"
+    }
   ]
 }
 ```
@@ -27,6 +32,7 @@ Settings live in `app/config/tv-logs.json`:
 - `enabled` – set `false` to prevent automatic polling from `main.js`.
 - `pollMs` – interval in milliseconds used to check directories for new files.
 - `accounts` – list of tactic accounts with a `tactic` name and directories containing their CSV logs. Paths may reference environment variables using `${ENV:VAR}`.
+- `accounts[n].symbolReplace` – optional JavaScript function body run with each raw symbol string. By default it converts `FOOUSDTPERP` into `BINANCE:FOOUSDT.P` so image composers can resolve tickers.
 - `accounts[n].maxAgeDays` – only emit deals with a placing date within this many days for the given account. Set to `0` to allow all deals (default `2`).
 - `skipExisting` – array mapping front‑matter fields to trade properties so trackers can detect existing notes.
 - `sessions` – optional mapping of `"HH:MM-HH:MM"` ranges to session numbers used for the `tradeSession` field.

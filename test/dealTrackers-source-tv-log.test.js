@@ -52,7 +52,7 @@ fs.writeFileSync(tmp3, csv3);
 const deals3 = processFile(tmp3, undefined, 999);
 
 assert.strictEqual(deals3.length, 1);
-assert.strictEqual(deals3[0].symbol.ticker, 'DOLOUSDTPERP');
+assert.strictEqual(deals3[0].symbol.ticker, 'DOLOUSDT.P');
 assert.strictEqual(deals3[0].placingDate, '2025-09-01');
 assert.strictEqual(deals3[0].tp, 17600);
 assert.strictEqual(deals3[0].sp, 5599);
@@ -60,6 +60,14 @@ assert.strictEqual(deals3[0].takePoints, 9149);
 
 fs.unlinkSync(tmp3);
 console.log('dealTrackers-source-tv-log new format ok');
+
+const tmp5 = path.join(os.tmpdir(), `tvlog-${Date.now()}-5.csv`);
+fs.writeFileSync(tmp5, csv3);
+const deals5 = processFile(tmp5, undefined, 999, () => 'CUSTOM:TICK');
+assert.strictEqual(deals5[0].symbol.exchange, 'CUSTOM');
+assert.strictEqual(deals5[0].symbol.ticker, 'TICK');
+fs.unlinkSync(tmp5);
+console.log('dealTrackers-source-tv-log custom symbol replacer ok');
 
 const csv4 = `Symbol,Side,Type,Qty,Limit Price,Stop Price,Fill Price,Status,Commission,Leverage,Margin,Placing Time,Closing Time,Order ID\n`
   + `BINANCE:STOP,Buy,Market,1,,,10.0000,Filled,0,20:1,100 USD,2025-01-01 00:00:00,2025-01-01 00:00:00,1\n`
