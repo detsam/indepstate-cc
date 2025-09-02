@@ -7,5 +7,6 @@
   "services/dealTrackers",
   "services/dealTrackers-chartImages",
   "services/dealTrackers-source-tv-log",
-  "services/dealTrackers-source-mt5-log"
+  "services/dealTrackers-source-mt5-log",
+  "services/ngrok"
 ]

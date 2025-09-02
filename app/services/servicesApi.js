@@ -20,10 +20,17 @@
  */
 
 /**
+ * @typedef {Object} NgrokApi
+ * @property {string} url
+ * @property {() => Promise<void>} [stop]
+ */
+
+/**
  * @typedef {Object} ServicesApi
  * @property {BrokerageApi} [brokerage]
  * @property {DealTrackersApi} [dealTrackers]
  * @property {DealTrackersChartImagesApi} [dealTrackersChartImages]
+ * @property {NgrokApi} [ngrok]
  */
 
 module.exports = {};
