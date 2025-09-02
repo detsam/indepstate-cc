@@ -6,6 +6,9 @@ const { compose1D, compose5M } = require('../../dealTrackers-chartImages/comps')
 
 const loadConfig = require('../../../config/load');
 const DEFAULT_MAX_AGE_DAYS = 2;
+const DEFAULT_SYMBOL_REPLACE = s => String(s || '').replace(/(.*)PERP$/, 'BINANCE:$1.P');
+const DEFAULT_MAKER_FEE_PCT = 0.02;
+const DEFAULT_TAKER_FEE_PCT = 0.05;
 let cfg = {};
 try {
   cfg = loadConfig('tv-logs.json');
@@ -66,10 +69,20 @@ function parseCsvText(text) {
     if (!line.trim() || line.startsWith('Symbol')) continue;
     const parts = splitLine(line);
     if (parts.length < 13) continue;
-    const [
-      symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr,
-      status, commissionStr, _lev, _margin, placingTime, closingTime, orderIdStr
-    ] = parts;
+    let symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr;
+    let status, commissionStr = '', placingTime, closingTime, orderIdStr;
+
+    // New format: Symbol,Side,Type,Qty,QtyFilled,Limit Price,Stop Price,Fill Price,Status,Time,Reduce Only,Post Only,Close On Trigger,Order ID
+    const looksLikeDate = s => !isNaN(Date.parse(s));
+    const newFmt = parts.length >= 14 && isNaN(Number(parts[8])) && looksLikeDate(parts[9]);
+    if (newFmt) {
+      [symbol, side, type, qtyStr, _filledQty, limitPriceStr, stopPriceStr, fillPriceStr,
+        status, placingTime, _reduceOnly, _postOnly, _closeOnTrigger, orderIdStr] = parts;
+      closingTime = placingTime;
+    } else {
+      [symbol, side, type, qtyStr, limitPriceStr, stopPriceStr, fillPriceStr,
+        status, commissionStr, /* _lev */, /* _margin */, placingTime, closingTime, orderIdStr] = parts;
+    }
 
     const limit = parsePrice(limitPriceStr);
     const stop = parsePrice(stopPriceStr);
@@ -96,7 +109,15 @@ function parseCsvText(text) {
       commission: commissionStr === '' ? 0 : Number(commissionStr),
       placingTime,
       closingTime,
-      orderId: Number(orderIdStr)
+      ...(function parseOrderId(idStr) {
+        const nums = String(idStr).match(/\d+/g) || [];
+        if (!nums.length) return { orderId: 0 };
+        const base = Number(nums[0]);
+        if (nums.length === 1) return { orderId: base, groupId: base };
+        const frac = Number(nums[1]);
+        const denom = Math.pow(10, String(frac).length + 1);
+        return { orderId: base + frac / denom, groupId: base };
+      })(orderIdStr)
     };
     rows.push(row);
   }
@@ -107,13 +128,18 @@ function groupOrders(rows) {
   // Keep rows in chronological order so we can pair market exits
   // with the latest open deal for the symbol.
   rows = Array.isArray(rows) ? [...rows] : [];
-  rows.sort((a, b) => a.orderId - b.orderId);
+  rows.sort((a, b) => {
+    const ta = Date.parse(a.placingTime);
+    const tb = Date.parse(b.placingTime);
+    if (!isNaN(ta) && !isNaN(tb) && ta !== tb) return ta - tb;
+    return a.orderId - b.orderId;
+  });
 
   const map = new Map();
   const lastKey = new Map(); // symbol -> latest group key awaiting close
 
   for (const r of rows) {
-    let key = `${r.symbol}|${r.placingTime}`;
+    let key = `${r.symbol}|${r.groupId != null ? r.groupId : r.placingTime}`;
     const type = String(r.type).toLowerCase();
     const status = String(r.status).toLowerCase();
 
@@ -126,7 +152,7 @@ function groupOrders(rows) {
         key = prev;
       } else {
         const prevArr = map.get(prev);
-        const entry = prevArr && prevArr[0];
+        const entry = prevArr && prevArr.find(o => String(o.status).toLowerCase() === 'filled');
         if (entry && String(entry.side).toLowerCase() !== String(r.side).toLowerCase()) {
           key = prev;
         }
@@ -151,118 +177,34 @@ function groupOrders(rows) {
   return map;
 }
 
-// ---- tick detection helpers ----
-// BigInt GCD
-function bgcd(a, b) {
-  a = a < 0n ? -a : a;
-  b = b < 0n ? -b : b;
-  while (b) {
-    const t = a % b;
-    a = b;
-    b = t;
-  }
-  return a;
-}
 
-function fracLen(s) {
-  s = String(s);
-  const i = s.indexOf('.');
-  return i === -1 ? 0 : s.length - i - 1;
-}
-
-// convert price to integer units at scale D
-function toUnits(s, D) {
-  s = String(s).trim();
-  let neg = false;
-  if (s[0] === '-') {
-    neg = true;
-    s = s.slice(1);
-  }
-  const [ip = '0', fp = ''] = s.split('.');
-  const fpad = (fp + '0'.repeat(D)).slice(0, D);
-  const digits = (ip.replace(/^0+(?=\d)/, '') || '0') + fpad;
-  const bi = BigInt(digits);
-  return neg ? -bi : bi;
-}
-
-function detectTick(prices, { minDecimals = 8 } = {}) {
-  if (!prices || prices.length < 2) return { D: minDecimals, tickUnits: 1n };
-  let D = Math.max(...prices.map(p => fracLen(String(p))));
-  if (D < minDecimals) D = minDecimals;
-  const U = prices.map(p => toUnits(p, D)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const diffs = [];
-  for (let i = 1; i < U.length; i++) {
-    let d = U[i] - U[i - 1];
-    if (d !== 0n) {
-      if (d < 0n) d = -d;
-      diffs.push(d);
-    }
-  }
-  if (!diffs.length) return { D, tickUnits: 1n };
-  let tickUnits = diffs[0];
-  for (let i = 1; i < diffs.length; i++) tickUnits = bgcd(tickUnits, diffs[i]);
-  if (tickUnits <= 0n) tickUnits = 1n;
-  return { D, tickUnits };
-}
-
-function pointsBetween(a, b, meta) {
-  if (!meta) throw new Error('tick meta required');
-  const { D, tickUnits } = meta;
-  const A = toUnits(a, D);
-  const B = toUnits(b, D);
-  const diffUnits = A > B ? A - B : B - A;
-  const q = diffUnits / tickUnits;
-  const r = diffUnits % tickUnits;
-  return r === 0n ? Number(q) : Number(diffUnits) / Number(tickUnits);
-}
-
-function detectTicks(rows) {
-  const map = new Map();
-  for (const r of rows) {
-    const arr = map.get(r.symbol) || [];
-    if (r.limitPriceStr) arr.push(r.limitPriceStr);
-    if (r.stopPriceStr) arr.push(r.stopPriceStr);
-    if (r.fillPriceStr) arr.push(r.fillPriceStr);
-    map.set(r.symbol, arr);
-  }
-  const out = new Map();
-  for (const [sym, prices] of map) {
-    out.set(sym, detectTick(prices));
-  }
-  return out;
-}
-
-function buildDeal(group, sessions = cfg.sessions, tickMeta) {
+function buildDeal(group, sessions = cfg.sessions, fees) {
   if (!Array.isArray(group) || group.length === 0) return null;
-  group.sort((a, b) => a.orderId - b.orderId);
-  const entry = group[0];
+  group.sort((a, b) => {
+    const ta = Date.parse(a.placingTime);
+    const tb = Date.parse(b.placingTime);
+    if (!isNaN(ta) && !isNaN(tb) && ta !== tb) return ta - tb;
+    return a.orderId - b.orderId;
+  });
+  const filled = group.filter(o => String(o.status).toLowerCase() === 'filled');
+  const entry = filled.find(o => !/stop loss|take profit/i.test(o.type));
+  if (!entry) return null;
+  const closing = filled.find(o => o !== entry);
+  if (!closing) return null;
   const rawSymbol = entry.symbol || '';
   const rawPlacingTime = entry.placingTime || '';
   const symParts = rawSymbol.split(':');
   const ticker = symParts.pop();
   const exchange = symParts.length ? symParts[0] : undefined;
   const [placingDate, placingTime] = String(rawPlacingTime).split(/\s+/);
-  const filled = group.filter(o => String(o.status).toLowerCase() === 'filled');
-  if (filled.length < 2) return null;
-  const closing = filled.find(o => o !== entry) || filled[1];
-
-  if (!tickMeta) {
-    const priceStrs = [];
-    for (const o of group) {
-      if (o.limitPriceStr) priceStrs.push(o.limitPriceStr);
-      if (o.stopPriceStr) priceStrs.push(o.stopPriceStr);
-      if (o.fillPriceStr) priceStrs.push(o.fillPriceStr);
-    }
-    tickMeta = detectTick(priceStrs);
-  }
 
   function pricePoints(aStr, bStr) {
     if (!aStr || !bStr) return undefined;
-    try {
-      return pointsBetween(aStr, bStr, tickMeta);
-    } catch {
-      return undefined;
-    }
+    const D = (String(bStr).split('.')[1] || '').length;
+    const tick = Math.pow(10, -D);
+    const diff = Math.abs(Number(aStr) - Number(bStr));
+    if (!Number.isFinite(diff) || tick === 0) return undefined;
+    return diff / tick;
   }
 
   const side = String(entry.side).toLowerCase() === 'sell' ? 'short' : 'long';
@@ -280,34 +222,58 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
   }
   const qty = Number(entry.qty) || 0;
 
-  let takeOrder, stopOrder;
-  for (const o of group.slice(1)) {
-    if (side === 'long') {
-      if (o.limitPrice != null && o.limitPrice > price) takeOrder = o;
-      if (o.stopPrice != null && o.stopPrice < price) stopOrder = o;
-    } else {
-      if (o.limitPrice != null && o.limitPrice < price) takeOrder = o;
-      if (o.stopPrice != null && o.stopPrice > price) stopOrder = o;
+  let takeOrder = group.find(o => /take profit/i.test(o.type));
+  let stopOrder = group.find(o => /stop loss/i.test(o.type));
+  if (!takeOrder || !stopOrder) {
+    for (const o of group) {
+      if (o === entry) continue;
+      if (!takeOrder) {
+        if (side === 'long') {
+          if (o.limitPrice != null && o.limitPrice > price) takeOrder = o;
+        } else {
+          if (o.limitPrice != null && o.limitPrice < price) takeOrder = o;
+        }
+      }
+      if (!stopOrder) {
+        if (side === 'long') {
+          if (o.stopPrice != null && o.stopPrice < price) stopOrder = o;
+        } else {
+          if (o.stopPrice != null && o.stopPrice > price) stopOrder = o;
+        }
+      }
     }
   }
 
   let takeSetup, stopSetup;
-  if (takeOrder && takeOrder.limitPriceStr) {
-    takeSetup = pricePoints(takeOrder.limitPriceStr, priceStr);
-    if (takeSetup != null) takeSetup = Math.floor(takeSetup);
+  if (takeOrder) {
+    const tpStr = takeOrder.limitPriceStr || takeOrder.stopPriceStr || takeOrder.fillPriceStr;
+    if (tpStr) {
+      takeSetup = pricePoints(tpStr, priceStr);
+      if (takeSetup != null) takeSetup = Math.floor(takeSetup);
+    }
   }
-  if (stopOrder && stopOrder.stopPriceStr) {
-    stopSetup = pricePoints(stopOrder.stopPriceStr, priceStr);
-    if (stopSetup != null) stopSetup = Math.floor(stopSetup);
+  if (stopOrder) {
+    const spStr = stopOrder.stopPriceStr || stopOrder.limitPriceStr || stopOrder.fillPriceStr;
+    if (spStr) {
+      stopSetup = pricePoints(spStr, priceStr);
+      if (stopSetup != null) stopSetup = Math.floor(stopSetup);
+    }
   }
 
-  const rawCommission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
+  let rawCommission = filled.reduce((sum, o) => sum + (Number(o.commission) || 0), 0);
+  if (!rawCommission && fees) {
+    const makerPct = typeof fees.maker === 'number' ? fees.maker : DEFAULT_MAKER_FEE_PCT;
+    const takerPct = typeof fees.taker === 'number' ? fees.taker : DEFAULT_TAKER_FEE_PCT;
+    const rate = t => (/market|stop/i.test(String(t)) ? takerPct : makerPct) / 100;
+    rawCommission = qty * price * rate(entry.type) + qty * closing.fillPrice * rate(closing.type);
+  }
   const result = side === 'long'
     ? (closing.fillPrice > entry.fillPrice ? 'take' : 'stop')
     : (closing.fillPrice < entry.fillPrice ? 'take' : 'stop');
 
   let takePoints; let stopPoints;
-  const diffPoints = pricePoints(closing.fillPriceStr, priceStr);
+  let diffPoints = pricePoints(closing.fillPriceStr, priceStr);
+  if (diffPoints != null) diffPoints = Math.floor(diffPoints);
   if (result === 'take') {
     takePoints = diffPoints;
   } else {
@@ -332,7 +298,7 @@ function buildDeal(group, sessions = cfg.sessions, tickMeta) {
   return { _key: `${rawSymbol}|${rawPlacingTime}`, placingDate, placingTime, ...base };
 }
 
-function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS) {
+function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, symbolReplace = DEFAULT_SYMBOL_REPLACE, fees) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
@@ -340,13 +306,13 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
     return [];
   }
   const rows = parseCsvText(text);
-  const metas = detectTicks(rows);
+  if (typeof symbolReplace === 'function') {
+    for (const r of rows) r.symbol = symbolReplace(r.symbol);
+  }
   const groups = groupOrders(rows);
   const deals = [];
   for (const arr of groups.values()) {
-    const sym = arr[0] && arr[0].symbol;
-    const meta = metas.get(sym);
-    const d = buildDeal(arr, sessions, meta);
+    const d = buildDeal(arr, sessions, fees);
     if (d) deals.push(d);
   }
   if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {
@@ -361,7 +327,24 @@ function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE
 
 function start(config = cfg) {
   const resolved = resolveSecrets(config);
-  const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
+  const accounts = Array.isArray(resolved.accounts)
+    ? resolved.accounts.map(acc => {
+      let fn = acc.symbolReplace;
+      if (typeof fn === 'string') {
+        try { fn = new Function('s', fn); } catch { fn = null; }
+      }
+      if (typeof fn !== 'function') fn = DEFAULT_SYMBOL_REPLACE;
+      let fees = acc.fees;
+      if (fees === null || fees === false) {
+        fees = undefined;
+      } else {
+        const maker = fees && typeof fees.maker === 'number' ? fees.maker : DEFAULT_MAKER_FEE_PCT;
+        const taker = fees && typeof fees.taker === 'number' ? fees.taker : DEFAULT_TAKER_FEE_PCT;
+        fees = { maker, taker };
+      }
+      return { ...acc, symbolReplace: fn, fees };
+    })
+    : [];
   const pollMs = resolved.pollMs || 5000;
   const sessions = resolved.sessions;
   const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
@@ -371,7 +354,7 @@ function start(config = cfg) {
 
   function processAndNotify(file, acc, info) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
-    const deals = processFile(file, sessions, maxAgeDays);
+    const deals = processFile(file, sessions, maxAgeDays, acc.symbolReplace, acc.fees);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
