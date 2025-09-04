@@ -8,7 +8,7 @@ const {
 async function run() {
   // long order triggers after 3 bars
   let exec;
-  const svc1 = createPendingOrderService();
+  const svc1 = createPendingOrderService({ strategyConfig: {} });
   svc1.addOrder({ price: 100, side: 'long', onExecute: r => { exec = r; } });
   const bars1 = [
     { open: 99, high: 101, low: 98, close: 100.5 },
@@ -31,14 +31,14 @@ async function run() {
 
   // long order triggers after 1 bar when configured
   exec = undefined;
-  const svc1a = createPendingOrderService();
+  const svc1a = createPendingOrderService({ strategyConfig: {} });
   svc1a.addOrder({ price: 100, side: 'long', bars: 1, onExecute: r => { exec = r; } });
   svc1a.onBar({ open: 99, high: 101, low: 98, close: 100.5 });
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101, stopLoss: 98 });
 
   // long order triggers after 4 bars when configured
   exec = undefined;
-  const svc1b = createPendingOrderService();
+  const svc1b = createPendingOrderService({ strategyConfig: {} });
   svc1b.addOrder({ price: 100, side: 'long', bars: 4, onExecute: r => { exec = r; } });
   const bars1b = [
     { open: 99, high: 101, low: 98, close: 100.5 },
@@ -51,7 +51,7 @@ async function run() {
 
   // long order: first attempt invalid, then later trigger
   exec = undefined;
-  const svc2 = createPendingOrderService();
+  const svc2 = createPendingOrderService({ strategyConfig: {} });
   svc2.addOrder({ price: 100, side: 'long', onExecute: r => { exec = r; } });
   const bars2 = [
     { open: 99, high: 101, low: 98, close: 100.5 },
@@ -66,7 +66,7 @@ async function run() {
 
   // short order triggers
   exec = undefined;
-  const svc3 = createPendingOrderService();
+  const svc3 = createPendingOrderService({ strategyConfig: {} });
   svc3.addOrder({ price: 200, side: 'short', onExecute: r => { exec = r; } });
   const bars3 = [
     { open: 200.5, high: 201, low: 199, close: 199.5 },
@@ -78,7 +78,7 @@ async function run() {
 
   // long order fails if price extends too far above level
   exec = undefined;
-  const svc5 = createPendingOrderService();
+  const svc5 = createPendingOrderService({ strategyConfig: {} });
   svc5.addOrder({ price: 100, side: 'long', rangeRule: B1_RANGE_CONSOLIDATION,
     onExecute: r => { exec = r; } });
   const bars5 = [
@@ -91,7 +91,7 @@ async function run() {
 
   // short order fails if price extends too far below level
   exec = undefined;
-  const svc6 = createPendingOrderService();
+  const svc6 = createPendingOrderService({ strategyConfig: {} });
   svc6.addOrder({ price: 200, side: 'short', rangeRule: B1_RANGE_CONSOLIDATION,
     onExecute: r => { exec = r; } });
   const bars6 = [
@@ -104,7 +104,7 @@ async function run() {
 
   // custom price and stop functions
   exec = undefined;
-  const svcCustom = createPendingOrderService();
+  const svcCustom = createPendingOrderService({ strategyConfig: {} });
   svcCustom.addOrder({ price: 100, side: 'long',
     limitPriceFn: () => 105,
     stopLossFn: () => 95,
@@ -129,7 +129,7 @@ async function run() {
 
   // cancelled order does not execute
   exec = undefined;
-  const svc4 = createPendingOrderService();
+  const svc4 = createPendingOrderService({ strategyConfig: {} });
   const id4 = svc4.addOrder({ price: 100, side: 'long', onExecute: r => { exec = r; } });
   svc4.cancelOrder(id4);
   bars1.forEach(b => svc4.onBar(b));
@@ -138,7 +138,7 @@ async function run() {
   // false break ignores bars that don't cross level
   exec = undefined;
   let cancelled = false;
-  const svc7 = createPendingOrderService();
+  const svc7 = createPendingOrderService({ strategyConfig: {} });
   svc7.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
     onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
   // first bar never pierces the level
@@ -153,7 +153,7 @@ async function run() {
   // false break immediate trigger short
   exec = undefined;
   cancelled = false;
-  const svc8 = createPendingOrderService();
+  const svc8 = createPendingOrderService({ strategyConfig: {} });
   svc8.addOrder({ price: 200, side: 'short', strategy: 'falseBreak', tickSize: 0.1,
     onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
   svc8.onBar({ open: 199, high: 200.2, low: 198.5, close: 199.4 });
@@ -166,7 +166,7 @@ async function run() {
   // false break two-bar trigger long
   exec = undefined;
   cancelled = false;
-  const svc9 = createPendingOrderService();
+  const svc9 = createPendingOrderService({ strategyConfig: {} });
   svc9.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
     onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
   svc9.onBar({ open: 101, high: 101.5, low: 99.5, close: 99.7 });
@@ -180,7 +180,7 @@ async function run() {
   // false break two-bar fails and cancels
   exec = undefined;
   cancelled = false;
-  const svc10 = createPendingOrderService();
+  const svc10 = createPendingOrderService({ strategyConfig: {} });
   svc10.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
     onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
   svc10.onBar({ open: 101, high: 101.5, low: 99.5, close: 99.7 });
@@ -191,7 +191,7 @@ async function run() {
   // false break default tick size
   exec = undefined;
   cancelled = false;
-  const svc11 = createPendingOrderService();
+  const svc11 = createPendingOrderService({ strategyConfig: {} });
   svc11.addOrder({ price: 100, side: 'long', strategy: 'falseBreak',
     onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
   svc11.onBar({ open: 101, high: 101.5, low: 99.8, close: 101.2 });
