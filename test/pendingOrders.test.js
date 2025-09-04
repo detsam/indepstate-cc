@@ -169,12 +169,12 @@ async function run() {
   const svc9 = createPendingOrderService();
   svc9.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
     onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
-  svc9.onBar({ open: 99.5, high: 100.5, low: 99.2, close: 100.3 });
-  svc9.onBar({ open: 100.2, high: 100.6, low: 100, close: 100.4 });
+  svc9.onBar({ open: 101, high: 101.5, low: 99.5, close: 99.7 });
+  svc9.onBar({ open: 99.6, high: 100.6, low: 99.4, close: 100.2 });
   assert.strictEqual(exec.id, 1);
   assert.strictEqual(exec.side, 'long');
-  assert.strictEqual(exec.limitPrice, 100.4);
-  assert.ok(Math.abs(exec.stopLoss - 99.9) < 1e-9);
+  assert.strictEqual(exec.limitPrice, 100.2);
+  assert.ok(Math.abs(exec.stopLoss - 99.3) < 1e-9);
   assert.strictEqual(cancelled, false);
 
   // false break two-bar fails and cancels
@@ -183,8 +183,8 @@ async function run() {
   const svc10 = createPendingOrderService();
   svc10.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
     onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
-  svc10.onBar({ open: 99.5, high: 100.5, low: 99.2, close: 100.3 });
-  svc10.onBar({ open: 100.2, high: 100.4, low: 99.7, close: 99.8 });
+  svc10.onBar({ open: 101, high: 101.5, low: 99.5, close: 99.7 });
+  svc10.onBar({ open: 99.6, high: 100.4, low: 99.3, close: 99.8 });
   assert.strictEqual(exec, undefined);
   assert.strictEqual(cancelled, true);
 

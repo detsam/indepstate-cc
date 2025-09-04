@@ -1,68 +1,123 @@
-class FalseBreakStrategy {
+class FalseBreak1BStrategy {
   constructor({ price, side, tickSize = 0.01 }) {
     this.price = Number(price);
     this.side = side;
     this.tick = Number(tickSize) || 0.01;
-    this.stage = 0; // 0 initial, 1 waiting for bar2
     this.done = false;
-    this.triggered = false; // wait for first bar that crosses level
   }
 
   onBar(bar) {
     if (this.done) return null;
     const { open, close, high, low } = bar;
     const p = this.price;
+    const t = this.tick;
 
-    // skip bars that haven't pierced the level yet
-    if (!this.triggered) {
-      if (this.side === 'long') {
-        if (low > p) return null;
-      } else if (high < p) {
-        return null;
+    if (this.side === 'long') {
+      if (open <= p) return null;
+      if (low > p - t) return null;
+      this.done = true;
+      if (close > p) {
+        return { limitPrice: close, stopLoss: low - t };
       }
-      this.triggered = true;
+      if (close < p) {
+        return { continue: true };
+      }
+      return { cancel: true };
+    } else {
+      if (open >= p) return null;
+      if (high < p + t) return null;
+      this.done = true;
+      if (close < p) {
+        return { limitPrice: close, stopLoss: high + t };
+      }
+      if (close > p) {
+        return { continue: true };
+      }
+      return { cancel: true };
     }
+  }
+}
+
+class FalseBreak2BStrategy {
+  constructor({ price, side, tickSize = 0.01 }) {
+    this.price = Number(price);
+    this.side = side;
+    this.tick = Number(tickSize) || 0.01;
+    this.stage = 0; // waiting for bar1
+    this.done = false;
+  }
+
+  onBar(bar) {
+    if (this.done) return null;
+    const { open, close, high, low } = bar;
+    const p = this.price;
+    const t = this.tick;
 
     if (this.stage === 0) {
       if (this.side === 'long') {
-        if (open > p && close > p && low < p) {
-          this.done = true;
-          return { limitPrice: close, stopLoss: low - this.tick };
-        }
-        if (open < p && close > p) {
+        if (open > p && close < p && low < p - t) {
           this.stage = 1;
           return null;
         }
-        this.done = true;
-        return { cancel: true };
-      } else {
-        if (open < p && close < p && high > p) {
-          this.done = true;
-          return { limitPrice: close, stopLoss: high + this.tick };
-        }
-        if (open > p && close < p) {
-          this.stage = 1;
-          return null;
-        }
-        this.done = true;
-        return { cancel: true };
+      } else if (open < p && close > p && high > p + t) {
+        this.stage = 1;
+        return null;
       }
-    } else if (this.stage === 1) {
       this.done = true;
-      if (this.side === 'long') {
-        if (close > p) {
-          return { limitPrice: close, stopLoss: low - this.tick };
-        }
-        return { cancel: true };
-      } else {
-        if (close < p) {
-          return { limitPrice: close, stopLoss: high + this.tick };
-        }
-        return { cancel: true };
+      return { cancel: true };
+    }
+
+    this.done = true;
+    if (this.side === 'long') {
+      if (open < p && close > p) {
+        return { limitPrice: close, stopLoss: low - t };
       }
+    } else if (open > p && close < p) {
+      return { limitPrice: close, stopLoss: high + t };
+    }
+    return { cancel: true };
+  }
+}
+
+class FalseBreakStrategy {
+  constructor(opts) {
+    this.first = new FalseBreak1BStrategy(opts);
+    this.second = new FalseBreak2BStrategy(opts);
+    this.useSecond = false;
+    this.done = false;
+  }
+
+  onBar(bar) {
+    if (this.done) return null;
+
+    if (!this.useSecond) {
+      const r1 = this.first.onBar(bar);
+      if (r1) {
+        if (r1.limitPrice || r1.cancel) {
+          this.done = true;
+          return r1;
+        }
+        if (r1.continue) {
+          this.useSecond = true;
+          const r2 = this.second.onBar(bar);
+          if (r2) {
+            this.done = true;
+            return r2;
+          }
+          return null;
+        }
+      }
+      return null;
+    }
+
+    const r2 = this.second.onBar(bar);
+    if (r2) {
+      this.done = true;
+      return r2;
     }
     return null;
   }
 }
 
-module.exports = { FalseBreakStrategy };
+module.exports = { FalseBreak1BStrategy, FalseBreak2BStrategy, FalseBreakStrategy };
+
