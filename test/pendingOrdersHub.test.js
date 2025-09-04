@@ -18,7 +18,8 @@ async function run() {
     },
     subscribe: () => {},
     wireAdapter: () => {},
-    getAdapter: () => ({})
+    getAdapter: () => ({}),
+    strategyConfig: {}
   });
 
   hub.queuePlacePending({
@@ -55,6 +56,7 @@ async function run() {
     subscribe: () => {},
     wireAdapter: () => {},
     getAdapter: () => ({}),
+    strategyConfig: {},
     strategies: {
       stub: class {
         constructor() { this.done = false; }
