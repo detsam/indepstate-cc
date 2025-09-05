@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "autoDownload": true,
+  "allowPrerelease": false,
+  "provider": "github",
+  "owner": "owner",
+  "repo": "repo"
+}
