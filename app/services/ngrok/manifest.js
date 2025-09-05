@@ -10,7 +10,7 @@ function initService(servicesApi = {}) {
   }
   if (cfg.enabled === false) return;
 
-  const port = cfg.port || parseInt(process.env.TV_WEBHOOK_PORT || '0', 10);
+  const port = cfg.port || parseInt(process.env.TV_WEBHOOK_PORT || '3210', 10);
   if (!port) {
     console.error('[ngrok] missing port to forward');
     return;

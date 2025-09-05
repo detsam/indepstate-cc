@@ -38,10 +38,10 @@ class WebhookOrderCardsSource extends OrderCardsSource {
 
     srv.post('/webhook', (req, res) => {
       const t = this.nowTs();
-      try {
-        const raw = req.body || '';
-        const parsed = parseWebhook(String(raw), () => t);
-        if (!parsed) throw new Error('Invalid payload');
+        try {
+          const raw = req.body || '';
+          const parsed = parseWebhook(String(raw), () => t);
+          if (!parsed) throw new Error('Invalid payload');
         const row = parsed.row;
         row.time = row.time || t;
         this.appendJsonl(this.logFile, { t, kind: 'webhook', parser: parsed.name, row });
