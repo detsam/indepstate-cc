@@ -256,6 +256,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+app.on('quit', () => {
+});
+
 // ----------------- IPC: queue-place-order -----------------
 
 // Поддерживаем 2 формата payload:
