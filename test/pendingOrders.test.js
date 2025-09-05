@@ -201,6 +201,44 @@ async function run() {
   assert.ok(Math.abs(exec.stopLoss - 99.79) < 1e-9);
   assert.strictEqual(cancelled, false);
 
+  // false break two-bar trigger short
+  exec = undefined;
+  cancelled = false;
+  const svc12 = createPendingOrderService({ strategyConfig: {} });
+  svc12.addOrder({ price: 200, side: 'short', strategy: 'falseBreak', tickSize: 0.1,
+    onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
+  svc12.onBar({ open: 199.5, high: 200.4, low: 199.4, close: 200.2 });
+  svc12.onBar({ open: 200.1, high: 200.2, low: 199, close: 199.4 });
+  assert.strictEqual(exec.id, 1);
+  assert.strictEqual(exec.side, 'short');
+  assert.strictEqual(exec.limitPrice, 199.4);
+  assert.ok(Math.abs(exec.stopLoss - 200.3) < 1e-9);
+  assert.strictEqual(cancelled, false);
+
+  // false break two-bar short fails and cancels
+  exec = undefined;
+  cancelled = false;
+  const svc13 = createPendingOrderService({ strategyConfig: {} });
+  svc13.addOrder({ price: 200, side: 'short', strategy: 'falseBreak', tickSize: 0.1,
+    onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
+  svc13.onBar({ open: 199.5, high: 200.4, low: 199.4, close: 200.2 });
+  svc13.onBar({ open: 200.1, high: 200.5, low: 199.8, close: 200.2 });
+  assert.strictEqual(exec, undefined);
+  assert.strictEqual(cancelled, true);
+
+  // false break one-bar trigger long
+  exec = undefined;
+  cancelled = false;
+  const svc14 = createPendingOrderService({ strategyConfig: {} });
+  svc14.addOrder({ price: 100, side: 'long', strategy: 'falseBreak', tickSize: 0.1,
+    onExecute: r => { exec = r; }, onCancel: () => { cancelled = true; } });
+  svc14.onBar({ open: 101, high: 101.5, low: 99.8, close: 101.2 });
+  assert.strictEqual(exec.id, 1);
+  assert.strictEqual(exec.side, 'long');
+  assert.strictEqual(exec.limitPrice, 101.2);
+  assert.ok(Math.abs(exec.stopLoss - 99.7) < 1e-9);
+  assert.strictEqual(cancelled, false);
+
   console.log('pendingOrders tests passed');
 }
 
