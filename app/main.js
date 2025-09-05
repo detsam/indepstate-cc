@@ -55,8 +55,10 @@ function envInt(name, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 // ----------------- CONSTS -----------------
-const PORT = envInt("TV_WEBHOOK_PORT");
-const IS_ELECTRON_MENU_ENABLED = envBool("IS_ELECTRON_MENU_ENABLED");
+const PORT = envInt("TV_WEBHOOK_PORT", 3210);
+const IS_ELECTRON_MENU_ENABLED = envBool("IS_ELECTRON_MENU_ENABLED", false);
+const TV_WEBHOOK_TOKEN = process.env.TV_WEBHOOK_TOKEN || 'supersecret123';
+process.env.TV_WEBHOOK_TOKEN = TV_WEBHOOK_TOKEN;
 const LOG_DIR = path.join(__dirname, 'logs');
 const EXEC_LOG = path.join(LOG_DIR, 'executions.jsonl');
 

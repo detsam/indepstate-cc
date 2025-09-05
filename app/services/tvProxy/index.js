@@ -30,7 +30,7 @@ function start(opts = {}) {
       try {
         const rec = JSON.parse(line);
         if (rec.event === 'message' && typeof rec.text === 'string' && rec.text.includes('@ATR')) {
-          fetch(webhookUrl, {
+            fetch(webhookUrl, {
             method: 'POST',
             body: rec.text,
             headers: { 'content-type': 'text/plain' }
