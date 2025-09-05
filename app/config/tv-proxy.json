@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
   "proxyPort": 8888,
   "webhookPort": 3210
 }
