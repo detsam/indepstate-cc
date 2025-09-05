@@ -1655,7 +1655,10 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
 
   const ok = rec.status === 'ok' || rec.status === 'simulated';
   if (ok) {
-    setCardState(key, 'placed');
+    const st = cardStates.get(key);
+    if (st !== 'executing' && st !== 'profit' && st !== 'loss') {
+      setCardState(key, 'placed');
+    }
     if (rec.providerOrderId) ticketToKey.set(String(rec.providerOrderId), key);
     toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
     render();
@@ -1669,7 +1672,14 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
 });
 
 ipcRenderer.on('position:opened', (_evt, rec) => {
-  const key = ticketToKey.get(String(rec.ticket));
+  let key = ticketToKey.get(String(rec.ticket));
+  if (!key) {
+    const reqId = rec.origOrder?.meta?.requestId;
+    if (reqId) {
+      key = pendingByReqId.get(reqId);
+      if (key) ticketToKey.set(String(rec.ticket), key);
+    }
+  }
   if (!key) return;
   setCardState(key, 'executing');
   render();
