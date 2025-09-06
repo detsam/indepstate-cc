@@ -5,6 +5,16 @@ const electron = require('electron');
 const app = electron?.app;
 const APP_ROOT = app?.isPackaged ? path.dirname(app.getAppPath()) : process.cwd();
 
+const LOG_FILE = path.join(APP_ROOT, 'logs', 'app.txt');
+function log(line) {
+  try {
+    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+    fs.appendFileSync(LOG_FILE, line + '\n');
+  } catch (e) {
+    console.error('[log] cannot write to log file:', e.message);
+  }
+}
+
 const CONFIG_ROOTS = [];
 if (app?.getPath) {
   CONFIG_ROOTS.push(path.join(APP_ROOT, 'config'));
@@ -33,22 +43,28 @@ function deepMerge(target, source) {
 
 function load(name) {
   const defaultsPath = path.join(__dirname, name);
+  log(`[config] load defaults ${defaultsPath}`);
   let defaults = {};
   try {
     defaults = JSON.parse(fs.readFileSync(defaultsPath, 'utf8'));
   } catch (e) {
     console.error(`[config] cannot read default ${name}:`, e.message);
+    log(`[config] cannot read default ${defaultsPath}: ${e.message}`);
   }
 
   for (const root of CONFIG_ROOTS) {
     const overridePath = path.join(root, name);
     if (fs.existsSync(overridePath)) {
+      log(`[config] apply override ${overridePath}`);
       try {
         const override = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
         deepMerge(defaults, override);
       } catch (e) {
         console.error(`[config] cannot read override ${name}:`, e.message);
+        log(`[config] cannot read override ${overridePath}: ${e.message}`);
       }
+    } else {
+      log(`[config] no override found ${overridePath}`);
     }
   }
 
