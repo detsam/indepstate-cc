@@ -1,20 +1,25 @@
 # Configuration
 
 This directory contains the application's default configuration files. To
-customize any of them, copy the desired file to a `config/` directory in the
-project root and edit it there. Files in `./config` override the defaults in
-this folder; values are deep‑merged onto the bundled configuration.
+customize any of them, copy the desired file to a `config` directory inside the
+application's user data path (see Electron's `app.getPath('userData')`) and edit
+it there. Files in this user data `config` folder override the defaults in this
+directory; values are deep‑merged onto the bundled configuration. When running
+from source, a `./config` folder in the project root is also checked for
+overrides, but settings under the user data path take precedence.
 
 Example:
 
-```bash
-mkdir -p config
-cp app/config/order-cards.json config/order-cards.json
+Example (PowerShell):
+
+```powershell
+mkdir "$env:APPDATA/ISCC/config"
+copy app/config/order-cards.json "$env:APPDATA/ISCC/config/order-cards.json"
 ```
 
 Changes in `config/order-cards.json` (and other files) take effect on the next
-application start. The `config/` directory is ignored by git so personal
-settings aren't tracked.
+application start. The `config` directory under user data is ignored by git so
+personal settings aren't tracked.
 
 ## Loading configuration in code
 
@@ -26,8 +31,8 @@ const loadConfig = require('./config/load');
 const orderCards = loadConfig('order-cards.json');
 ```
 
-`loadConfig()` looks for an override in `./config` and deep‑merges its
-contents onto the defaults bundled in this directory.
+`loadConfig()` looks for an override in the user data `config` directory and
+deep‑merges its contents onto the defaults bundled in this directory.
 
 ## Order Card Source Configuration
 

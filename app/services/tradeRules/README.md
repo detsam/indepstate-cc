@@ -5,7 +5,7 @@ Applies validation rules to order cards before they are sent to execution adapte
 ## Configuration
 
 Rules live in `app/config/trade-rules.json`.
-Copy the file to `config/trade-rules.json` and adjust to override defaults.
+Copy the file to the `config` directory under the application's user data path and adjust to override defaults.
 Each rule block has an `enabled` flag and rule‑specific options.
 
 Built‑in rules include:

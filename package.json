@@ -1,13 +1,15 @@
 {
-  "name": "tv-webhook-receiver",
+  "name": "ISCC",
   "version": "0.2.0",
   "private": true,
-  "description": "Electron app with embedded Express server for TradingView webhooks",
+  "description": "Electron app to make your trades",
   "main": "app/main.js",
   "scripts": {
     "start": "electron .",
     "postinstall": "echo Done",
-    "test": "node test/dealTrackers-source-tv-log.test.js && node test/dealTrackers-source-mt5-log.test.js && node test/dealTrackers.test.js && node test/addCommand.test.js && node test/pendingOrders.test.js && node test/pendingOrdersHub.test.js && node test/retryLabel.test.js && node test/buttonStyles.test.js"
+    "test": "node test/dealTrackers-source-tv-log.test.js && node test/dealTrackers-source-mt5-log.test.js && node test/dealTrackers.test.js && node test/addCommand.test.js && node test/pendingOrders.test.js && node test/pendingOrdersHub.test.js && node test/retryLabel.test.js && node test/buttonStyles.test.js",
+    "build": "electron-builder --win",
+    "release": "electron-builder --win --publish always"
   },
   "dependencies": {
     "@ngrok/ngrok": "^1.5.2",
@@ -18,11 +20,36 @@
     "helmet": "^7.1.0",
     "morgan": "^1.10.0",
     "node-fetch": "^2.7.0",
-    "split2": "^4.2.0"
+    "split2": "^4.2.0",
+    "electron-updater": "^6.1.1"
   },
   "devDependencies": {
     "electron": "^31.7.7",
     "electron-packager": "^17.1.2",
+    "electron-builder": "^24.13.3",
     "jsdom": "^24.0.0"
+  },
+  "build": {
+    "appId": "tv-webhook-receiver",
+    "directories": {
+      "buildResources": "assets"
+    },
+    "files": [
+      "app/**/*",
+      "assets/**/*",
+      "extensions/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "app.ico",
+      "target": "nsis"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "owner",
+        "repo": "repo"
+      }
+    ]
   }
 }

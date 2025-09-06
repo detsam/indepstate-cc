@@ -26,11 +26,16 @@
  */
 
 /**
+ * @typedef {import('electron-updater').AppUpdater} AutoUpdaterApi
+ */
+
+/**
  * @typedef {Object} ServicesApi
  * @property {BrokerageApi} [brokerage]
  * @property {DealTrackersApi} [dealTrackers]
  * @property {DealTrackersChartImagesApi} [dealTrackersChartImages]
  * @property {NgrokApi} [ngrok]
+ * @property {AutoUpdaterApi} [autoUpdater]
  */
 
 module.exports = {};

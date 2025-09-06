@@ -9,7 +9,8 @@ const { OrderCalculator } = require('../orderCalculator');
 const loadConfig = require('../../config/load');
 
 const execCfg = loadConfig('execution.json');
-const LOG_DIR = path.join(__dirname, '..', '..', 'logs');
+const userData = require('electron')?.app?.getPath('userData') || path.join(__dirname, '..', '..');
+const LOG_DIR = path.join(userData, 'logs');
 const EXEC_LOG = path.join(LOG_DIR, 'executions.jsonl');
 
 function nowTs() { return Date.now(); }
