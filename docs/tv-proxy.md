@@ -7,6 +7,7 @@ The `tv-proxy` service runs a local [mitmdump](https://docs.mitmproxy.org/stable
 Configure via `app/config/tv-proxy.json`:
 
 - `enabled` (boolean, default `false`) – enable or disable the service.
+- `log` (boolean, default `false`) – write startup and proxy events to a log file.
 - `proxyPort` (number, default `8888`) – port on which mitmdump listens.
 - `webhookPort` (number) – port of the local `/webhook` endpoint to forward messages to.
 - `webhookUrl` (string) – optional full URL for the webhook; takes precedence over `webhookPort`.
@@ -18,5 +19,4 @@ Either `webhookPort` or `webhookUrl` must be provided when the service is enable
 `mitmdump` must be installed and available in `PATH`.
 
 ## Logging
-
-Startup and proxy events are appended to `logs/tv-proxy.txt` inside the user data folder (e.g. `%LOCALAPPDATA%/ISCC/logs/tv-proxy.txt` on Windows).
+When `log` is set to `true`, startup and proxy events are appended to `logs/tv-proxy.txt` inside the user data folder (e.g. `%LOCALAPPDATA%/ISCC/logs/tv-proxy.txt` on Windows).

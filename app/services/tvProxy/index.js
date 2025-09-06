@@ -5,17 +5,17 @@ const fetch = require('node-fetch');
 const electron = require('electron');
 const { APP_ROOT, USER_ROOT } = require('../../config/load');
 
-const LOG_FILE = path.join(USER_ROOT || APP_ROOT, 'logs', 'tv-proxy.txt');
-function log(line) {
-  try {
-    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
-    fs.appendFileSync(LOG_FILE, line + '\n');
-  } catch (e) {
-    console.error('[tv-proxy log]', e.message);
-  }
-}
-
 function start(opts = {}) {
+  const logFile = path.join(USER_ROOT || APP_ROOT, 'logs', 'tv-proxy.txt');
+  const log = opts.log ? (line => {
+    try {
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fs.appendFileSync(logFile, line + '\n');
+    } catch (e) {
+      console.error('[tv-proxy log]', e.message);
+    }
+  }) : () => {};
+
   log(`[start] opts ${JSON.stringify(opts)}`);
   const proxyPort = opts.proxyPort || 8888;
   const webhookPort = opts.webhookPort || 0;
