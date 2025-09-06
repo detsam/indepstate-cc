@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
+const electron = require('electron');
 const { APP_ROOT, USER_ROOT } = require('../../config/load');
 
 const LOG_FILE = path.join(USER_ROOT || APP_ROOT, 'logs', 'tv-proxy.txt');
@@ -21,8 +22,10 @@ function start(opts = {}) {
   const webhookUrl = opts.webhookUrl || `http://localhost:${webhookPort}/webhook`;
 
   const roots = [];
-  if (USER_ROOT && USER_ROOT !== APP_ROOT) roots.push(USER_ROOT);
-  roots.push(APP_ROOT);
+  const asarRoot = electron.app?.getAppPath ? electron.app.getAppPath() : APP_ROOT;
+  roots.push(asarRoot);
+  if (USER_ROOT && USER_ROOT !== asarRoot) roots.push(USER_ROOT);
+  if (APP_ROOT !== asarRoot) roots.push(APP_ROOT);
   let script;
   for (const root of roots) {
     const candidate = path.join(root, 'extensions', 'mitmproxy', 'tv-wslog.py');
