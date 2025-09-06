@@ -18,9 +18,9 @@ copy app/config/order-cards.json "$env:LOCALAPPDATA/ISCC/config/order-cards.json
 
 Changes in `config/order-cards.json` (and other files) take effect on the next
 application start. The `config` directory under the local data path is ignored
-by git so personal settings aren't tracked. The loader logs which configuration
-files are used to `logs/app.txt` in the local data path; set the `CONFIG_LOG`
-environment variable to `0` or `false` to disable this logging.
+by git so personal settings aren't tracked. To log which configuration files are
+used to `logs/app.txt` in the local data path, set the `CONFIG_LOG` environment
+variable to `1` or `true` (logging is disabled by default).
 
 ## Loading configuration in code
 
