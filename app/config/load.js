@@ -1,5 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const electron = require('electron');
+
+const app = electron?.app;
+const APP_ROOT = app?.isPackaged ? path.dirname(app.getAppPath()) : process.cwd();
+const CONFIG_ROOT = app?.getPath ? path.join(app.getPath('userData'), 'config') : path.join(APP_ROOT, 'config');
 
 function deepMerge(target, source) {
   if (!source || typeof source !== 'object') return target;
@@ -27,7 +32,7 @@ function load(name) {
     console.error(`[config] cannot read default ${name}:`, e.message);
   }
 
-  const overridePath = path.resolve(process.cwd(), 'config', name);
+  const overridePath = path.join(CONFIG_ROOT, name);
   if (fs.existsSync(overridePath)) {
     try {
       const override = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
@@ -40,4 +45,4 @@ function load(name) {
   return defaults;
 }
 
-module.exports = load;
+module.exports = Object.assign(load, { APP_ROOT, CONFIG_ROOT });

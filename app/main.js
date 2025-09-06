@@ -59,7 +59,9 @@ const PORT = envInt("TV_WEBHOOK_PORT", 3210);
 const IS_ELECTRON_MENU_ENABLED = envBool("IS_ELECTRON_MENU_ENABLED", false);
 const TV_WEBHOOK_TOKEN = process.env.TV_WEBHOOK_TOKEN || 'supersecret123';
 process.env.TV_WEBHOOK_TOKEN = TV_WEBHOOK_TOKEN;
-const LOG_DIR = path.join(__dirname, 'logs');
+const APP_ROOT = app.isPackaged ? path.dirname(app.getAppPath()) : path.resolve(__dirname, '..');
+global.APP_ROOT = APP_ROOT;
+const LOG_DIR = path.join(app.getPath('userData'), 'logs');
 const EXEC_LOG = path.join(LOG_DIR, 'executions.jsonl');
 
 // ----------------- FS utils -----------------
