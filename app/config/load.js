@@ -5,7 +5,19 @@ const electron = require('electron');
 const app = electron?.app;
 const APP_ROOT = app?.isPackaged ? path.dirname(app.getAppPath()) : process.cwd();
 
-const LOG_FILE = path.join(APP_ROOT, 'logs', 'app.txt');
+const APP_NAME = app?.getName ? app.getName() : 'ISCC';
+let USER_ROOT;
+if (app?.getPath) {
+  if (process.platform === 'win32') {
+    USER_ROOT = path.join(app.getPath('home'), 'AppData', 'Local', APP_NAME);
+  } else {
+    USER_ROOT = app.getPath('userData');
+  }
+} else {
+  USER_ROOT = APP_ROOT;
+}
+
+const LOG_FILE = path.join(USER_ROOT, 'logs', 'app.txt');
 function log(line) {
   try {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
@@ -16,11 +28,9 @@ function log(line) {
 }
 
 const CONFIG_ROOTS = [];
-if (app?.getPath) {
-  CONFIG_ROOTS.push(path.join(APP_ROOT, 'config'));
-  CONFIG_ROOTS.push(path.join(app.getPath('userData'), 'config'));
-} else {
-  CONFIG_ROOTS.push(path.join(APP_ROOT, 'config'));
+CONFIG_ROOTS.push(path.join(APP_ROOT, 'config'));
+if (USER_ROOT !== APP_ROOT) {
+  CONFIG_ROOTS.push(path.join(USER_ROOT, 'config'));
 }
 const CONFIG_ROOT = CONFIG_ROOTS[CONFIG_ROOTS.length - 1];
 
