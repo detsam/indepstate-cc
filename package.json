@@ -1,15 +1,15 @@
 {
-  "name": "tv-webhook-receiver",
+  "name": "ISCC",
   "version": "0.2.0",
   "private": true,
-  "description": "Electron app with embedded Express server for TradingView webhooks",
+  "description": "Electron app to make your trades",
   "main": "app/main.js",
   "scripts": {
     "start": "electron .",
     "postinstall": "echo Done",
     "test": "node test/dealTrackers-source-tv-log.test.js && node test/dealTrackers-source-mt5-log.test.js && node test/dealTrackers.test.js && node test/addCommand.test.js && node test/pendingOrders.test.js && node test/pendingOrdersHub.test.js && node test/retryLabel.test.js && node test/buttonStyles.test.js",
-    "build": "electron-builder",
-    "release": "electron-builder --publish always"
+    "build": "electron-builder --win",
+    "release": "electron-builder --win --publish always"
   },
   "dependencies": {
     "@ngrok/ngrok": "^1.5.2",
@@ -40,6 +40,10 @@
       "extensions/**/*",
       "package.json"
     ],
+    "win": {
+      "icon": "app.ico",
+      "target": "nsis"
+    },
     "publish": [
       {
         "provider": "github",

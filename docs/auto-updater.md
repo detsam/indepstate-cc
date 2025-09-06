@@ -29,8 +29,8 @@ The service is registered in `app/config/services.json` and starts once the app 
 ## Building releases
 
 ```bash
-npm run build   # build locally
-npm run release # build and publish to GitHub
+npm run build   # build Windows installer locally
+npm run release # build and publish Windows installer to GitHub
 ```
 
 Before running `npm run release`:
