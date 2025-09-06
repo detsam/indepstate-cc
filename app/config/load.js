@@ -28,8 +28,10 @@ if (process.platform === 'win32') {
   USER_ROOT = APP_ROOT;
 }
 
+const LOG_ENABLED = !/^(0|false)$/i.test(process.env.CONFIG_LOG || '');
 const LOG_FILE = path.join(USER_ROOT, 'logs', 'app.txt');
 function log(line) {
+  if (!LOG_ENABLED) return;
   try {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
     fs.appendFileSync(LOG_FILE, line + '\n');
