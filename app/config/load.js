@@ -102,4 +102,4 @@ function load(name) {
   return defaults;
 }
 
-module.exports = Object.assign(load, { APP_ROOT, CONFIG_ROOT, CONFIG_ROOTS });
+module.exports = Object.assign(load, { APP_ROOT, USER_ROOT, CONFIG_ROOT, CONFIG_ROOTS });

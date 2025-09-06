@@ -1,13 +1,26 @@
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
+const { APP_ROOT, USER_ROOT } = require('../../config/load');
 
 function start(opts = {}) {
   const proxyPort = opts.proxyPort || 8888;
   const webhookPort = opts.webhookPort || 0;
   const webhookUrl = opts.webhookUrl || `http://localhost:${webhookPort}/webhook`;
 
-  const script = path.join(__dirname, '..', '..', '..', 'extensions', 'mitmproxy', 'tv-wslog.py');
+  const roots = [];
+  if (USER_ROOT && USER_ROOT !== APP_ROOT) roots.push(USER_ROOT);
+  roots.push(APP_ROOT);
+  let script;
+  for (const root of roots) {
+    const candidate = path.join(root, 'extensions', 'mitmproxy', 'tv-wslog.py');
+    if (fs.existsSync(candidate)) { script = candidate; break; }
+  }
+  if (!script) {
+    console.error('[tv-proxy] tv-wslog.py not found');
+    return { stop() {} };
+  }
   const args = [
     '-s', script,
     '-p', String(proxyPort),
