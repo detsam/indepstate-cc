@@ -12,8 +12,8 @@ Edit `app/config/auto-updater.json`:
   "autoDownload": true,
   "allowPrerelease": false,
   "provider": "github",
-  "owner": "owner",
-  "repo": "repo"
+  "owner": "detsam",
+  "repo": "indepstate-cc"
 }
 ```
 
@@ -35,7 +35,7 @@ npm run release # build and publish Windows installer to GitHub
 
 Before running `npm run release`:
 
-1. Replace placeholder `owner` and `repo` in `package.json` and `app/config/auto-updater.json`.
-2. Set the `GH_TOKEN` environment variable to a GitHub token with `repo` scope.
+1. Set the `GH_TOKEN` environment variable to a GitHub token with `repo` scope.
+2. If publishing to a different repository, update `owner` and `repo` in `package.json` and `app/config/auto-updater.json`.
 
 To publish a prerelease, set the package `version` to include a prerelease tag (e.g. `1.0.0-beta.1`) before running `npm run release`. Clients opt-in to prereleases by setting `allowPrerelease` to `true` in `auto-updater.json`.

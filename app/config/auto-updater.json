@@ -3,6 +3,6 @@
   "autoDownload": true,
   "allowPrerelease": false,
   "provider": "github",
-  "owner": "owner",
-  "repo": "repo"
+  "owner": "detsam",
+  "repo": "indepstate-cc"
 }
