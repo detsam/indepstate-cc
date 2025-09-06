@@ -16,3 +16,7 @@ Either `webhookPort` or `webhookUrl` must be provided when the service is enable
 ## Requirements
 
 `mitmdump` must be installed and available in `PATH`.
+
+## Logging
+
+Startup and proxy events are appended to `logs/tv-proxy.txt` inside the user data folder (e.g. `%LOCALAPPDATA%/ISCC/logs/tv-proxy.txt` on Windows).

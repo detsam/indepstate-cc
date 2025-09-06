@@ -4,7 +4,18 @@ const path = require('path');
 const fetch = require('node-fetch');
 const { APP_ROOT, USER_ROOT } = require('../../config/load');
 
+const LOG_FILE = path.join(USER_ROOT || APP_ROOT, 'logs', 'tv-proxy.txt');
+function log(line) {
+  try {
+    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+    fs.appendFileSync(LOG_FILE, line + '\n');
+  } catch (e) {
+    console.error('[tv-proxy log]', e.message);
+  }
+}
+
 function start(opts = {}) {
+  log(`[start] opts ${JSON.stringify(opts)}`);
   const proxyPort = opts.proxyPort || 8888;
   const webhookPort = opts.webhookPort || 0;
   const webhookUrl = opts.webhookUrl || `http://localhost:${webhookPort}/webhook`;
@@ -15,9 +26,13 @@ function start(opts = {}) {
   let script;
   for (const root of roots) {
     const candidate = path.join(root, 'extensions', 'mitmproxy', 'tv-wslog.py');
+    log(`[addon] try ${candidate}`);
     if (fs.existsSync(candidate)) { script = candidate; break; }
   }
-  if (!script) {
+  if (script) {
+    log(`[addon] use ${script}`);
+  } else {
+    log('[addon] tv-wslog.py not found');
     console.error('[tv-proxy] tv-wslog.py not found');
     return { stop() {} };
   }
@@ -29,7 +44,8 @@ function start(opts = {}) {
     '--set', 'console_flowlist_verbosity=error',
     '--set', 'flow_detail=0',
   ];
-  const proc = spawn('mitmdump', args, { stdio: ['ignore', 'pipe', 'ignore'] });
+  log(`[spawn] mitmdump ${args.join(' ')}`);
+  const proc = spawn('mitmdump', args, { stdio: ['ignore', 'pipe', 'pipe'] });
   console.log(`[tv-proxy] mitmdump started on 127.0.0.1:${proxyPort}`);
 
   proc.stdout.setEncoding('utf8');
@@ -40,10 +56,11 @@ function start(opts = {}) {
     while ((i = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       if (!line.trim()) continue;
+      log(`[stdout] ${line}`);
       try {
         const rec = JSON.parse(line);
         if (rec.event === 'message' && typeof rec.text === 'string' && rec.text.includes('@ATR')) {
-            fetch(webhookUrl, {
+          fetch(webhookUrl, {
             method: 'POST',
             body: rec.text,
             headers: { 'content-type': 'text/plain' }
@@ -53,12 +70,22 @@ function start(opts = {}) {
     }
   });
 
+  proc.stderr.setEncoding('utf8');
+  proc.stderr.on('data', (chunk) => {
+    for (const line of chunk.split(/\r?\n/)) {
+      if (line.trim()) log(`[stderr] ${line}`);
+    }
+  });
+
   proc.on('exit', (code, sig) => {
+    const msg = `[exit] code=${code} sig=${sig || ''}`;
+    log(msg);
     console.error(`[tv-proxy] mitmdump exited: code=${code} sig=${sig || ''}`);
   });
 
   return {
     stop() {
+      log('[stop] sending SIGTERM');
       try { proc.kill('SIGTERM'); } catch {}
     }
   };
