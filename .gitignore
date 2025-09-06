@@ -1,5 +1,7 @@
 logs/
 data/
+out/
+dist/
 /config/
 node_modules/
 .env
