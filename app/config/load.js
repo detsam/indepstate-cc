@@ -3,16 +3,27 @@ const path = require('path');
 const electron = require('electron');
 
 const app = electron?.app;
-const APP_ROOT = app?.isPackaged ? path.dirname(app.getAppPath()) : process.cwd();
+
+// Resolve the directory containing the application. In a packaged build prefer
+// the folder with the executable so that a sibling `config` directory can be
+// used for overrides. When running from source fall back to the current working
+// directory.
+const APP_ROOT = app?.isPackaged
+  ? path.dirname(app.getPath ? app.getPath('exe') : process.execPath)
+  : process.cwd();
 
 const APP_NAME = app?.getName ? app.getName() : 'ISCC';
 let USER_ROOT;
-if (app?.getPath) {
-  if (process.platform === 'win32') {
-    USER_ROOT = path.join(app.getPath('home'), 'AppData', 'Local', APP_NAME);
-  } else {
-    USER_ROOT = app.getPath('userData');
-  }
+if (process.platform === 'win32') {
+  // On Windows prefer the `%LOCALAPPDATA%` location to keep overrides out of
+  // the roaming profile. Fall back to `home\\AppData\\Local` if the env var is
+  // missing (e.g. during tests).
+  const base = process.env.LOCALAPPDATA ||
+    (app?.getPath ? path.join(app.getPath('home'), 'AppData', 'Local')
+                   : path.join(require('os').homedir(), 'AppData', 'Local'));
+  USER_ROOT = path.join(base, APP_NAME);
+} else if (app?.getPath) {
+  USER_ROOT = app.getPath('userData');
 } else {
   USER_ROOT = APP_ROOT;
 }
@@ -35,15 +46,18 @@ if (USER_ROOT !== APP_ROOT) {
 const CONFIG_ROOT = CONFIG_ROOTS[CONFIG_ROOTS.length - 1];
 
 function deepMerge(target, source) {
+  if (Array.isArray(source)) return source.slice();
   if (!source || typeof source !== 'object') return target;
   for (const key of Object.keys(source)) {
     const srcVal = source[key];
-    if (srcVal && typeof srcVal === 'object' && !Array.isArray(srcVal)) {
+    if (Array.isArray(srcVal)) {
+      target[key] = srcVal.slice();
+    } else if (srcVal && typeof srcVal === 'object') {
       const tgtVal = target[key];
       if (!tgtVal || typeof tgtVal !== 'object' || Array.isArray(tgtVal)) {
         target[key] = {};
       }
-      deepMerge(target[key], srcVal);
+      target[key] = deepMerge(target[key], srcVal);
     } else {
       target[key] = srcVal;
     }
@@ -71,6 +85,7 @@ function load(name) {
         // deepMerge mutates its target but also returns it; assign back so callers
         // receive the fully merged object even if implementation changes
         defaults = deepMerge(defaults, override);
+        log(`[config] merged result ${JSON.stringify(defaults)}`);
       } catch (e) {
         console.error(`[config] cannot read override ${name}:`, e.message);
         log(`[config] cannot read override ${overridePath}: ${e.message}`);
@@ -80,6 +95,7 @@ function load(name) {
     }
   }
 
+  log(`[config] final ${JSON.stringify(defaults)}`);
   return defaults;
 }
 
