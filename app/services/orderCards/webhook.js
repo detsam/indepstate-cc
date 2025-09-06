@@ -13,7 +13,8 @@ class WebhookOrderCardsSource extends OrderCardsSource {
     super();
     this.port = opts.port || 0;
     this.nowTs = opts.nowTs || (() => Date.now());
-    this.logFile = opts.logFile || path.join(__dirname, '..', 'logs', 'webhooks.jsonl');
+    const userData = require('electron')?.app?.getPath('userData') || path.join(__dirname, '..');
+    this.logFile = opts.logFile || path.join(userData, 'logs', 'webhooks.jsonl');
     this.onRow = typeof opts.onRow === 'function' ? opts.onRow : () => {};
     this.truncateOnStart = opts.truncateOnStart || false;
     this.server = null;

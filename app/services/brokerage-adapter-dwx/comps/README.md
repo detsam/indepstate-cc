@@ -253,7 +253,7 @@ via `stopOpenOrder(pendingId)` which clears the pending state.
 
 ## Examples (logs & files)
 
-### `logs/executions.jsonl`
+### `logs/executions.jsonl` (under the user data path)
 
 Queued (pending created):
 ```json

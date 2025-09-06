@@ -21,4 +21,5 @@ This directory contains high-level notes about the codebase.
 - `app/services/commandLine.js` – parses text commands sent from the renderer. See [command-line.md](command-line.md) for available commands.
 - `app/services/orderCalculator.js` – shared service computing stop-loss, take-profit and position size for cards and pending orders.
 - `app/services/tvProxy/*` – spawns a mitmdump proxy and forwards TradingView `@ATR` messages to an internal webhook. See [tv-proxy.md](tv-proxy.md) for details.
+- `app/services/autoUpdater/*` – GitHub-based auto-updater. See [auto-updater.md](auto-updater.md) for configuration and release instructions.
 
