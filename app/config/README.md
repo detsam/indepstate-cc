@@ -2,24 +2,25 @@
 
 This directory contains the application's default configuration files. To
 customize any of them, copy the desired file to a `config` directory inside the
-application's user data path (see Electron's `app.getPath('userData')`) and edit
-it there. Files in this user data `config` folder override the defaults in this
-directory; values are deep‑merged onto the bundled configuration. When running
-from source, a `./config` folder in the project root is also checked for
-overrides, but settings under the user data path take precedence.
-
-Example:
+application's local data path (on Windows `%LOCALAPPDATA%/ISCC`, elsewhere
+Electron's `app.getPath('userData')`) and edit it there. Files in this local
+`config` folder override the defaults in this directory; values are deep‑merged
+onto the bundled configuration. A `config` folder alongside the application (or
+the project root when running from source) is also checked for overrides, but
+settings under the local data path take precedence.
 
 Example (PowerShell):
 
 ```powershell
-mkdir "$env:APPDATA/ISCC/config"
-copy app/config/order-cards.json "$env:APPDATA/ISCC/config/order-cards.json"
+mkdir "$env:LOCALAPPDATA/ISCC/config"
+copy app/config/order-cards.json "$env:LOCALAPPDATA/ISCC/config/order-cards.json"
 ```
 
 Changes in `config/order-cards.json` (and other files) take effect on the next
-application start. The `config` directory under user data is ignored by git so
-personal settings aren't tracked.
+application start. The `config` directory under the local data path is ignored
+by git so personal settings aren't tracked. To log which configuration files are
+used to `logs/app.txt` in the local data path, set the `CONFIG_LOG` environment
+variable to `1` or `true` (logging is disabled by default).
 
 ## Loading configuration in code
 
@@ -31,7 +32,7 @@ const loadConfig = require('./config/load');
 const orderCards = loadConfig('order-cards.json');
 ```
 
-`loadConfig()` looks for an override in the user data `config` directory and
+`loadConfig()` looks for an override in the local data `config` directory and
 deep‑merges its contents onto the defaults bundled in this directory.
 
 ## Order Card Source Configuration
