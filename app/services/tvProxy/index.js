@@ -34,6 +34,17 @@ function start(opts = {}) {
   }
   if (script) {
     log(`[addon] use ${script}`);
+    if (script.includes('.asar')) {
+      const extracted = path.join(USER_ROOT || APP_ROOT, 'tmp', 'tv-wslog.py');
+      try {
+        fs.mkdirSync(path.dirname(extracted), { recursive: true });
+        fs.copyFileSync(script, extracted);
+        script = extracted;
+        log(`[addon] extracted to ${script}`);
+      } catch (e) {
+        log(`[addon] extract failed: ${e.message}`);
+      }
+    }
   } else {
     log('[addon] tv-wslog.py not found');
     console.error('[tv-proxy] tv-wslog.py not found');

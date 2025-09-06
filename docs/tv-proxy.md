@@ -1,6 +1,6 @@
 # tv-proxy Service
 
-The `tv-proxy` service runs a local [mitmdump](https://docs.mitmproxy.org/stable/concepts-mitm-dump/) proxy using the `extensions/mitmproxy/tv-wslog.py` addon. The addon is looked up first inside the packaged application (`app.asar`), then in the `extensions/mitmproxy` directory inside the user data folder (e.g. `%LOCALAPPDATA%/ISCC` on Windows) and finally next to the executable. It captures TradingView WebSocket traffic and forwards messages containing `@ATR` to an internal webhook.
+The `tv-proxy` service runs a local [mitmdump](https://docs.mitmproxy.org/stable/concepts-mitm-dump/) proxy using the `extensions/mitmproxy/tv-wslog.py` addon. The addon is looked up first inside the packaged application (`app.asar`), then in the `extensions/mitmproxy` directory inside the user data folder (e.g. `%LOCALAPPDATA%/ISCC` on Windows) and finally next to the executable. When the addon is found inside `app.asar`, it is extracted to the user data folder before launching `mitmdump` so Python can load it. The service captures TradingView WebSocket traffic and forwards messages containing `@ATR` to an internal webhook.
 
 ## Configuration
 
