@@ -4,9 +4,10 @@ This directory contains the application's default configuration files. To
 customize any of them, copy the desired file to a `config` directory inside the
 application's user data path (see Electron's `app.getPath('userData')`) and edit
 it there. Files in this user data `config` folder override the defaults in this
-directory; values are deep‑merged onto the bundled configuration. When running
-from source, a `./config` folder in the project root is also checked for
-overrides, but settings under the user data path take precedence.
+directory; values are deep‑merged onto the bundled configuration. A `config`
+folder alongside the application (or the project root when running from source)
+is also checked for overrides, but settings under the user data path take
+precedence.
 
 Example:
 

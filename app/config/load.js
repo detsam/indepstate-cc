@@ -7,7 +7,7 @@ const APP_ROOT = app?.isPackaged ? path.dirname(app.getAppPath()) : process.cwd(
 
 const CONFIG_ROOTS = [];
 if (app?.getPath) {
-  if (!app.isPackaged) CONFIG_ROOTS.push(path.join(APP_ROOT, 'config'));
+  CONFIG_ROOTS.push(path.join(APP_ROOT, 'config'));
   CONFIG_ROOTS.push(path.join(app.getPath('userData'), 'config'));
 } else {
   CONFIG_ROOTS.push(path.join(APP_ROOT, 'config'));
