@@ -68,7 +68,9 @@ function load(name) {
       log(`[config] apply override ${overridePath}`);
       try {
         const override = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
-        deepMerge(defaults, override);
+        // deepMerge mutates its target but also returns it; assign back so callers
+        // receive the fully merged object even if implementation changes
+        defaults = deepMerge(defaults, override);
       } catch (e) {
         console.error(`[config] cannot read override ${name}:`, e.message);
         log(`[config] cannot read override ${overridePath}: ${e.message}`);
