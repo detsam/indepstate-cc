@@ -122,6 +122,7 @@ function loadSettingsSections() {
     sections.forEach((name) => {
       const div = document.createElement('div');
       div.textContent = name;
+      div.dataset.section = name;
       div.addEventListener('click', () => showSection(name));
       $settingsSections.appendChild(div);
     });
@@ -130,6 +131,9 @@ function loadSettingsSections() {
 }
 
 function showSection(name) {
+  [...$settingsSections.children].forEach(d => {
+    d.classList.toggle('active', d.dataset.section === name);
+  });
   const existing = settingsForms.get(name);
   if (existing) {
     $settingsFields.innerHTML = '';
