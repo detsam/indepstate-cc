@@ -79,7 +79,10 @@
     #settings-sections div{cursor:pointer;padding:4px;border-radius:4px;}
     #settings-sections div:hover{background:rgba(255,255,255,0.05)}
     #settings-fields{flex:1;padding:10px;overflow:auto;}
-    #settings-fields label{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+    #settings-fields label{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+    #settings-fields label span{flex:1;}
+    #settings-fields label input[type="text"],
+    #settings-fields label input[type="number"]{flex:1;padding:6px 7px;border:1px solid var(--border);border-radius:8px;background:#0f0f11;color:var(--text);}
     #settings-close{position:absolute;top:4px;right:6px;border:none;background:none;color:var(--text);cursor:pointer;}
 
     /* command line input at bottom */

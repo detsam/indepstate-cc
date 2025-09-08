@@ -137,7 +137,9 @@ function showSection(name) {
     for (const key of keys) {
       const d = desc[key] || {};
       const label = document.createElement('label');
-      label.textContent = d.description || key;
+      const span = document.createElement('span');
+      span.textContent = d.description || key;
+      label.appendChild(span);
       let input;
       const type = d.type || typeof cfg[key];
       if (type === 'boolean') {
