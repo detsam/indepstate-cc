@@ -6,7 +6,7 @@ A chart image composer creates a screenshot for a given fully qualified symbol
 file name that will be written once the image downloads. The name includes the
 layout identifier to avoid collisions when capturing multiple layouts
 simultaneously. A default composer can be configured via
-`app/config/chart-images.json` which also provides helper functions
+`app/services/dealTrackers-chartImages/config/chart-images.json` which also provides helper functions
 `compose1D(symbol)` and `compose5M(symbol)` using the configured `layout1D` and
 `layout5M` values.
 

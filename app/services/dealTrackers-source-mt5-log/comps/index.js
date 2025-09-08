@@ -7,7 +7,7 @@ const loadConfig = require('../../../config/load');
 const DEFAULT_MAX_AGE_DAYS = 2;
 let cfg = {};
 try {
-  cfg = loadConfig('mt5-logs.json');
+  cfg = loadConfig('../services/dealTrackers-source-mt5-log/config/mt5-logs.json');
 } catch (_) {
   cfg = {};
 }

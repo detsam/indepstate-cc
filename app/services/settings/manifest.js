@@ -1,5 +1,13 @@
 const { ipcMain } = require('electron');
-const { listConfigs, readConfig, writeConfig } = require('./index');
+const path = require('path');
+const settings = require('./index');
+const { listConfigs, readConfig, writeConfig } = settings;
+
+settings.register(
+  'services',
+  path.join(__dirname, 'config', 'services.json'),
+  path.join(__dirname, 'config', 'services-settings-descriptor.json')
+);
 
 function initService(servicesApi = {}) {
   servicesApi.settings = { listConfigs, readConfig, writeConfig };

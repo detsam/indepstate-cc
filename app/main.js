@@ -14,14 +14,14 @@ const events = require('./services/events');
 const { createPendingOrderHub } = require('./services/pendingOrders');
 const tradeRules = require('./services/tradeRules');
 const loadConfig = require('./config/load');
-const execCfg = loadConfig('execution.json');
-const orderCardsCfg = loadConfig('order-cards.json');
+const execCfg = loadConfig('../services/brokerage/config/execution.json');
+const orderCardsCfg = loadConfig('../services/orderCards/config/order-cards.json');
 const { createCommandService } = require('./services/commandLine');
 
 function loadServices(servicesApi = {}) {
   let dirs = [];
   try {
-    dirs = loadConfig('services.json');
+    dirs = loadConfig('../services/settings/config/services.json');
   } catch {
     dirs = [];
   }

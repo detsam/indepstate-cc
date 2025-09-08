@@ -8,7 +8,7 @@ const tradeRules = require('../tradeRules');
 const { OrderCalculator } = require('../orderCalculator');
 const loadConfig = require('../../config/load');
 
-const execCfg = loadConfig('execution.json');
+const execCfg = loadConfig('../services/brokerage/config/execution.json');
 const userData = require('electron')?.app?.getPath('userData') || path.join(__dirname, '..', '..');
 const LOG_DIR = path.join(userData, 'logs');
 const EXEC_LOG = path.join(LOG_DIR, 'executions.jsonl');

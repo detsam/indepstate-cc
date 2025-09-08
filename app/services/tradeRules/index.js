@@ -39,7 +39,7 @@ function buildTradeRules(cfg = {}) {
 }
 
 let cfg = {};
-try { cfg = loadConfig('trade-rules.json'); }
+try { cfg = loadConfig('../services/tradeRules/config/trade-rules.json'); }
 catch { cfg = {}; }
 
 module.exports = buildTradeRules(cfg);

@@ -2,21 +2,62 @@ const fs = require('fs');
 const path = require('path');
 const loadConfig = require('../../config/load');
 
-const CONFIG_DIR = path.join(__dirname, '..', '..', 'config');
+const registry = new Map(); // key -> { defaultsPath, descriptorPath }
+
+function register(key, defaultsPath, descriptorPath) {
+  registry.set(key, { defaultsPath, descriptorPath });
+}
+
+function deepMerge(target, source) {
+  if (Array.isArray(source)) return source.slice();
+  if (!source || typeof source !== 'object') return target;
+  for (const key of Object.keys(source)) {
+    const srcVal = source[key];
+    if (Array.isArray(srcVal)) {
+      target[key] = srcVal.slice();
+    } else if (srcVal && typeof srcVal === 'object') {
+      const tgtVal = target[key];
+      if (!tgtVal || typeof tgtVal !== 'object' || Array.isArray(tgtVal)) {
+        target[key] = {};
+      }
+      target[key] = deepMerge(target[key], srcVal);
+    } else {
+      target[key] = srcVal;
+    }
+  }
+  return target;
+}
+
+function loadWithOverrides(info) {
+  let cfg = {};
+  try {
+    cfg = JSON.parse(fs.readFileSync(info.defaultsPath, 'utf8'));
+  } catch {}
+  const fileName = path.basename(info.defaultsPath);
+  for (const root of loadConfig.CONFIG_ROOTS) {
+    const overridePath = path.join(root, fileName);
+    if (fs.existsSync(overridePath)) {
+      try {
+        const override = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
+        cfg = deepMerge(cfg, override);
+      } catch {}
+    }
+  }
+  return cfg;
+}
 
 function listConfigs() {
-  const files = fs.readdirSync(CONFIG_DIR)
-    .filter(f => f.endsWith('.json') && !f.endsWith('-settings-descriptor.json'))
-    .map(f => path.basename(f, '.json'));
-  const meta = files.map(name => {
+  const meta = [];
+  for (const [key, info] of registry.entries()) {
     let props = {};
-    try {
-      const descPath = path.join(CONFIG_DIR, `${name}-settings-descriptor.json`);
-      const desc = JSON.parse(fs.readFileSync(descPath, 'utf8'));
-      props = desc.properties || {};
-    } catch {}
-    return { key: name, name: props.name || name, group: props.group };
-  });
+    if (info.descriptorPath) {
+      try {
+        const desc = JSON.parse(fs.readFileSync(info.descriptorPath, 'utf8'));
+        props = desc.properties || {};
+      } catch {}
+    }
+    meta.push({ key, name: props.name || key, group: props.group });
+  }
   const priority = ['ui', 'services', 'auto-updater'];
   const noGroup = meta.filter(m => !m.group);
   const ordered = [];
@@ -35,24 +76,26 @@ function listConfigs() {
 }
 
 function readConfig(name) {
-  const file = name.endsWith('.json') ? name : `${name}.json`;
-  const cfg = loadConfig(file);
+  const info = registry.get(name);
+  if (!info) return {};
+  const cfg = loadWithOverrides(info);
   let descriptor = {};
-  try {
-    const descPath = path.join(CONFIG_DIR, `${path.basename(file, '.json')}-settings-descriptor.json`);
-    descriptor = JSON.parse(fs.readFileSync(descPath, 'utf8'));
-  } catch {
-    descriptor = {};
+  if (info.descriptorPath) {
+    try {
+      descriptor = JSON.parse(fs.readFileSync(info.descriptorPath, 'utf8'));
+    } catch {}
   }
   return { config: cfg, descriptor };
 }
 
 function writeConfig(name, data) {
-  const file = name.endsWith('.json') ? name : `${name}.json`;
-  const overridePath = path.join(loadConfig.USER_ROOT, 'config', file);
+  const info = registry.get(name);
+  if (!info) return false;
+  const fileName = path.basename(info.defaultsPath);
+  const overridePath = path.join(loadConfig.USER_ROOT, 'config', fileName);
   fs.mkdirSync(path.dirname(overridePath), { recursive: true });
   fs.writeFileSync(overridePath, JSON.stringify(data, null, 2));
   return true;
 }
 
-module.exports = { listConfigs, readConfig, writeConfig };
+module.exports = { register, listConfigs, readConfig, writeConfig };

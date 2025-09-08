@@ -4,7 +4,7 @@ Loads order card definitions from pluggable sources.
 
 ## Configuration
 
-Sources are defined in `app/config/order-cards.json`.
+Sources are defined in `app/services/orderCards/config/order-cards.json`.
 Copy this file to the `config` directory under the application's user data path to override the defaults.
 
 Each entry declares a `type` and options.

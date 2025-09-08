@@ -8,8 +8,13 @@
   "services/dealTrackers-chartImages",
   "services/dealTrackers-source-tv-log",
   "services/dealTrackers-source-mt5-log",
+  "services/orderCards",
+  "services/pendingOrders",
+  "services/points",
+  "services/tradeRules",
   "services/ngrok",
   "services/tvProxy",
+  "services/ui",
   "services/autoUpdater",
   "services/settings"
 ]

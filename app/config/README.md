@@ -1,19 +1,20 @@
 # Configuration
 
-This directory contains the application's default configuration files. To
+This directory contains helpers for loading configuration files. Service
+modules bundle their default configs under `app/services/<name>/config/`. To
 customize any of them, copy the desired file to a `config` directory inside the
 application's local data path (on Windows `%LOCALAPPDATA%/ISCC`, elsewhere
 Electron's `app.getPath('userData')`) and edit it there. Files in this local
-`config` folder override the defaults in this directory; values are deep‑merged
-onto the bundled configuration. A `config` folder alongside the application (or
-the project root when running from source) is also checked for overrides, but
-settings under the local data path take precedence.
+`config` folder override the bundled defaults; values are deep‑merged during
+load. A `config` folder alongside the application (or the project root when
+running from source) is also checked for overrides, but settings under the
+local data path take precedence.
 
 Example (PowerShell):
 
 ```powershell
 mkdir "$env:LOCALAPPDATA/ISCC/config"
-copy app/config/order-cards.json "$env:LOCALAPPDATA/ISCC/config/order-cards.json"
+copy app/services/orderCards/config/order-cards.json "$env:LOCALAPPDATA/ISCC/config/order-cards.json"
 ```
 
 Changes in `config/order-cards.json` (and other files) take effect on the next
@@ -29,11 +30,11 @@ Application modules should load configuration files via the helper in
 
 ```js
 const loadConfig = require('./config/load');
-const orderCards = loadConfig('order-cards.json');
+const orderCards = loadConfig('../services/orderCards/config/order-cards.json');
 ```
 
 `loadConfig()` looks for an override in the local data `config` directory and
-deep‑merges its contents onto the defaults bundled in this directory.
+deep‑merges its contents onto the defaults from the given path.
 
 ## Settings descriptors
 

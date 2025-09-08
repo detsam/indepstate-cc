@@ -10,25 +10,25 @@ A lightweight event bus emits `order:placed`, `position:opened`, `position:close
 
 ## Configuration
 
-Default configuration files live in `app/config/`. To customize any of them, copy the file to a `config/` directory in the project root and adjust as needed. On startup the application deep‑merges local overrides onto the bundled defaults.
+Default configuration files live in each service's `config/` directory (for example `app/services/orderCards/config`). To customize any of them, copy the file to a `config/` directory in the project root and adjust as needed. On startup the application deep‑merges local overrides onto the bundled defaults.
 
 Example:
 
 ```bash
 mkdir -p config
-cp app/config/order-cards.json config/order-cards.json
+cp app/services/orderCards/config/order-cards.json config/order-cards.json
 ```
 
 Notable configuration files include:
 
-- [`app/config/execution.json`](app/config/execution.json) – execution providers and adapter settings.
-- [`app/config/order-cards.json`](app/config/order-cards.json) – sources for incoming order cards.
-- [`app/config/trade-rules.json`](app/config/trade-rules.json) – validation rules applied before orders are sent.
-- [`app/config/deal-trackers.json`](app/config/deal-trackers.json) – trackers invoked when positions close.
-- [`app/config/tv-logs.json`](app/config/tv-logs.json) – directories containing TradingView CSV logs.
-- [`app/config/mt5-logs.json`](app/config/mt5-logs.json) – directories containing MetaTrader reports.
-- [`app/config/chart-images.json`](app/config/chart-images.json) – chart screenshot service settings.
-- [`app/config/tick-sizes.json`](app/config/tick-sizes.json) – tick size overrides for points calculations.
+- [`app/services/brokerage/config/execution.json`](app/services/brokerage/config/execution.json) – execution providers and adapter settings.
+- [`app/services/orderCards/config/order-cards.json`](app/services/orderCards/config/order-cards.json) – sources for incoming order cards.
+- [`app/services/tradeRules/config/trade-rules.json`](app/services/tradeRules/config/trade-rules.json) – validation rules applied before orders are sent.
+- [`app/services/dealTrackers/config/deal-trackers.json`](app/services/dealTrackers/config/deal-trackers.json) – trackers invoked when positions close.
+- [`app/services/dealTrackers-source-tv-log/config/tv-logs.json`](app/services/dealTrackers-source-tv-log/config/tv-logs.json) – directories containing TradingView CSV logs.
+- [`app/services/dealTrackers-source-mt5-log/config/mt5-logs.json`](app/services/dealTrackers-source-mt5-log/config/mt5-logs.json) – directories containing MetaTrader reports.
+- [`app/services/dealTrackers-chartImages/config/chart-images.json`](app/services/dealTrackers-chartImages/config/chart-images.json) – chart screenshot service settings.
+- [`app/services/points/config/tick-sizes.json`](app/services/points/config/tick-sizes.json) – tick size overrides for points calculations.
 
 ## Services
 

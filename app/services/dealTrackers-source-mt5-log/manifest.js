@@ -1,5 +1,13 @@
 const mt5Logs = require('./comps');
+const path = require('path');
+const settings = require('../settings');
 const loadConfig = require('../../config/load');
+
+settings.register(
+  'mt5-logs',
+  path.join(__dirname, 'config', 'mt5-logs.json'),
+  path.join(__dirname, 'config', 'mt5-logs-settings-descriptor.json')
+);
 
 /**
  * @param {import('../servicesApi').ServicesApi} servicesApi
@@ -7,7 +15,7 @@ const loadConfig = require('../../config/load');
 function initService(servicesApi = {}) {
   let cfg = {};
   try {
-    cfg = loadConfig('mt5-logs.json');
+    cfg = loadConfig('../services/dealTrackers-source-mt5-log/config/mt5-logs.json');
   } catch {
     cfg = {};
   }
