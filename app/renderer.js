@@ -149,19 +149,36 @@ function showSection(name) {
       if (Array.isArray(cfgObj) || Array.isArray(descObj)) {
         const arr = Array.isArray(cfgObj) ? cfgObj : [];
         const itemDesc = Array.isArray(descObj) ? descObj[0] : (descObj && descObj.item) || {};
-        arr.forEach((val, idx) => {
+        const itemsWrap = document.createElement('div');
+        const baseParts = prefix ? prefix.split('.') : [];
+        const renderItem = (val, idx) => {
           const d = itemDesc;
           const isObj = (val && typeof val === 'object' && !Array.isArray(val)) ||
             (d && typeof d === 'object' && !d.type);
+          const path = prefix ? `${prefix}.${idx}` : String(idx);
           if (isObj) {
             const group = document.createElement('div');
             group.className = 'settings-group';
+            const head = document.createElement('div');
+            head.style.display = 'flex';
+            head.style.alignItems = 'center';
             const title = document.createElement('div');
             title.className = 'settings-group-title';
             title.textContent = (d && d.description) || String(idx);
-            group.appendChild(title);
-            build(group, val || {}, d || {}, prefix ? `${prefix}.${idx}` : String(idx));
-            parent.appendChild(group);
+            head.appendChild(title);
+            const rm = document.createElement('button');
+            rm.type = 'button';
+            rm.textContent = '×';
+            rm.className = 'settings-array-remove';
+            rm.addEventListener('click', () => {
+              itemsWrap.removeChild(group);
+              reindex();
+              form.dataset.dirty = '1';
+            });
+            head.appendChild(rm);
+            group.appendChild(head);
+            build(group, val || {}, d || {}, path);
+            itemsWrap.appendChild(group);
           } else {
             const label = document.createElement('label');
             const span = document.createElement('span');
@@ -182,14 +199,45 @@ function showSection(name) {
               input.type = 'text';
               input.value = val ?? '';
             }
-            const path = prefix ? `${prefix}.${idx}` : String(idx);
             input.dataset.field = path;
             input.addEventListener('input', () => { form.dataset.dirty = '1'; });
             input.addEventListener('change', () => { form.dataset.dirty = '1'; });
             label.appendChild(input);
-            parent.appendChild(label);
+            const rm = document.createElement('button');
+            rm.type = 'button';
+            rm.textContent = '×';
+            rm.className = 'settings-array-remove';
+            rm.addEventListener('click', () => {
+              itemsWrap.removeChild(label);
+              reindex();
+              form.dataset.dirty = '1';
+            });
+            label.appendChild(rm);
+            itemsWrap.appendChild(label);
           }
+        };
+        const reindex = () => {
+          Array.from(itemsWrap.children).forEach((child, i) => {
+            for (const input of child.querySelectorAll('input')) {
+              const parts = input.dataset.field.split('.');
+              parts[baseParts.length] = String(i);
+              input.dataset.field = parts.join('.');
+            }
+            const t = child.querySelector('.settings-group-title');
+            if (t && !(itemDesc && itemDesc.description)) t.textContent = String(i);
+          });
+        };
+        arr.forEach((val, idx) => renderItem(val, idx));
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.textContent = '+';
+        addBtn.className = 'settings-array-add';
+        addBtn.addEventListener('click', () => {
+          renderItem({}, itemsWrap.children.length);
+          form.dataset.dirty = '1';
         });
+        parent.appendChild(itemsWrap);
+        parent.appendChild(addBtn);
         return;
       }
       const keys = new Set([
