@@ -1,0 +1,10 @@
+{
+  "enabled": {
+    "type": "boolean",
+    "description": "Enable deal trackers"
+  },
+  "trackers": {
+    "type": "text",
+    "description": "JSON array of tracker definitions"
+  }
+}

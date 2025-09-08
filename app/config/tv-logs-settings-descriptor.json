@@ -1,0 +1,24 @@
+{
+  "enabled": {
+    "type": "boolean",
+    "description": "Enable TradingView log ingestion"
+  },
+  "pollMs": {
+    "type": "number",
+    "description": "Polling interval milliseconds"
+  },
+  "skipExisting": {
+    "type": "text",
+    "description": "JSON array of skip rules"
+  },
+  "sessions": {
+    "description": "Session identifiers by time range",
+    "02:00-06:00": { "type": "number", "description": "Session ID for 02:00-06:00" },
+    "06:00-16:30": { "type": "number", "description": "Session ID for 06:00-16:30" },
+    "16:30-02:00": { "type": "number", "description": "Session ID for 16:30-02:00" }
+  },
+  "accounts": {
+    "type": "text",
+    "description": "JSON array of account directories"
+  }
+}

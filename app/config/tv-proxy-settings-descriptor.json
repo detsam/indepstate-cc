@@ -1,0 +1,18 @@
+{
+  "enabled": {
+    "type": "boolean",
+    "description": "Enable TradingView proxy"
+  },
+  "log": {
+    "type": "boolean",
+    "description": "Log proxy requests"
+  },
+  "proxyPort": {
+    "type": "number",
+    "description": "Proxy port"
+  },
+  "webhookPort": {
+    "type": "number",
+    "description": "Webhook port"
+  }
+}

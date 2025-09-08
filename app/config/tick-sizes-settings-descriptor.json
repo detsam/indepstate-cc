@@ -1,0 +1,11 @@
+{
+  "bySymbol": {
+    "description": "Tick size overrides by symbol",
+    "BNBUSDT.P": { "type": "number", "description": "Tick size for BNBUSDT.P" },
+    "AIOTUSDT.P": { "type": "number", "description": "Tick size for AIOTUSDT.P" }
+  },
+  "patterns": {
+    "type": "text",
+    "description": "JSON array of tick size patterns"
+  }
+}
