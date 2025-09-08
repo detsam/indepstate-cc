@@ -8,13 +8,30 @@ function listConfigs() {
   const files = fs.readdirSync(CONFIG_DIR)
     .filter(f => f.endsWith('.json') && !f.endsWith('-settings-descriptor.json'))
     .map(f => path.basename(f, '.json'));
+  const meta = files.map(name => {
+    let props = {};
+    try {
+      const descPath = path.join(CONFIG_DIR, `${name}-settings-descriptor.json`);
+      const desc = JSON.parse(fs.readFileSync(descPath, 'utf8'));
+      props = desc.properties || {};
+    } catch {}
+    return { key: name, name: props.name || name, group: props.group };
+  });
   const priority = ['ui', 'services', 'auto-updater'];
+  const noGroup = meta.filter(m => !m.group);
   const ordered = [];
   priority.forEach(p => {
-    if (files.includes(p)) ordered.push(p);
+    const idx = noGroup.findIndex(m => m.key === p);
+    if (idx !== -1) ordered.push(noGroup.splice(idx, 1)[0]);
   });
-  const rest = files.filter(f => !priority.includes(f)).sort();
-  return ordered.concat(rest);
+  noGroup.sort((a, b) => a.name.localeCompare(b.name));
+  const grouped = meta.filter(m => m.group).reduce((acc, m) => {
+    (acc[m.group] = acc[m.group] || []).push(m);
+    return acc;
+  }, {});
+  Object.keys(grouped).forEach(g => grouped[g].sort((a, b) => a.name.localeCompare(b.name)));
+  const groups = Object.keys(grouped).sort();
+  return ordered.concat(noGroup, ...groups.flatMap(g => grouped[g]));
 }
 
 function readConfig(name) {

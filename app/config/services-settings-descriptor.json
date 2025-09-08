@@ -1,7 +1,10 @@
 {
-  "description": "Enabled service modules",
-  "item": {
-    "type": "string",
-    "description": "Service module path"
+  "properties": {},
+  "options": {
+    "description": "Enabled service modules",
+    "item": {
+      "type": "string",
+      "description": "Service module path"
+    }
   }
 }

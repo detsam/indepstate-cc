@@ -119,18 +119,20 @@ function loadSettingsSections() {
   settingsForms.clear();
   ipcRenderer.invoke('settings:list').then((sections = []) => {
     $settingsSections.innerHTML = '';
-    sections.forEach((name, idx) => {
-      const div = document.createElement('div');
-      div.textContent = name;
-      div.dataset.section = name;
-      div.addEventListener('click', () => showSection(name));
-      $settingsSections.appendChild(div);
-      if (idx === 2 && sections.length > 3) {
+    let prevGroup;
+    sections.forEach((s, idx) => {
+      if (idx > 0 && (s.group !== prevGroup || idx === 3)) {
         const hr = document.createElement('hr');
         $settingsSections.appendChild(hr);
       }
+      prevGroup = s.group;
+      const div = document.createElement('div');
+      div.textContent = s.name;
+      div.dataset.section = s.key;
+      div.addEventListener('click', () => showSection(s.key));
+      $settingsSections.appendChild(div);
     });
-    if (sections[0]) showSection(sections[0]);
+    if (sections[0]) showSection(sections[0].key);
   }).catch(() => {});
 }
 
@@ -146,7 +148,7 @@ function showSection(name) {
   }
   ipcRenderer.invoke('settings:get', name).then((res = {}) => {
     const cfg = res.config || res;
-    const desc = res.descriptor || {};
+    const desc = (res.descriptor && res.descriptor.options) || {};
     const form = document.createElement('form');
     form.dataset.section = name;
     const build = (parent, cfgObj, descObj, prefix = '') => {

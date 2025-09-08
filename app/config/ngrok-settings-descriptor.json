@@ -1,18 +1,24 @@
 {
-  "enabled": {
-    "type": "boolean",
-    "description": "Enable ngrok forwarding"
+  "properties": {
+    "group": "data-source",
+    "name": "Ngrok"
   },
-  "authToken": {
-    "type": "string",
-    "description": "Authentication token"
-  },
-  "domain": {
-    "type": "string",
-    "description": "Custom domain"
-  },
-  "port": {
-    "type": "number",
-    "description": "Port to forward"
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable ngrok forwarding"
+    },
+    "authToken": {
+      "type": "string",
+      "description": "Authentication token"
+    },
+    "domain": {
+      "type": "string",
+      "description": "Custom domain"
+    },
+    "port": {
+      "type": "number",
+      "description": "Port to forward"
+    }
   }
 }

@@ -1,18 +1,24 @@
 {
-  "enabled": {
-    "type": "boolean",
-    "description": "Enable TradingView proxy"
+  "properties": {
+    "group": "data-source",
+    "name": "TV Proxy"
   },
-  "log": {
-    "type": "boolean",
-    "description": "Log proxy requests"
-  },
-  "proxyPort": {
-    "type": "number",
-    "description": "Proxy port"
-  },
-  "webhookPort": {
-    "type": "number",
-    "description": "Webhook port"
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable TradingView proxy"
+    },
+    "log": {
+      "type": "boolean",
+      "description": "Log proxy requests"
+    },
+    "proxyPort": {
+      "type": "number",
+      "description": "Proxy port"
+    },
+    "webhookPort": {
+      "type": "number",
+      "description": "Webhook port"
+    }
   }
 }

@@ -1,22 +1,24 @@
 {
-  "bySymbol": {
-    "description": "Tick size overrides by symbol",
-    "BNBUSDT.P": { "type": "number", "description": "Tick size for BNBUSDT.P" },
-    "AIOTUSDT.P": { "type": "number", "description": "Tick size for AIOTUSDT.P" }
-  },
-  "patterns": {
-    "description": "Tick size patterns",
-    "item": {
-      "description": "Pattern",
-      "match": {
-        "type": "string",
-        "description": "Symbol regex"
-      },
-      "tickSize": {
-        "type": "number",
-        "description": "Tick size value"
+  "properties": {},
+  "options": {
+    "bySymbol": {
+      "description": "Tick size overrides by symbol",
+      "BNBUSDT.P": { "type": "number", "description": "Tick size for BNBUSDT.P" },
+      "AIOTUSDT.P": { "type": "number", "description": "Tick size for AIOTUSDT.P" }
+    },
+    "patterns": {
+      "description": "Tick size patterns",
+      "item": {
+        "description": "Pattern",
+        "match": {
+          "type": "string",
+          "description": "Symbol regex"
+        },
+        "tickSize": {
+          "type": "number",
+          "description": "Tick size value"
+        }
       }
     }
   }
 }
-

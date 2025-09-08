@@ -1,16 +1,19 @@
 {
-  "consolidation": {
-    "description": "Consolidation breakout settings",
-    "bars": {
-      "type": "number",
-      "description": "Number of bars to consider"
-    }
-  },
-  "falseBreak": {
-    "description": "False break strategy settings",
-    "tickSize": {
-      "type": "number",
-      "description": "Tick size for breakout"
+  "properties": {},
+  "options": {
+    "consolidation": {
+      "description": "Consolidation breakout settings",
+      "bars": {
+        "type": "number",
+        "description": "Number of bars to consider"
+      }
+    },
+    "falseBreak": {
+      "description": "False break strategy settings",
+      "tickSize": {
+        "type": "number",
+        "description": "Tick size for breakout"
+      }
     }
   }
 }

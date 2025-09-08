@@ -1,27 +1,33 @@
 {
-  "enabled": {
-    "type": "boolean",
-    "description": "Enable deal trackers"
+  "properties": {
+    "group": "deal-tracker",
+    "name": "Deal Trackers"
   },
-  "trackers": {
-    "description": "Deal tracker definitions",
-    "item": {
-      "description": "Tracker",
-      "type": {
-        "type": "string",
-        "description": "Tracker type"
-      },
-      "vaultPath": {
-        "type": "string",
-        "description": "Obsidian vault path"
-      },
-      "journalPath": {
-        "type": "string",
-        "description": "Journal file path"
-      },
-      "findJournalPath": {
-        "type": "string",
-        "description": "Existing notes search path"
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable deal trackers"
+    },
+    "trackers": {
+      "description": "Deal tracker definitions",
+      "item": {
+        "description": "Tracker",
+        "type": {
+          "type": "string",
+          "description": "Tracker type"
+        },
+        "vaultPath": {
+          "type": "string",
+          "description": "Obsidian vault path"
+        },
+        "journalPath": {
+          "type": "string",
+          "description": "Journal file path"
+        },
+        "findJournalPath": {
+          "type": "string",
+          "description": "Existing notes search path"
+        }
       }
     }
   }

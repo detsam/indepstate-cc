@@ -39,12 +39,20 @@ deep‑merges its contents onto the defaults bundled in this directory.
 
 User-facing descriptions for configuration options are stored in files named
 `*-settings-descriptor.json` alongside the default configs. Each descriptor file
-mirrors the structure of its corresponding config and provides metadata such as
-field type and a human-readable description. Nested objects are supported, so
-deeply structured configs like `pending-strategies.json` use
-`pending-strategies-settings-descriptor.json` to describe their inner fields.
-These descriptors are consumed by the in-app Settings panel to render editable
-forms.
+contains two top-level keys:
+
+- `properties` - optional metadata about the section itself. Supported fields
+  include `name` to override the displayed section title and `group` to
+  categorize related sections. Sections sharing the same group are separated
+  with a divider in the Settings panel.
+- `options` - an object mirroring the structure of the corresponding config
+  file. Every field provides at least a `type` and human-readable
+  `description`. Nested objects and arrays are supported, so deeply structured
+  configs like `pending-strategies.json` use
+  `pending-strategies-settings-descriptor.json` to describe their inner
+  fields.
+
+These descriptors are consumed by the in-app Settings panel to render editable forms.
 
 ## Order Card Source Configuration
 

@@ -1,28 +1,31 @@
 {
-  "rules": {
-    "description": "Trade validation rules",
-    "maxOrderPriceDeviation": {
-      "description": "Limit order price deviation",
-      "maxPriceDeviationPct": { "type": "number", "description": "Max deviation percent" }
-    },
-    "minStopPoints": {
-      "description": "Minimum stop distance",
-      "default": { "type": "number", "description": "Default minimum stop" },
-      "byInstrumentType": {
-        "description": "Overrides by instrument type",
-        "CX": { "type": "number", "description": "CX minimum stop" },
-        "FX": { "type": "number", "description": "FX minimum stop" },
-        "EQ": { "type": "number", "description": "EQ minimum stop" }
-      }
-    },
-    "maxQty": {
-      "description": "Maximum order quantity",
-      "default": { "type": "number", "description": "Default max quantity" },
-      "byInstrumentType": {
-        "description": "Overrides by instrument type",
-        "CX": { "type": "number", "description": "CX max quantity" },
-        "FX": { "type": "number", "description": "FX max quantity" },
-        "EQ": { "type": "number", "description": "EQ max quantity" }
+  "properties": {},
+  "options": {
+    "rules": {
+      "description": "Trade validation rules",
+      "maxOrderPriceDeviation": {
+        "description": "Limit order price deviation",
+        "maxPriceDeviationPct": { "type": "number", "description": "Max deviation percent" }
+      },
+      "minStopPoints": {
+        "description": "Minimum stop distance",
+        "default": { "type": "number", "description": "Default minimum stop" },
+        "byInstrumentType": {
+          "description": "Overrides by instrument type",
+          "CX": { "type": "number", "description": "CX minimum stop" },
+          "FX": { "type": "number", "description": "FX minimum stop" },
+          "EQ": { "type": "number", "description": "EQ minimum stop" }
+        }
+      },
+      "maxQty": {
+        "description": "Maximum order quantity",
+        "default": { "type": "number", "description": "Default max quantity" },
+        "byInstrumentType": {
+          "description": "Overrides by instrument type",
+          "CX": { "type": "number", "description": "CX max quantity" },
+          "FX": { "type": "number", "description": "FX max quantity" },
+          "EQ": { "type": "number", "description": "EQ max quantity" }
+        }
       }
     }
   }

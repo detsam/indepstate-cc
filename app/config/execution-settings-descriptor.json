@@ -1,56 +1,59 @@
 {
-  "default": {
-    "type": "string",
-    "description": "Default execution provider"
-  },
-  "byInstrumentType": {
-    "description": "Execution provider per instrument type",
-    "CX": { "type": "string", "description": "Provider for CX instruments" },
-    "EQ": { "type": "string", "description": "Provider for EQ instruments" },
-    "FX": { "type": "string", "description": "Provider for FX instruments" },
-    "CFD": { "type": "string", "description": "Provider for CFD instruments" }
-  },
-  "providers": {
-    "description": "Provider configurations",
-    "simulated": {
-      "description": "Simulated provider settings",
-      "adapter": { "type": "string", "description": "Adapter name" }
+  "properties": {},
+  "options": {
+    "default": {
+      "type": "string",
+      "description": "Default execution provider"
     },
-    "j2t": {
-      "description": "J2T provider settings",
-      "adapter": { "type": "string", "description": "Adapter name" },
-      "baseURL": { "type": "string", "description": "API base URL" },
-      "accountId": { "type": "string", "description": "Account ID" },
-      "accessToken": { "type": "string", "description": "Access token" },
-      "timeoutMs": { "type": "number", "description": "Request timeout ms" },
-      "defaultDuration": { "type": "string", "description": "Default order duration" }
+    "byInstrumentType": {
+      "description": "Execution provider per instrument type",
+      "CX": { "type": "string", "description": "Provider for CX instruments" },
+      "EQ": { "type": "string", "description": "Provider for EQ instruments" },
+      "FX": { "type": "string", "description": "Provider for FX instruments" },
+      "CFD": { "type": "string", "description": "Provider for CFD instruments" }
     },
-    "dwx": {
-      "description": "DWX provider settings",
-      "adapter": { "type": "string", "description": "Adapter name" },
-      "metatraderDirPath": { "type": "string", "description": "MT5 socket directory" },
-      "openOrderRetryDelayMs": { "type": "number", "description": "Retry delay ms" }
-    },
-    "ccxt-binance-futures": {
-      "description": "Binance Futures via CCXT",
-      "adapter": { "type": "string", "description": "Adapter name" },
-      "exchangeId": { "type": "string", "description": "Exchange ID" },
-      "apiKey": { "type": "string", "description": "API key" },
-      "secret": { "type": "string", "description": "API secret" },
-      "sandbox": { "type": "string", "description": "Use sandbox" },
-      "enableRateLimit": { "type": "boolean", "description": "Enable rate limiting" },
-      "options": {
-        "description": "Exchange options",
-        "defaultType": { "type": "string", "description": "Default market type" }
+    "providers": {
+      "description": "Provider configurations",
+      "simulated": {
+        "description": "Simulated provider settings",
+        "adapter": { "type": "string", "description": "Adapter name" }
       },
-      "params": {
-        "description": "Additional parameters",
-        "recvWindow": { "type": "number", "description": "Receive window" }
+      "j2t": {
+        "description": "J2T provider settings",
+        "adapter": { "type": "string", "description": "Adapter name" },
+        "baseURL": { "type": "string", "description": "API base URL" },
+        "accountId": { "type": "string", "description": "Account ID" },
+        "accessToken": { "type": "string", "description": "Access token" },
+        "timeoutMs": { "type": "number", "description": "Request timeout ms" },
+        "defaultDuration": { "type": "string", "description": "Default order duration" }
       },
-      "symbolMap": {
-        "description": "Symbol remapping",
-        "BTCUSDT": { "type": "string", "description": "BTC/USDT symbol" },
-        "ETHUSDT": { "type": "string", "description": "ETH/USDT symbol" }
+      "dwx": {
+        "description": "DWX provider settings",
+        "adapter": { "type": "string", "description": "Adapter name" },
+        "metatraderDirPath": { "type": "string", "description": "MT5 socket directory" },
+        "openOrderRetryDelayMs": { "type": "number", "description": "Retry delay ms" }
+      },
+      "ccxt-binance-futures": {
+        "description": "Binance Futures via CCXT",
+        "adapter": { "type": "string", "description": "Adapter name" },
+        "exchangeId": { "type": "string", "description": "Exchange ID" },
+        "apiKey": { "type": "string", "description": "API key" },
+        "secret": { "type": "string", "description": "API secret" },
+        "sandbox": { "type": "string", "description": "Use sandbox" },
+        "enableRateLimit": { "type": "boolean", "description": "Enable rate limiting" },
+        "options": {
+          "description": "Exchange options",
+          "defaultType": { "type": "string", "description": "Default market type" }
+        },
+        "params": {
+          "description": "Additional parameters",
+          "recvWindow": { "type": "number", "description": "Receive window" }
+        },
+        "symbolMap": {
+          "description": "Symbol remapping",
+          "BTCUSDT": { "type": "string", "description": "BTC/USDT symbol" },
+          "ETHUSDT": { "type": "string", "description": "ETH/USDT symbol" }
+        }
       }
     }
   }
