@@ -4,7 +4,7 @@ The `tv-proxy` service runs a local [mitmdump](https://docs.mitmproxy.org/stable
 
 ## Configuration
 
-Configure via `app/config/tv-proxy.json`:
+Configure via `app/services/tvProxy/config/tv-proxy.json`:
 
 - `enabled` (boolean, default `false`) – enable or disable the service.
 - `log` (boolean, default `false`) – write startup and proxy events to a log file.

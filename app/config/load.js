@@ -79,8 +79,9 @@ function load(name) {
     log(`[config] cannot read default ${defaultsPath}: ${e.message}`);
   }
 
+  const fileName = path.basename(name);
   for (const root of CONFIG_ROOTS) {
-    const overridePath = path.join(root, name);
+    const overridePath = path.join(root, fileName);
     if (fs.existsSync(overridePath)) {
       log(`[config] apply override ${overridePath}`);
       try {

@@ -4,7 +4,7 @@ This service converts TradingView order CSV logs into closed trade events consum
 
 ## Configuration
 
-Settings live in `app/config/tv-logs.json`:
+Settings live in `app/services/dealTrackers-source-tv-log/config/tv-logs.json`:
 
 ```json
 {

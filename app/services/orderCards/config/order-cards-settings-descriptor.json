@@ -1,0 +1,61 @@
+{
+  "properties": {},
+  "options": {
+    "sources": {
+      "description": "Order card sources",
+      "item": {
+        "description": "Source",
+        "type": {
+          "type": "string",
+          "description": "Source type (webhook, file)"
+        },
+        "pathEnvVar": {
+          "type": "string",
+          "description": "Env var with file path (file)"
+        },
+        "pollMs": {
+          "type": "number",
+          "description": "Polling interval in ms (file)"
+        }
+      }
+    },
+    "defaultEquityStopUsd": {
+      "type": "number",
+      "description": "Default equity stop in USD"
+    },
+    "closedCardEventStrategy": {
+      "type": "string",
+      "description": "How to handle events for closed cards"
+    },
+    "showBidAsk": {
+      "type": "boolean",
+      "description": "Show bid/ask prices"
+    },
+    "showSpread": {
+      "type": "boolean",
+      "description": "Show spread value"
+    },
+    "buttons": {
+      "description": "Card action buttons",
+      "item": {
+        "description": "Button",
+        "label": {
+          "type": "string",
+          "description": "Button text"
+        },
+        "action": {
+          "type": "string",
+          "description": "Action sent on click"
+        },
+        "style": {
+          "type": "string",
+          "description": "Optional CSS class"
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "Require confirmation"
+        }
+      }
+    }
+  }
+}

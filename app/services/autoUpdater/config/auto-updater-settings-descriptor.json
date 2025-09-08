@@ -1,0 +1,29 @@
+{
+  "properties": {},
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable automatic updates"
+    },
+    "autoDownload": {
+      "type": "boolean",
+      "description": "Download updates automatically"
+    },
+    "allowPrerelease": {
+      "type": "boolean",
+      "description": "Allow prerelease versions"
+    },
+    "provider": {
+      "type": "string",
+      "description": "Update provider"
+    },
+    "owner": {
+      "type": "string",
+      "description": "Repository owner"
+    },
+    "repo": {
+      "type": "string",
+      "description": "Repository name"
+    }
+  }
+}

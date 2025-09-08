@@ -4,7 +4,7 @@
 const loadConfig = require('../../config/load');
 let cfg = {};
 try {
-  cfg = loadConfig('tick-sizes.json');
+  cfg = loadConfig('../services/points/config/tick-sizes.json');
 } catch (_) {
   cfg = {};
 }

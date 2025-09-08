@@ -1,6 +1,6 @@
 // services/brokerage/adapterRegistry.js
 // Creates and caches adapter instances by provider name and injects config
-// from config/execution.json (or via initExecutionConfig).
+// from services/brokerage/config/execution.json (or via initExecutionConfig).
 
 const loadConfig = require('../../config/load');
 const brokerageAdapters = require('./brokerageAdapters');
@@ -12,7 +12,7 @@ function deepClone(obj){ return obj ? JSON.parse(JSON.stringify(obj)) : obj; }
 
 function loadExecutionConfigFromDisk() {
   try {
-    return loadConfig('execution.json');
+    return loadConfig('../services/brokerage/config/execution.json');
   } catch (e) {
     console.error('[adapterRegistry] cannot read execution.json:', e.message);
     return { providers:{}, byInstrumentType:{}, default:'simulated' };

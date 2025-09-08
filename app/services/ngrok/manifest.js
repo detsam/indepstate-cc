@@ -1,10 +1,18 @@
+const path = require('path');
+const settings = require('../settings');
 const loadConfig = require('../../config/load');
 const { start } = require('./index');
+
+settings.register(
+  'ngrok',
+  path.join(__dirname, 'config', 'ngrok.json'),
+  path.join(__dirname, 'config', 'ngrok-settings-descriptor.json')
+);
 
 function initService(servicesApi = {}) {
   let cfg = {};
   try {
-    cfg = loadConfig('ngrok.json');
+    cfg = loadConfig('../services/ngrok/config/ngrok.json');
   } catch {
     cfg = {};
   }

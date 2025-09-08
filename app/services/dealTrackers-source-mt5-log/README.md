@@ -4,7 +4,7 @@ This service converts MetaTrader 5 HTML trade history reports into closed trade 
 
 ## Configuration
 
-Settings live in `app/config/mt5-logs.json`:
+Settings live in `app/services/dealTrackers-source-mt5-log/config/mt5-logs.json`:
 
 ```json
 {

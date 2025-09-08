@@ -17,7 +17,7 @@ let defaultComposer = null;
 let layout1D;
 let layout5M;
 try {
-  const cfg = loadConfig('chart-images.json');
+  const cfg = loadConfig('../services/dealTrackers-chartImages/config/chart-images.json');
   const def = cfg && cfg.default;
   if (def) {
     ({ layout1D, layout5M } = def);

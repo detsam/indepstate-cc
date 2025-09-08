@@ -11,7 +11,7 @@ const DEFAULT_MAKER_FEE_PCT = 0.02;
 const DEFAULT_TAKER_FEE_PCT = 0.05;
 let cfg = {};
 try {
-  cfg = loadConfig('tv-logs.json');
+  cfg = loadConfig('../services/dealTrackers-source-tv-log/config/tv-logs.json');
 } catch (_) {
   cfg = {};
 }

@@ -8,7 +8,7 @@ const {
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
 
 function createStrategyFactory(strategyConfig, extraStrategies = {}, extraHelpers = {}) {
-  const cfg = strategyConfig || loadConfig('pending-strategies.json');
+  const cfg = strategyConfig || loadConfig('../services/pendingOrders/config/pending-strategies.json');
   const helpers = {
     B1_RANGE_CONSOLIDATION,
     defaultLimitPrice,

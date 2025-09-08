@@ -36,6 +36,8 @@
  * @property {DealTrackersChartImagesApi} [dealTrackersChartImages]
  * @property {NgrokApi} [ngrok]
  * @property {AutoUpdaterApi} [autoUpdater]
+ * @property {import('./tradeRules')} [tradeRules]
+ * @property {{listConfigs:Function,readConfig:Function,writeConfig:Function}} [settings]
  */
 
 module.exports = {};

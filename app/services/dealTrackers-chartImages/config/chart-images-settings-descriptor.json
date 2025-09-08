@@ -1,0 +1,43 @@
+{
+  "properties": {
+    "group": "deal-tracker",
+    "name": "Chart Images"
+  },
+  "options": {
+    "default": {
+      "description": "Default chart image provider settings",
+      "type": {
+        "type": "string",
+        "description": "Image provider type"
+      },
+      "apiDomain": {
+        "type": "string",
+        "description": "API domain"
+      },
+      "apiKey": {
+        "type": "string",
+        "description": "API key"
+      },
+      "outputDir": {
+        "type": "string",
+        "description": "Output directory"
+      },
+      "throttlePerSecond": {
+        "type": "number",
+        "description": "Requests per second throttle"
+      },
+      "fallbackExchanges": {
+        "type": "text",
+        "description": "Comma-separated fallback exchanges"
+      },
+      "layout1D": {
+        "type": "string",
+        "description": "1D layout identifier"
+      },
+      "layout5M": {
+        "type": "string",
+        "description": "5M layout identifier"
+      }
+    }
+  }
+}

@@ -4,7 +4,7 @@ The auto-updater checks GitHub releases for new versions and applies them automa
 
 ## Configuration
 
-Edit `app/config/auto-updater.json`:
+Edit `app/services/autoUpdater/config/auto-updater.json`:
 
 ```json
 {
@@ -24,7 +24,7 @@ Edit `app/config/auto-updater.json`:
 
 ## Using the service
 
-The service is registered in `app/config/services.json` and starts once the app is ready. On download it calls `quitAndInstall()` to apply the update.
+The service is registered in `app/services/settings/config/services.json` and starts once the app is ready. On download it calls `quitAndInstall()` to apply the update.
 
 ## Building releases
 
@@ -36,6 +36,6 @@ npm run release # build and publish Windows installer to GitHub
 Before running `npm run release`:
 
 1. Set the `GH_TOKEN` environment variable to a GitHub token with `repo` scope.
-2. If publishing to a different repository, update `owner` and `repo` in `package.json` and `app/config/auto-updater.json`.
+2. If publishing to a different repository, update `owner` and `repo` in `package.json` and `app/services/autoUpdater/config/auto-updater.json`.
 
 To publish a prerelease, set the package `version` to include a prerelease tag (e.g. `1.0.0-beta.1`) before running `npm run release`. Clients opt-in to prereleases by setting `allowPrerelease` to `true` in `auto-updater.json`.

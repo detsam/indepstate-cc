@@ -1,5 +1,13 @@
+const path = require('path');
+const settings = require('../settings');
 const loadConfig = require('../../config/load');
 const { start } = require('./index');
+
+settings.register(
+  'tv-proxy',
+  path.join(__dirname, 'config', 'tv-proxy.json'),
+  path.join(__dirname, 'config', 'tv-proxy-settings-descriptor.json')
+);
 
 function intVal(v, fallback = 0) {
   const n = parseInt(v, 10);
@@ -9,7 +17,7 @@ function intVal(v, fallback = 0) {
 function initService(servicesApi = {}) {
   let cfg = {};
   try {
-    cfg = loadConfig('tv-proxy.json');
+    cfg = loadConfig('../services/tvProxy/config/tv-proxy.json');
   } catch {
     cfg = {};
   }

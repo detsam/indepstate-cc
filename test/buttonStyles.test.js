@@ -13,6 +13,9 @@ async function run() {
     on: (ch, fn) => { handlers[ch] = fn; },
     invoke: async (ch, ...args) => {
       if (ch === 'orders:list') return [];
+      if (ch === 'settings:get') return { autoscroll: true };
+      if (ch === 'settings:list') return [];
+      if (ch === 'settings:set') return true;
       return {};
     }
   };
@@ -25,7 +28,7 @@ async function run() {
     return originalLoad(request, parent, isMain);
   };
 
-  const dom = new JSDOM(`<!DOCTYPE html><div id="wrap"><div id="grid"></div></div><input id="filter"><input id="autoscroll"><input id="cmdline">`);
+  const dom = new JSDOM(`<!DOCTYPE html><div id="wrap"><div id="grid"></div></div><input id="filter"><input id="cmdline"><button id="settings-btn"></button><div id="settings-panel"><div id="settings-sections"></div><div id="settings-fields"></div><button id="settings-close"></button></div>`);
   global.window = dom.window;
   global.document = dom.window.document;
   global.CSS = dom.window.CSS;

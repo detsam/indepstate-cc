@@ -1,0 +1,58 @@
+{
+  "properties": {
+    "group": "deal-tracker",
+    "name": "MT5 Logs"
+  },
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable MT5 log ingestion"
+    },
+    "pollMs": {
+      "type": "number",
+      "description": "Polling interval milliseconds"
+    },
+    "skipExisting": {
+      "description": "Skip existing check rules",
+      "item": {
+        "description": "Rule",
+        "field": {
+          "type": "string",
+          "description": "Message field name"
+        },
+        "prop": {
+          "type": "string",
+          "description": "Property to compare"
+        }
+      }
+    },
+    "sessions": {
+      "description": "Session identifiers by time range",
+      "02:00-06:00": { "type": "number", "description": "Session ID for 02:00-06:00" },
+      "06:00-16:30": { "type": "number", "description": "Session ID for 06:00-16:30" },
+      "16:30-02:00": { "type": "number", "description": "Session ID for 16:30-02:00" }
+    },
+    "accounts": {
+      "description": "Account directories",
+      "item": {
+        "description": "Account",
+        "tactic": {
+          "type": "string",
+          "description": "Account tactic"
+        },
+        "dir": {
+          "type": "string",
+          "description": "Directory path"
+        },
+        "maxAgeDays": {
+          "type": "number",
+          "description": "Maximum age in days"
+        },
+        "dwxProvider": {
+          "type": "string",
+          "description": "DWX provider id"
+        }
+      }
+    }
+  }
+}
