@@ -5,7 +5,18 @@
     "AIOTUSDT.P": { "type": "number", "description": "Tick size for AIOTUSDT.P" }
   },
   "patterns": {
-    "type": "text",
-    "description": "JSON array of tick size patterns"
+    "description": "Tick size patterns",
+    "item": {
+      "description": "Pattern",
+      "match": {
+        "type": "string",
+        "description": "Symbol regex"
+      },
+      "tickSize": {
+        "type": "number",
+        "description": "Tick size value"
+      }
+    }
   }
 }
+

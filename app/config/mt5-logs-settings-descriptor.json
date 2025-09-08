@@ -8,8 +8,18 @@
     "description": "Polling interval milliseconds"
   },
   "skipExisting": {
-    "type": "text",
-    "description": "JSON array of skip rules"
+    "description": "Skip existing check rules",
+    "item": {
+      "description": "Rule",
+      "field": {
+        "type": "string",
+        "description": "Message field name"
+      },
+      "prop": {
+        "type": "string",
+        "description": "Property to compare"
+      }
+    }
   },
   "sessions": {
     "description": "Session identifiers by time range",
@@ -18,7 +28,26 @@
     "16:30-02:00": { "type": "number", "description": "Session ID for 16:30-02:00" }
   },
   "accounts": {
-    "type": "text",
-    "description": "JSON array of account directories"
+    "description": "Account directories",
+    "item": {
+      "description": "Account",
+      "tactic": {
+        "type": "string",
+        "description": "Account tactic"
+      },
+      "dir": {
+        "type": "string",
+        "description": "Directory path"
+      },
+      "maxAgeDays": {
+        "type": "number",
+        "description": "Maximum age in days"
+      },
+      "dwxProvider": {
+        "type": "string",
+        "description": "DWX provider id"
+      }
+    }
   }
 }
+
