@@ -151,10 +151,10 @@ function showSection(name) {
         const itemDesc = Array.isArray(descObj) ? descObj[0] : (descObj && descObj.item) || {};
         const itemsWrap = document.createElement('div');
         const baseParts = prefix ? prefix.split('.') : [];
+        const itemIsObjDesc = itemDesc && typeof itemDesc === 'object' && !itemDesc.type && Object.keys(itemDesc).length;
         const renderItem = (val, idx) => {
           const d = itemDesc;
-          const isObj = (val && typeof val === 'object' && !Array.isArray(val)) ||
-            (d && typeof d === 'object' && !d.type);
+          const isObj = (val && typeof val === 'object' && !Array.isArray(val)) || itemIsObjDesc;
           const path = prefix ? `${prefix}.${idx}` : String(idx);
           if (isObj) {
             const group = document.createElement('div');
@@ -233,7 +233,12 @@ function showSection(name) {
         addBtn.textContent = '+';
         addBtn.className = 'settings-array-add';
         addBtn.addEventListener('click', () => {
-          renderItem({}, itemsWrap.children.length);
+          let v;
+          if (itemIsObjDesc) v = {};
+          else if (itemDesc && itemDesc.type === 'number') v = 0;
+          else if (itemDesc && itemDesc.type === 'boolean') v = false;
+          else v = '';
+          renderItem(v, itemsWrap.children.length);
           form.dataset.dirty = '1';
         });
         parent.appendChild(itemsWrap);
