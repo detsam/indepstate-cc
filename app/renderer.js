@@ -119,19 +119,23 @@ function loadSettingsSections() {
   settingsForms.clear();
   ipcRenderer.invoke('settings:list').then((sections = []) => {
     $settingsSections.innerHTML = '';
-    sections.forEach((name) => {
+    sections.forEach((name, idx) => {
       const div = document.createElement('div');
       div.textContent = name;
       div.dataset.section = name;
       div.addEventListener('click', () => showSection(name));
       $settingsSections.appendChild(div);
+      if (idx === 2 && sections.length > 3) {
+        const hr = document.createElement('hr');
+        $settingsSections.appendChild(hr);
+      }
     });
     if (sections[0]) showSection(sections[0]);
   }).catch(() => {});
 }
 
 function showSection(name) {
-  [...$settingsSections.children].forEach(d => {
+  [...$settingsSections.querySelectorAll('div[data-section]')].forEach(d => {
     d.classList.toggle('active', d.dataset.section === name);
   });
   const existing = settingsForms.get(name);

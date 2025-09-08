@@ -5,10 +5,16 @@ const loadConfig = require('../../config/load');
 const CONFIG_DIR = path.join(__dirname, '..', '..', 'config');
 
 function listConfigs() {
-  const files = fs.readdirSync(CONFIG_DIR);
-  return files
+  const files = fs.readdirSync(CONFIG_DIR)
     .filter(f => f.endsWith('.json') && !f.endsWith('-settings-descriptor.json'))
     .map(f => path.basename(f, '.json'));
+  const priority = ['ui', 'services', 'auto-updater'];
+  const ordered = [];
+  priority.forEach(p => {
+    if (files.includes(p)) ordered.push(p);
+  });
+  const rest = files.filter(f => !priority.includes(f)).sort();
+  return ordered.concat(rest);
 }
 
 function readConfig(name) {
