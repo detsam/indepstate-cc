@@ -113,8 +113,10 @@ const $settingsPanel = document.getElementById('settings-panel');
 const $settingsSections = document.getElementById('settings-sections');
 const $settingsFields = document.getElementById('settings-fields');
 const $settingsClose = document.getElementById('settings-close');
+const settingsForms = new Map();
 
 function loadSettingsSections() {
+  settingsForms.clear();
   ipcRenderer.invoke('settings:list').then((sections = []) => {
     $settingsSections.innerHTML = '';
     sections.forEach((name) => {
@@ -128,11 +130,17 @@ function loadSettingsSections() {
 }
 
 function showSection(name) {
+  const existing = settingsForms.get(name);
+  if (existing) {
+    $settingsFields.innerHTML = '';
+    $settingsFields.appendChild(existing);
+    return;
+  }
   ipcRenderer.invoke('settings:get', name).then((res = {}) => {
     const cfg = res.config || res;
     const desc = res.descriptor || {};
-    $settingsFields.innerHTML = '';
     const form = document.createElement('form');
+    form.dataset.section = name;
     const keys = new Set([...Object.keys(cfg || {}), ...Object.keys(desc || {})]);
     for (const key of keys) {
       const d = desc[key] || {};
@@ -156,24 +164,13 @@ function showSection(name) {
         input.value = cfg[key] ?? '';
       }
       input.dataset.field = key;
+      input.addEventListener('input', () => { form.dataset.dirty = '1'; });
+      input.addEventListener('change', () => { form.dataset.dirty = '1'; });
       label.appendChild(input);
       form.appendChild(label);
     }
-    const saveBtn = document.createElement('button');
-    saveBtn.type = 'button';
-    saveBtn.textContent = 'Save';
-    saveBtn.addEventListener('click', () => {
-      const data = {};
-      for (const inp of form.querySelectorAll('input')) {
-        const k = inp.dataset.field;
-        if (inp.type === 'checkbox') data[k] = inp.checked;
-        else if (inp.type === 'number') data[k] = Number(inp.value);
-        else data[k] = inp.value;
-      }
-      ipcRenderer.invoke('settings:set', name, data).catch(() => {});
-      if (name === 'ui') state.autoscroll = !!data.autoscroll;
-    });
-    form.appendChild(saveBtn);
+    settingsForms.set(name, form);
+    $settingsFields.innerHTML = '';
     $settingsFields.appendChild(form);
   }).catch(() => {});
 }
@@ -1791,7 +1788,21 @@ $settingsBtn.addEventListener('click', () => {
   loadSettingsSections();
 });
 $settingsClose.addEventListener('click', () => {
+  for (const [name, form] of settingsForms.entries()) {
+    if (form.dataset.dirty) {
+      const data = {};
+      for (const inp of form.querySelectorAll('input')) {
+        const k = inp.dataset.field;
+        if (inp.type === 'checkbox') data[k] = inp.checked;
+        else if (inp.type === 'number') data[k] = Number(inp.value);
+        else data[k] = inp.value;
+      }
+      ipcRenderer.invoke('settings:set', name, data).catch(() => {});
+      if (name === 'ui') state.autoscroll = !!data.autoscroll;
+    }
+  }
   $settingsPanel.style.display = 'none';
+  settingsForms.clear();
 });
 $wrap.addEventListener('wheel', () => {
   state.autoscroll = false;
