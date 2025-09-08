@@ -10,5 +10,6 @@
   "services/dealTrackers-source-mt5-log",
   "services/ngrok",
   "services/tvProxy",
-  "services/autoUpdater"
+  "services/autoUpdater",
+  "services/settings"
 ]

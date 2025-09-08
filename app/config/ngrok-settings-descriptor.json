@@ -1,0 +1,18 @@
+{
+  "enabled": {
+    "type": "boolean",
+    "description": "Enable ngrok forwarding"
+  },
+  "authToken": {
+    "type": "string",
+    "description": "Authentication token"
+  },
+  "domain": {
+    "type": "string",
+    "description": "Custom domain"
+  },
+  "port": {
+    "type": "number",
+    "description": "Port to forward"
+  }
+}

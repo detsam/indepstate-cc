@@ -67,6 +67,14 @@ const handleClosedCard = closedCardStrategies[CLOSED_CARD_EVENT_STRATEGY] || clo
 
 // ======= App state =======
 const state = {rows: [], filter: '', autoscroll: true};
+// load UI settings
+ipcRenderer.invoke('settings:get', 'ui').then((res) => {
+  if (res && typeof res.autoscroll === 'boolean') {
+    state.autoscroll = res.autoscroll;
+  } else if (res?.config && typeof res.config.autoscroll === 'boolean') {
+    state.autoscroll = res.config.autoscroll;
+  }
+}).catch(() => {});
 
 // Per-card UI state (persist across renders)
 // Crypto:    { qty, price, sl, tp, tpTouched }
@@ -99,8 +107,74 @@ const spreadHistory = new Map();
 const $wrap = document.getElementById('wrap');
 const $grid = document.getElementById('grid');
 const $filter = document.getElementById('filter');
-const $autoscroll = document.getElementById('autoscroll');
 const $cmdline = document.getElementById('cmdline');
+const $settingsBtn = document.getElementById('settings-btn');
+const $settingsPanel = document.getElementById('settings-panel');
+const $settingsSections = document.getElementById('settings-sections');
+const $settingsFields = document.getElementById('settings-fields');
+const $settingsClose = document.getElementById('settings-close');
+
+function loadSettingsSections() {
+  ipcRenderer.invoke('settings:list').then((sections = []) => {
+    $settingsSections.innerHTML = '';
+    sections.forEach((name) => {
+      const div = document.createElement('div');
+      div.textContent = name;
+      div.addEventListener('click', () => showSection(name));
+      $settingsSections.appendChild(div);
+    });
+    if (sections[0]) showSection(sections[0]);
+  }).catch(() => {});
+}
+
+function showSection(name) {
+  ipcRenderer.invoke('settings:get', name).then((res = {}) => {
+    const cfg = res.config || res;
+    const desc = res.descriptor || {};
+    $settingsFields.innerHTML = '';
+    const form = document.createElement('form');
+    const keys = new Set([...Object.keys(cfg || {}), ...Object.keys(desc || {})]);
+    for (const key of keys) {
+      const d = desc[key] || {};
+      const label = document.createElement('label');
+      label.textContent = d.description || key;
+      let input;
+      const type = d.type || typeof cfg[key];
+      if (type === 'boolean') {
+        input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = !!cfg[key];
+      } else if (type === 'number') {
+        input = document.createElement('input');
+        input.type = 'number';
+        input.value = cfg[key] ?? '';
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.value = cfg[key] ?? '';
+      }
+      input.dataset.field = key;
+      label.appendChild(input);
+      form.appendChild(label);
+    }
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.textContent = 'Save';
+    saveBtn.addEventListener('click', () => {
+      const data = {};
+      for (const inp of form.querySelectorAll('input')) {
+        const k = inp.dataset.field;
+        if (inp.type === 'checkbox') data[k] = inp.checked;
+        else if (inp.type === 'number') data[k] = Number(inp.value);
+        else data[k] = inp.value;
+      }
+      ipcRenderer.invoke('settings:set', name, data).catch(() => {});
+      if (name === 'ui') state.autoscroll = !!data.autoscroll;
+    });
+    form.appendChild(saveBtn);
+    $settingsFields.appendChild(form);
+  }).catch(() => {});
+}
 
 // ======= Utils =======
 function findKeyByTicker(ticker) {
@@ -1710,12 +1784,15 @@ $filter.addEventListener('input', () => {
   state.filter = $filter.value || '';
   render();
 });
-$autoscroll.addEventListener('change', () => {
-  state.autoscroll = $autoscroll.checked;
+$settingsBtn.addEventListener('click', () => {
+  $settingsPanel.style.display = 'flex';
+  loadSettingsSections();
+});
+$settingsClose.addEventListener('click', () => {
+  $settingsPanel.style.display = 'none';
 });
 $wrap.addEventListener('wheel', () => {
   state.autoscroll = false;
-  $autoscroll.checked = false;
 });
 $cmdline.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {

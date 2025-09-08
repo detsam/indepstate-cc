@@ -35,6 +35,14 @@ const orderCards = loadConfig('order-cards.json');
 `loadConfig()` looks for an override in the local data `config` directory and
 deep‑merges its contents onto the defaults bundled in this directory.
 
+## Settings descriptors
+
+User-facing descriptions for configuration options are stored in files named
+`*-settings-descriptor.json` alongside the default configs. Each descriptor file
+mirrors the structure of its corresponding config and provides metadata such as
+field type and a human-readable description. These descriptors are consumed by
+the in-app Settings panel to render editable forms.
+
 ## Order Card Source Configuration
 
 The `order-cards.json` file lists every source that can feed order cards into the

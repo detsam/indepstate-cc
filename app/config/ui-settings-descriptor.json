@@ -1,0 +1,6 @@
+{
+  "autoscroll": {
+    "type": "boolean",
+    "description": "Scroll to newest orders automatically"
+  }
+}
