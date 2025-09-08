@@ -4,7 +4,25 @@
     "description": "Enable deal trackers"
   },
   "trackers": {
-    "type": "text",
-    "description": "JSON array of tracker definitions"
+    "description": "Deal tracker definitions",
+    "item": {
+      "description": "Tracker",
+      "type": {
+        "type": "string",
+        "description": "Tracker type"
+      },
+      "vaultPath": {
+        "type": "string",
+        "description": "Obsidian vault path"
+      },
+      "journalPath": {
+        "type": "string",
+        "description": "Journal file path"
+      },
+      "findJournalPath": {
+        "type": "string",
+        "description": "Existing notes search path"
+      }
+    }
   }
 }

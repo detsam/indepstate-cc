@@ -142,6 +142,52 @@ function showSection(name) {
     const form = document.createElement('form');
     form.dataset.section = name;
     const build = (parent, cfgObj, descObj, prefix = '') => {
+      if (Array.isArray(cfgObj) || Array.isArray(descObj)) {
+        const arr = Array.isArray(cfgObj) ? cfgObj : [];
+        const itemDesc = Array.isArray(descObj) ? descObj[0] : (descObj && descObj.item) || {};
+        arr.forEach((val, idx) => {
+          const d = itemDesc;
+          const isObj = (val && typeof val === 'object' && !Array.isArray(val)) ||
+            (d && typeof d === 'object' && !d.type);
+          if (isObj) {
+            const group = document.createElement('div');
+            group.className = 'settings-group';
+            const title = document.createElement('div');
+            title.className = 'settings-group-title';
+            title.textContent = (d && d.description) || String(idx);
+            group.appendChild(title);
+            build(group, val || {}, d || {}, prefix ? `${prefix}.${idx}` : String(idx));
+            parent.appendChild(group);
+          } else {
+            const label = document.createElement('label');
+            const span = document.createElement('span');
+            span.textContent = (d && d.description) || String(idx);
+            label.appendChild(span);
+            let input;
+            const type = (d && d.type) || typeof val;
+            if (type === 'boolean') {
+              input = document.createElement('input');
+              input.type = 'checkbox';
+              input.checked = !!val;
+            } else if (type === 'number') {
+              input = document.createElement('input');
+              input.type = 'number';
+              input.value = val ?? '';
+            } else {
+              input = document.createElement('input');
+              input.type = 'text';
+              input.value = val ?? '';
+            }
+            const path = prefix ? `${prefix}.${idx}` : String(idx);
+            input.dataset.field = path;
+            input.addEventListener('input', () => { form.dataset.dirty = '1'; });
+            input.addEventListener('change', () => { form.dataset.dirty = '1'; });
+            label.appendChild(input);
+            parent.appendChild(label);
+          }
+        });
+        return;
+      }
       const keys = new Set([
         ...Object.keys(cfgObj || {}),
         ...Object.keys(descObj || {})
@@ -1815,10 +1861,21 @@ $settingsClose.addEventListener('click', () => {
     let cur = obj;
     for (let i = 0; i < parts.length - 1; i++) {
       const p = parts[i];
-      if (typeof cur[p] !== 'object' || cur[p] === null) cur[p] = {};
+      const next = parts[i + 1];
+      const nextIsIndex = /^\d+$/.test(next);
+      if (nextIsIndex) {
+        if (!Array.isArray(cur[p])) cur[p] = [];
+      } else {
+        if (typeof cur[p] !== 'object' || cur[p] === null || Array.isArray(cur[p])) cur[p] = {};
+      }
       cur = cur[p];
     }
-    cur[parts[parts.length - 1]] = value;
+    const last = parts[parts.length - 1];
+    if (/^\d+$/.test(last)) {
+      cur[Number(last)] = value;
+    } else {
+      cur[last] = value;
+    }
   };
   for (const [name, form] of settingsForms.entries()) {
     if (form.dataset.dirty) {
