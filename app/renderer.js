@@ -141,34 +141,56 @@ function showSection(name) {
     const desc = res.descriptor || {};
     const form = document.createElement('form');
     form.dataset.section = name;
-    const keys = new Set([...Object.keys(cfg || {}), ...Object.keys(desc || {})]);
-    for (const key of keys) {
-      const d = desc[key] || {};
-      const label = document.createElement('label');
-      const span = document.createElement('span');
-      span.textContent = d.description || key;
-      label.appendChild(span);
-      let input;
-      const type = d.type || typeof cfg[key];
-      if (type === 'boolean') {
-        input = document.createElement('input');
-        input.type = 'checkbox';
-        input.checked = !!cfg[key];
-      } else if (type === 'number') {
-        input = document.createElement('input');
-        input.type = 'number';
-        input.value = cfg[key] ?? '';
-      } else {
-        input = document.createElement('input');
-        input.type = 'text';
-        input.value = cfg[key] ?? '';
+    const build = (parent, cfgObj, descObj, prefix = '') => {
+      const keys = new Set([
+        ...Object.keys(cfgObj || {}),
+        ...Object.keys(descObj || {})
+      ]);
+      for (const key of keys) {
+        if (key === 'description' || key === 'type') continue;
+        const val = cfgObj ? cfgObj[key] : undefined;
+        const d = descObj ? descObj[key] : undefined;
+        const isObj = (val && typeof val === 'object' && !Array.isArray(val)) ||
+          (d && typeof d === 'object' && !d.type);
+        if (isObj) {
+          const group = document.createElement('div');
+          group.className = 'settings-group';
+          const title = document.createElement('div');
+          title.className = 'settings-group-title';
+          title.textContent = (d && d.description) || key;
+          group.appendChild(title);
+          build(group, val || {}, d || {}, prefix ? `${prefix}.${key}` : key);
+          parent.appendChild(group);
+        } else {
+          const label = document.createElement('label');
+          const span = document.createElement('span');
+          span.textContent = (d && d.description) || key;
+          label.appendChild(span);
+          let input;
+          const type = (d && d.type) || typeof val;
+          if (type === 'boolean') {
+            input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = !!val;
+          } else if (type === 'number') {
+            input = document.createElement('input');
+            input.type = 'number';
+            input.value = val ?? '';
+          } else {
+            input = document.createElement('input');
+            input.type = 'text';
+            input.value = val ?? '';
+          }
+          const path = prefix ? `${prefix}.${key}` : key;
+          input.dataset.field = path;
+          input.addEventListener('input', () => { form.dataset.dirty = '1'; });
+          input.addEventListener('change', () => { form.dataset.dirty = '1'; });
+          label.appendChild(input);
+          parent.appendChild(label);
+        }
       }
-      input.dataset.field = key;
-      input.addEventListener('input', () => { form.dataset.dirty = '1'; });
-      input.addEventListener('change', () => { form.dataset.dirty = '1'; });
-      label.appendChild(input);
-      form.appendChild(label);
-    }
+    };
+    build(form, cfg, desc);
     settingsForms.set(name, form);
     $settingsFields.innerHTML = '';
     $settingsFields.appendChild(form);
@@ -1788,14 +1810,26 @@ $settingsBtn.addEventListener('click', () => {
   loadSettingsSections();
 });
 $settingsClose.addEventListener('click', () => {
+  const setNested = (obj, path, value) => {
+    const parts = path.split('.');
+    let cur = obj;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parts[i];
+      if (typeof cur[p] !== 'object' || cur[p] === null) cur[p] = {};
+      cur = cur[p];
+    }
+    cur[parts[parts.length - 1]] = value;
+  };
   for (const [name, form] of settingsForms.entries()) {
     if (form.dataset.dirty) {
       const data = {};
       for (const inp of form.querySelectorAll('input')) {
         const k = inp.dataset.field;
-        if (inp.type === 'checkbox') data[k] = inp.checked;
-        else if (inp.type === 'number') data[k] = Number(inp.value);
-        else data[k] = inp.value;
+        let val;
+        if (inp.type === 'checkbox') val = inp.checked;
+        else if (inp.type === 'number') val = Number(inp.value);
+        else val = inp.value;
+        setNested(data, k, val);
       }
       ipcRenderer.invoke('settings:set', name, data).catch(() => {});
       if (name === 'ui') state.autoscroll = !!data.autoscroll;
