@@ -16,7 +16,6 @@ const tradeRules = require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const execCfg = loadConfig('../services/brokerage/config/execution.json');
 const orderCardsCfg = loadConfig('../services/orderCards/config/order-cards.json');
-const { createCommandService } = require('./services/commandLine');
 
 function loadServices(servicesApi = {}) {
   let dirs = [];
@@ -239,15 +238,6 @@ app.whenReady().then(() => {
       });
     }
   };
-
-  const cmdService = createCommandService({
-    onAdd(row) {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('orders:new', row);
-      }
-    }
-  });
-  ipcMain.handle('cmdline:run', (_evt, str) => cmdService.run(str));
 
   createWindow();
   setupIpc(orderCardService);
