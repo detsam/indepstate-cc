@@ -9,15 +9,15 @@
       },
       "rangeRule": {
         "type": "string",
-        "description": "Helper function name to validate range"
+        "description": "Range Rule"
       },
       "dealPriceRule": {
         "type": "string",
-        "description": "Helper function name to compute limit price"
+        "description": "Deal Price Rule"
       },
       "stoppLossRule": {
         "type": "string",
-        "description": "Helper function name to compute stop loss"
+        "description": "Stop Loss Rule"
       }
     },
     "falseBreak": {
