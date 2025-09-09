@@ -14,6 +14,8 @@
   "services/tradeRules",
   "services/ngrok",
   "services/tvProxy",
+  "services/tvListener",
+  "services/commandLine",
   "services/ui",
   "services/autoUpdater",
   "services/settings"

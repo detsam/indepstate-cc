@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "group": "data-source",
+    "name": "TV Listener"
+  },
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable TradingView listener"
+    }
+  }
+}

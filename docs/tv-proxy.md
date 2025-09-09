@@ -9,10 +9,11 @@ Configure via `app/services/tvProxy/config/tv-proxy.json`:
 - `enabled` (boolean, default `false`) – enable or disable the service.
 - `log` (boolean, default `false`) – write startup and proxy events to a log file.
 - `proxyPort` (number, default `8888`) – port on which mitmdump listens.
+- `webhookEnabled` (boolean, default `false`) – enable forwarding `@ATR` messages to a webhook.
 - `webhookPort` (number) – port of the local `/webhook` endpoint to forward messages to.
 - `webhookUrl` (string) – optional full URL for the webhook; takes precedence over `webhookPort`.
 
-Either `webhookPort` or `webhookUrl` must be provided when the service is enabled.
+When `webhookEnabled` is `true`, either `webhookPort` or `webhookUrl` must be provided.
 
 ## Requirements
 
