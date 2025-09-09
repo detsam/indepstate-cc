@@ -18,10 +18,14 @@ function start(opts = {}) {
 
   log(`[start] opts ${JSON.stringify(opts)}`);
   const proxyPort = opts.proxyPort || 8888;
-  const webhookPort = opts.webhookPort || 0;
-  const webhookUrl = opts.webhookUrl || `http://localhost:${webhookPort}/webhook`;
+  const webhookEnabled = opts.webhookEnabled !== false;
+  let webhookUrl = null;
+  if (webhookEnabled) {
+    const webhookPort = opts.webhookPort || 0;
+    webhookUrl = opts.webhookUrl || (webhookPort ? `http://localhost:${webhookPort}/webhook` : null);
+  }
   const listeners = Array.isArray(opts.listeners) ? opts.listeners.slice() : [];
-  if (webhookUrl) {
+  if (webhookEnabled && webhookUrl) {
     listeners.push((rec) => {
       if (rec.event === 'message' && typeof rec.text === 'string' && rec.text.includes('@ATR')) {
         fetch(webhookUrl, {

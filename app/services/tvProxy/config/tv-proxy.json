@@ -2,5 +2,6 @@
   "enabled": false,
   "log": false,
   "proxyPort": 8888,
+  "webhookEnabled": true,
   "webhookPort": 3210
 }
