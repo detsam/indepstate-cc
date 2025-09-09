@@ -44,10 +44,10 @@ function initService(servicesApi = {}) {
       }
     });
 
-    if (cfg.webhookEnabled === true) {
-      let webhookUrl = typeof cfg.webhookUrl === 'string' ? cfg.webhookUrl : null;
+    if (cfg.webhook && cfg.webhook.enabled === true) {
+      let webhookUrl = typeof cfg.webhook.url === 'string' ? cfg.webhook.url : null;
       if (!webhookUrl) {
-        const port = intVal(cfg.webhookPort);
+        const port = intVal(cfg.webhook.port);
         if (port) webhookUrl = `http://localhost:${port}/webhook`;
       }
       if (webhookUrl) {
@@ -61,7 +61,7 @@ function initService(servicesApi = {}) {
           }
         });
       } else {
-        console.error('[tv-listener] missing webhookPort or webhookUrl');
+        console.error('[tv-listener] missing webhook.port or webhook.url');
       }
     }
   }
