@@ -115,6 +115,28 @@ const $settingsFields = document.getElementById('settings-fields');
 const $settingsClose = document.getElementById('settings-close');
 const settingsForms = new Map();
 
+// If no other input has focus, route keyboard input to the command line
+document.addEventListener('keydown', (e) => {
+  const active = document.activeElement;
+  const isInput = active && (
+    active.tagName === 'INPUT' ||
+    active.tagName === 'TEXTAREA' ||
+    active.isContentEditable
+  );
+  if (!isInput) {
+    $cmdline.focus();
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (e.key.length === 1) {
+        $cmdline.value += e.key;
+        e.preventDefault();
+      } else if (e.key === 'Backspace') {
+        $cmdline.value = $cmdline.value.slice(0, -1);
+        e.preventDefault();
+      }
+    }
+  }
+});
+
 function loadSettingsSections() {
   settingsForms.clear();
   ipcRenderer.invoke('settings:list').then((sections = []) => {
