@@ -89,6 +89,19 @@ async function run() {
   barsRange.forEach(b => svcRange.onBar(b));
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101.9, stopLoss: 99 });
 
+  // short order triggers within allowed range
+  exec = undefined;
+  const svcRangeShort = createPendingOrderService({ strategyConfig: {} });
+  svcRangeShort.addOrder({ price: 200, side: 'short', rangeRule: B1_RANGE_CONSOLIDATION,
+    onExecute: r => { exec = r; } });
+  const barsRangeShort = [
+    { open: 200.5, high: 201, low: 199, close: 199.5 },
+    { open: 199.8, high: 199.9, low: 198.9, close: 199.3 },
+    { open: 199.7, high: 199.8, low: 198.5, close: 199 },
+  ];
+  barsRangeShort.forEach(b => svcRangeShort.onBar(b));
+  assert.deepStrictEqual(exec, { id: 1, side: 'short', limitPrice: 198.5, stopLoss: 201 });
+
   // long order fails if price extends too far above level
   exec = undefined;
   const svc5 = createPendingOrderService({ strategyConfig: {} });
