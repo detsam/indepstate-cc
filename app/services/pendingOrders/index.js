@@ -3,7 +3,8 @@ const {
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
   KNOWN_EXTREMUM,
-  B1_TAIL
+  B1_TAIL,
+  B1_10p_GAP
 } = require('./strategies/consolidation');
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
 const { PendingOrderHub, createPendingOrderHub } = require('./hub');
@@ -21,6 +22,7 @@ module.exports = {
   B1_RANGE_CONSOLIDATION,
   KNOWN_EXTREMUM,
   B1_TAIL,
+  B1_10p_GAP,
   FalseBreakStrategy,
   PendingOrderHub,
   createPendingOrderHub,

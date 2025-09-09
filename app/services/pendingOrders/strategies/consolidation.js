@@ -2,16 +2,25 @@ const ALWAYS_TRUE = () => true;
 
 // KNOWN_EXTREMUM selects the most favorable extreme from the bar sequence
 // (highest high for longs, lowest low for shorts) as the target price.
-function KNOWN_EXTREMUM(bars, side) {
+function KNOWN_EXTREMUM(bars, side, _price) {
   return side === 'long'
     ? Math.max(...bars.map(b => b.high))
     : Math.min(...bars.map(b => b.low));
 }
 
 // B1_TAIL uses the opposite-side tail of the breakout bar as the stop price.
-function B1_TAIL(bars, side) {
+function B1_TAIL(bars, side, _price) {
   const b1 = bars[0];
   return side === 'long' ? b1.low : b1.high;
+}
+
+// B1_10p_GAP offsets the entry price by 10% of the breakout bar range
+// (minimum 1) plus 2 points to place the limit order.
+function B1_10p_GAP(bars, side, price) {
+  const b1 = bars[0];
+  const range = b1.high - b1.low;
+  const gap = Math.max(range * 0.1, 1) + 2;
+  return side === 'long' ? price + gap : price - gap;
 }
 
 function B1_RANGE_CONSOLIDATION(price, side, bars) {
@@ -52,8 +61,8 @@ class ConsolidationStrategy {
     if (!ok) return null;
     if (!this.rangeRule(p, this.side, seq)) return null;
     this.done = true;
-    const limitPrice = this.dealPriceRule(seq, this.side);
-    const stopLoss = this.stoppLossRule(seq, this.side);
+    const limitPrice = this.dealPriceRule(seq, this.side, p);
+    const stopLoss = this.stoppLossRule(seq, this.side, p);
     return { limitPrice, stopLoss };
   }
 }
@@ -62,5 +71,6 @@ module.exports = {
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
   KNOWN_EXTREMUM,
-  B1_TAIL
+  B1_TAIL,
+  B1_10p_GAP
 };

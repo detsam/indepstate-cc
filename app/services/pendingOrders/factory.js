@@ -3,7 +3,8 @@ const {
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
   KNOWN_EXTREMUM,
-  B1_TAIL
+  B1_TAIL,
+  B1_10p_GAP
 } = require('./strategies/consolidation');
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
 
@@ -13,6 +14,7 @@ function createStrategyFactory(strategyConfig, extraStrategies = {}, extraHelper
     B1_RANGE_CONSOLIDATION,
     KNOWN_EXTREMUM,
     B1_TAIL,
+    B1_10p_GAP,
     ...extraHelpers
   };
   const classes = { consolidation: ConsolidationStrategy, falseBreak: FalseBreakStrategy, ...extraStrategies };
