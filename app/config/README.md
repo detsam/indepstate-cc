@@ -111,16 +111,25 @@ as `rangeRule`, `dealPriceRule` and `stoppLossRule`, may be specified as the nam
 a built‑in helper function:
 
 ```json
-{
+{ 
   "consolidation": {
     "bars": 3,
     "rangeRule": "B1_RANGE_CONSOLIDATION",
-    "dealPriceRule": "defaultDealPrice",
-    "stoppLossRule": "defaultStopLoss"
+    "dealPriceRule": "KNOWN_EXTREMUM",
+    "stoppLossRule": "B1_TAIL"
   },
   "falseBreak": { "tickSize": 0.01 }
 }
 ```
+
+Built-in helper functions:
+
+- `B1_RANGE_CONSOLIDATION` – validates that subsequent bars stay within the
+  range of the breakout bar.
+- `KNOWN_EXTREMUM` – picks the highest high (for longs) or lowest low (for
+  shorts) from the observed bars as the target price.
+- `B1_TAIL` – uses the opposite-direction extremum of the bar that pierced the
+  level as the stop price.
 
 Override this file in `config/pending-strategies.json` to customize the defaults.
 

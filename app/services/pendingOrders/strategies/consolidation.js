@@ -1,12 +1,15 @@
 const ALWAYS_TRUE = () => true;
 
-function defaultDealPrice(bars, side) {
+// KNOWN_EXTREMUM selects the most favorable extreme from the bar sequence
+// (highest high for longs, lowest low for shorts) as the target price.
+function KNOWN_EXTREMUM(bars, side) {
   return side === 'long'
     ? Math.max(...bars.map(b => b.high))
     : Math.min(...bars.map(b => b.low));
 }
 
-function defaultStopLoss(bars, side) {
+// B1_TAIL uses the opposite-side tail of the breakout bar as the stop price.
+function B1_TAIL(bars, side) {
   const b1 = bars[0];
   return side === 'long' ? b1.low : b1.high;
 }
@@ -22,7 +25,7 @@ function B1_RANGE_CONSOLIDATION(price, side, bars) {
 }
 
 class ConsolidationStrategy {
-  constructor({ price, side, bars = 3, rangeRule = ALWAYS_TRUE, dealPriceRule = defaultDealPrice, stoppLossRule = defaultStopLoss } = {}) {
+  constructor({ price, side, bars = 3, rangeRule = ALWAYS_TRUE, dealPriceRule = KNOWN_EXTREMUM, stoppLossRule = B1_TAIL } = {}) {
     this.price = Number(price);
     this.side = side;
     this.barCount = Math.max(1, Number(bars) || 3);
@@ -58,6 +61,6 @@ class ConsolidationStrategy {
 module.exports = {
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
-  defaultDealPrice,
-  defaultStopLoss
+  KNOWN_EXTREMUM,
+  B1_TAIL
 };

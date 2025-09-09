@@ -2,8 +2,8 @@ const loadConfig = require('../../config/load');
 const {
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
-  defaultDealPrice,
-  defaultStopLoss
+  KNOWN_EXTREMUM,
+  B1_TAIL
 } = require('./strategies/consolidation');
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
 
@@ -11,8 +11,8 @@ function createStrategyFactory(strategyConfig, extraStrategies = {}, extraHelper
   const cfg = strategyConfig || loadConfig('../services/pendingOrders/config/pending-strategies.json');
   const helpers = {
     B1_RANGE_CONSOLIDATION,
-    defaultDealPrice,
-    defaultStopLoss,
+    KNOWN_EXTREMUM,
+    B1_TAIL,
     ...extraHelpers
   };
   const classes = { consolidation: ConsolidationStrategy, falseBreak: FalseBreakStrategy, ...extraStrategies };
