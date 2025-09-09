@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "webhook": {
+    "enabled": false,
+    "port": 3210,
+    "url": ""
+  }
+}

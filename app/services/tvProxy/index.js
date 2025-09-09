@@ -1,7 +1,6 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
 const electron = require('electron');
 const { APP_ROOT, USER_ROOT } = require('../../config/load');
 
@@ -18,8 +17,7 @@ function start(opts = {}) {
 
   log(`[start] opts ${JSON.stringify(opts)}`);
   const proxyPort = opts.proxyPort || 8888;
-  const webhookPort = opts.webhookPort || 0;
-  const webhookUrl = opts.webhookUrl || `http://localhost:${webhookPort}/webhook`;
+  const listeners = Array.isArray(opts.listeners) ? opts.listeners.slice() : [];
 
   const roots = [];
   const asarRoot = electron.app?.getAppPath ? electron.app.getAppPath() : APP_ROOT;
@@ -73,12 +71,8 @@ function start(opts = {}) {
       log(`[stdout] ${line}`);
       try {
         const rec = JSON.parse(line);
-        if (rec.event === 'message' && typeof rec.text === 'string' && rec.text.includes('@ATR')) {
-          fetch(webhookUrl, {
-            method: 'POST',
-            body: rec.text,
-            headers: { 'content-type': 'text/plain' }
-          }).catch(() => {});
+        for (const fn of listeners) {
+          try { fn(rec); } catch {}
         }
       } catch {}
     }
@@ -98,6 +92,9 @@ function start(opts = {}) {
   });
 
   return {
+    addListener(fn) {
+      if (typeof fn === 'function') listeners.push(fn);
+    },
     stop() {
       log('[stop] sending SIGTERM');
       try { proc.kill('SIGTERM'); } catch {}
