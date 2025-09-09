@@ -20,6 +20,18 @@ function start(opts = {}) {
   const proxyPort = opts.proxyPort || 8888;
   const webhookPort = opts.webhookPort || 0;
   const webhookUrl = opts.webhookUrl || `http://localhost:${webhookPort}/webhook`;
+  const listeners = Array.isArray(opts.listeners) ? opts.listeners.slice() : [];
+  if (webhookUrl) {
+    listeners.push((rec) => {
+      if (rec.event === 'message' && typeof rec.text === 'string' && rec.text.includes('@ATR')) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          body: rec.text,
+          headers: { 'content-type': 'text/plain' }
+        }).catch(() => {});
+      }
+    });
+  }
 
   const roots = [];
   const asarRoot = electron.app?.getAppPath ? electron.app.getAppPath() : APP_ROOT;
@@ -73,12 +85,8 @@ function start(opts = {}) {
       log(`[stdout] ${line}`);
       try {
         const rec = JSON.parse(line);
-        if (rec.event === 'message' && typeof rec.text === 'string' && rec.text.includes('@ATR')) {
-          fetch(webhookUrl, {
-            method: 'POST',
-            body: rec.text,
-            headers: { 'content-type': 'text/plain' }
-          }).catch(() => {});
+        for (const fn of listeners) {
+          try { fn(rec); } catch {}
         }
       } catch {}
     }
@@ -98,6 +106,9 @@ function start(opts = {}) {
   });
 
   return {
+    addListener(fn) {
+      if (typeof fn === 'function') listeners.push(fn);
+    },
     stop() {
       log('[stop] sending SIGTERM');
       try { proc.kill('SIGTERM'); } catch {}
