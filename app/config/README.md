@@ -107,7 +107,7 @@ default buttons are `BL`, `BC`, `BFB`, `SL`, `SC` and `SFB`.
 `pending-strategies.json` defines default options for pending‑order execution
 strategies. Each top‑level key corresponds to a strategy name and its value
 contains options that are merged with per‑order parameters. Some options, such
-as `rangeRule`, `limitPriceFn` and `stopLossFn`, may be specified as the name of
+as `rangeRule`, `dealPriceRule` and `stoppLossRule`, may be specified as the name of
 a built‑in helper function:
 
 ```json
@@ -115,8 +115,8 @@ a built‑in helper function:
   "consolidation": {
     "bars": 3,
     "rangeRule": "B1_RANGE_CONSOLIDATION",
-    "limitPriceFn": "defaultLimitPrice",
-    "stopLossFn": "defaultStopLoss"
+    "dealPriceRule": "defaultDealPrice",
+    "stoppLossRule": "defaultStopLoss"
   },
   "falseBreak": { "tickSize": 0.01 }
 }

@@ -1,6 +1,6 @@
 const ALWAYS_TRUE = () => true;
 
-function defaultLimitPrice(bars, side) {
+function defaultDealPrice(bars, side) {
   return side === 'long'
     ? Math.max(...bars.map(b => b.high))
     : Math.min(...bars.map(b => b.low));
@@ -22,13 +22,13 @@ function B1_RANGE_CONSOLIDATION(price, side, bars) {
 }
 
 class ConsolidationStrategy {
-  constructor({ price, side, bars = 3, rangeRule = ALWAYS_TRUE, limitPriceFn = defaultLimitPrice, stopLossFn = defaultStopLoss } = {}) {
+  constructor({ price, side, bars = 3, rangeRule = ALWAYS_TRUE, dealPriceRule = defaultDealPrice, stoppLossRule = defaultStopLoss } = {}) {
     this.price = Number(price);
     this.side = side;
     this.barCount = Math.max(1, Number(bars) || 3);
     this.rangeRule = rangeRule;
-    this.limitPriceFn = limitPriceFn;
-    this.stopLossFn = stopLossFn;
+    this.dealPriceRule = dealPriceRule;
+    this.stoppLossRule = stoppLossRule;
     this.bars = [];
     this.done = false;
   }
@@ -49,8 +49,8 @@ class ConsolidationStrategy {
     if (!ok) return null;
     if (!this.rangeRule(p, this.side, seq)) return null;
     this.done = true;
-    const limitPrice = this.limitPriceFn(seq, this.side);
-    const stopLoss = this.stopLossFn(seq, this.side);
+    const limitPrice = this.dealPriceRule(seq, this.side);
+    const stopLoss = this.stoppLossRule(seq, this.side);
     return { limitPrice, stopLoss };
   }
 }
@@ -58,6 +58,6 @@ class ConsolidationStrategy {
 module.exports = {
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
-  defaultLimitPrice,
+  defaultDealPrice,
   defaultStopLoss
 };

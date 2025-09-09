@@ -6,6 +6,18 @@
       "bars": {
         "type": "number",
         "description": "Number of bars to consider"
+      },
+      "rangeRule": {
+        "type": "string",
+        "description": "Helper function name to validate range"
+      },
+      "dealPriceRule": {
+        "type": "string",
+        "description": "Helper function name to compute limit price"
+      },
+      "stoppLossRule": {
+        "type": "string",
+        "description": "Helper function name to compute stop loss"
       }
     },
     "falseBreak": {

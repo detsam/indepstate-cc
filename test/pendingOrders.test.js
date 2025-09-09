@@ -106,8 +106,8 @@ async function run() {
   exec = undefined;
   const svcCustom = createPendingOrderService({ strategyConfig: {} });
   svcCustom.addOrder({ price: 100, side: 'long',
-    limitPriceFn: () => 105,
-    stopLossFn: () => 95,
+    dealPriceRule: () => 105,
+    stoppLossRule: () => 95,
     onExecute: r => { exec = r; } });
   bars1.forEach(b => svcCustom.onBar(b));
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 105, stopLoss: 95 });
@@ -115,10 +115,10 @@ async function run() {
   // limit and stop functions via config names
   exec = undefined;
   const factory = createStrategyFactory(
-    { consolidation: { limitPriceFn: 'cfgLimit', stopLossFn: 'cfgStop' } },
+    { consolidation: { dealPriceRule: 'cfgDeal', stoppLossRule: 'cfgStop' } },
     undefined,
     {
-      cfgLimit: () => 106,
+      cfgDeal: () => 106,
       cfgStop: () => 94
     }
   );
