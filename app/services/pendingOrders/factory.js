@@ -2,8 +2,9 @@ const loadConfig = require('../../config/load');
 const {
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
-  defaultLimitPrice,
-  defaultStopLoss
+  KNOWN_EXTREMUM,
+  B1_TAIL,
+  B1_10p_GAP
 } = require('./strategies/consolidation');
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
 
@@ -11,8 +12,9 @@ function createStrategyFactory(strategyConfig, extraStrategies = {}, extraHelper
   const cfg = strategyConfig || loadConfig('../services/pendingOrders/config/pending-strategies.json');
   const helpers = {
     B1_RANGE_CONSOLIDATION,
-    defaultLimitPrice,
-    defaultStopLoss,
+    KNOWN_EXTREMUM,
+    B1_TAIL,
+    B1_10p_GAP,
     ...extraHelpers
   };
   const classes = { consolidation: ConsolidationStrategy, falseBreak: FalseBreakStrategy, ...extraStrategies };
@@ -22,7 +24,7 @@ function createStrategyFactory(strategyConfig, extraStrategies = {}, extraHelper
     const base = cfg?.[name] || {};
     const opts = { ...base, ...params };
     if (name === 'consolidation') {
-      ['rangeRule', 'limitPriceFn', 'stopLossFn'].forEach(key => {
+      ['rangeRule', 'dealPriceRule', 'stoppLossRule'].forEach(key => {
         if (typeof opts[key] === 'string') {
           opts[key] = helpers[opts[key]] || opts[key];
         }

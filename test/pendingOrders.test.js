@@ -76,6 +76,56 @@ async function run() {
   bars3.forEach(b => svc3.onBar(b));
   assert.deepStrictEqual(exec, { id: 1, side: 'short', limitPrice: 198.5, stopLoss: 201 });
 
+  // long order triggers within allowed range
+  exec = undefined;
+  const svcRange = createPendingOrderService({ strategyConfig: {} });
+  svcRange.addOrder({ price: 100, side: 'long', rangeRule: B1_RANGE_CONSOLIDATION,
+    onExecute: r => { exec = r; } });
+  const barsRange = [
+    { open: 99, high: 101, low: 99, close: 100.5 },
+    { open: 100.6, high: 101.5, low: 100.6, close: 100.8 },
+    { open: 100.8, high: 101.9, low: 100.7, close: 101 },
+  ];
+  barsRange.forEach(b => svcRange.onBar(b));
+  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101.9, stopLoss: 99 });
+
+  // short order triggers within allowed range
+  exec = undefined;
+  const svcRangeShort = createPendingOrderService({ strategyConfig: {} });
+  svcRangeShort.addOrder({ price: 200, side: 'short', rangeRule: B1_RANGE_CONSOLIDATION,
+    onExecute: r => { exec = r; } });
+  const barsRangeShort = [
+    { open: 200.5, high: 201, low: 199, close: 199.5 },
+    { open: 199.8, high: 199.9, low: 198.9, close: 199.3 },
+    { open: 199.7, high: 199.8, low: 198.5, close: 199 },
+  ];
+  barsRangeShort.forEach(b => svcRangeShort.onBar(b));
+  assert.deepStrictEqual(exec, { id: 1, side: 'short', limitPrice: 198.5, stopLoss: 201 });
+
+  // long order uses B1_10p_GAP to offset limit price
+  exec = undefined;
+  const svcGapLong = createPendingOrderService({ strategyConfig: {} });
+  svcGapLong.addOrder({ price: 100, side: 'long', dealPriceRule: 'B1_10p_GAP', onExecute: r => { exec = r; } });
+  const barsGapLong = [
+    { open: 99, high: 101, low: 99, close: 100.5 },
+    { open: 100.6, high: 100.8, low: 100.6, close: 100.7 },
+    { open: 100.7, high: 100.9, low: 100.6, close: 100.8 },
+  ];
+  barsGapLong.forEach(b => svcGapLong.onBar(b));
+  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 100.22, stopLoss: 99 });
+
+  // short order uses B1_10p_GAP to offset limit price
+  exec = undefined;
+  const svcGapShort = createPendingOrderService({ strategyConfig: {} });
+  svcGapShort.addOrder({ price: 200, side: 'short', dealPriceRule: 'B1_10p_GAP', onExecute: r => { exec = r; } });
+  const barsGapShort = [
+    { open: 200.5, high: 201, low: 199, close: 199.5 },
+    { open: 199.8, high: 199.9, low: 199.1, close: 199.4 },
+    { open: 199.7, high: 199.8, low: 199.2, close: 199.3 },
+  ];
+  barsGapShort.forEach(b => svcGapShort.onBar(b));
+  assert.deepStrictEqual(exec, { id: 1, side: 'short', limitPrice: 199.78, stopLoss: 201 });
+
   // long order fails if price extends too far above level
   exec = undefined;
   const svc5 = createPendingOrderService({ strategyConfig: {} });
@@ -106,8 +156,8 @@ async function run() {
   exec = undefined;
   const svcCustom = createPendingOrderService({ strategyConfig: {} });
   svcCustom.addOrder({ price: 100, side: 'long',
-    limitPriceFn: () => 105,
-    stopLossFn: () => 95,
+    dealPriceRule: () => 105,
+    stoppLossRule: () => 95,
     onExecute: r => { exec = r; } });
   bars1.forEach(b => svcCustom.onBar(b));
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 105, stopLoss: 95 });
@@ -115,10 +165,10 @@ async function run() {
   // limit and stop functions via config names
   exec = undefined;
   const factory = createStrategyFactory(
-    { consolidation: { limitPriceFn: 'cfgLimit', stopLossFn: 'cfgStop' } },
+    { consolidation: { dealPriceRule: 'cfgDeal', stoppLossRule: 'cfgStop' } },
     undefined,
     {
-      cfgLimit: () => 106,
+      cfgDeal: () => 106,
       cfgStop: () => 94
     }
   );

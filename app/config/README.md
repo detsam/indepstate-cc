@@ -107,20 +107,32 @@ default buttons are `BL`, `BC`, `BFB`, `SL`, `SC` and `SFB`.
 `pending-strategies.json` defines default options for pending‑order execution
 strategies. Each top‑level key corresponds to a strategy name and its value
 contains options that are merged with per‑order parameters. Some options, such
-as `rangeRule`, `limitPriceFn` and `stopLossFn`, may be specified as the name of
+as `rangeRule`, `dealPriceRule` and `stoppLossRule`, may be specified as the name of
 a built‑in helper function:
 
 ```json
-{
+{ 
   "consolidation": {
     "bars": 3,
     "rangeRule": "B1_RANGE_CONSOLIDATION",
-    "limitPriceFn": "defaultLimitPrice",
-    "stopLossFn": "defaultStopLoss"
+    "dealPriceRule": "KNOWN_EXTREMUM",
+    "stoppLossRule": "B1_TAIL"
   },
   "falseBreak": { "tickSize": 0.01 }
 }
 ```
+
+Built-in helper functions:
+
+- `B1_RANGE_CONSOLIDATION` – validates that subsequent bars stay within the
+  range of the breakout bar.
+- `KNOWN_EXTREMUM` – picks the highest high (for longs) or lowest low (for
+  shorts) from the observed bars as the target price.
+- `B1_TAIL` – uses the opposite-direction extremum of the bar that pierced the
+  level as the stop price.
+- `B1_10p_GAP` – sets the limit price at the entry level plus 10% of the
+  breakout bar's range (at least 0.01) and an extra 0.02 for longs (subtracts
+  for shorts).
 
 Override this file in `config/pending-strategies.json` to customize the defaults.
 

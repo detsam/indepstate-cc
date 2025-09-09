@@ -16,8 +16,8 @@ class PendingOrderService {
       tickSize,
       bars,
       rangeRule,
-      limitPriceFn,
-      stopLossFn,
+      dealPriceRule,
+      stoppLossRule,
       onExecute,
       onCancel
     } = opts;
@@ -25,8 +25,8 @@ class PendingOrderService {
     if (tickSize != null) params.tickSize = tickSize;
     if (bars != null) params.bars = bars;
     if (rangeRule != null) params.rangeRule = rangeRule;
-    if (limitPriceFn != null) params.limitPriceFn = limitPriceFn;
-    if (stopLossFn != null) params.stopLossFn = stopLossFn;
+    if (dealPriceRule != null) params.dealPriceRule = dealPriceRule;
+    if (stoppLossRule != null) params.stoppLossRule = stoppLossRule;
     const strategyInst = this.createStrategy(strategy, params);
     const id = this.nextId++;
     this.orders.set(id, { id, side, strategy: strategyInst, onExecute, onCancel });
