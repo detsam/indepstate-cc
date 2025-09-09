@@ -9,21 +9,18 @@
       "description": "Enable TradingView listener"
     },
     "webhook": {
-      "type": "object",
       "description": "@ATR webhook settings",
-      "options": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable @ATR webhook listener"
-        },
-        "port": {
-          "type": "number",
-          "description": "Webhook port"
-        },
-        "url": {
-          "type": "string",
-          "description": "Webhook URL"
-        }
+      "enabled": {
+        "type": "boolean",
+        "description": "Enable @ATR webhook listener"
+      },
+      "port": {
+        "type": "number",
+        "description": "Webhook port"
+      },
+      "url": {
+        "type": "string",
+        "description": "Webhook URL"
       }
     }
   }
