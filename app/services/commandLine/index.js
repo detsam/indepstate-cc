@@ -2,13 +2,16 @@
 // Parses and executes text commands using registered command objects
 // Commands may expose multiple names/aliases
 
-const { AddCommand } = require('./commands/add');
+const { AddCommand } = require('../commands/add');
 
 function createCommandService(opts = {}) {
-  const { commands } = opts;
-  const list = Array.isArray(commands) && commands.length
-    ? commands
-    : [new AddCommand({ onAdd: opts.onAdd })];
+  const extra = Array.isArray(opts.commands)
+    ? opts.commands.map(c => {
+        if (c && typeof c === 'object' && c.onAdd == null) c.onAdd = opts.onAdd;
+        return c;
+      })
+    : [];
+  const list = [new AddCommand({ onAdd: opts.onAdd }), ...extra];
 
   function run(str) {
     if (!str) return { ok: false, error: 'Empty command' };

@@ -14,6 +14,7 @@
     },
     "providers": {
       "description": "Provider configurations",
+      "__allowUnknown": true,
       "simulated": {
         "description": "Simulated provider settings",
         "adapter": { "type": "string", "description": "Adapter name" }

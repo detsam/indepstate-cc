@@ -1,0 +1,27 @@
+{
+  "properties": {
+    "group": "data-source",
+    "name": "TV Listener"
+  },
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable TradingView listener"
+    },
+    "webhook": {
+      "description": "@ATR webhook settings",
+      "enabled": {
+        "type": "boolean",
+        "description": "Enable @ATR webhook listener"
+      },
+      "port": {
+        "type": "number",
+        "description": "Webhook port"
+      },
+      "url": {
+        "type": "string",
+        "description": "Webhook URL"
+      }
+    }
+  }
+}

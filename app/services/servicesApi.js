@@ -40,4 +40,4 @@
  * @property {{listConfigs:Function,readConfig:Function,writeConfig:Function}} [settings]
  */
 
-module.exports = {};
+module.exports = { commands: [] };

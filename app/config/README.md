@@ -53,7 +53,7 @@ contains two top-level keys:
   `pending-strategies-settings-descriptor.json` to describe their inner
   fields.
 
-These descriptors are consumed by the in-app Settings panel to render editable forms.
+These descriptors are consumed by the in-app Settings panel to render editable forms. When user overrides are merged with the defaults, any unknown keys are normally ignored. To allow an object to accept arbitrary keys (for example a map of provider names), mark the descriptor for that object with `"__allowUnknown": true`.
 
 ## Order Card Source Configuration
 
