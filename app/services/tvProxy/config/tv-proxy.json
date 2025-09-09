@@ -1,5 +1,4 @@
 {
   "enabled": false,
-  "log": false,
-  "proxyPort": 8888
+  "log": false
 }

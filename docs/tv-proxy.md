@@ -8,9 +8,8 @@ Configure via `app/services/tvProxy/config/tv-proxy.json`:
 
 - `enabled` (boolean, default `false`) – enable or disable the service.
 - `log` (boolean, default `false`) – write startup and proxy events to a log file.
-- `proxyPort` (number, default `8888`) – port on which mitmdump listens.
 
-Other services may register listeners on the proxy to react to parsed messages, such as forwarding specific events to webhooks.
+The proxy listens on port `8888` and cannot be reconfigured. Other services may register listeners on the proxy to react to parsed messages, such as forwarding specific events to webhooks.
 
 ## Requirements
 

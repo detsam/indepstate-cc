@@ -9,11 +9,6 @@ settings.register(
   path.join(__dirname, 'config', 'tv-proxy-settings-descriptor.json')
 );
 
-function intVal(v, fallback = 0) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : fallback;
-}
-
 function initService(servicesApi = {}) {
   let cfg = {};
   try {
@@ -23,8 +18,7 @@ function initService(servicesApi = {}) {
   }
   if (cfg.enabled === false) return;
 
-  const proxyPort = intVal(cfg.proxyPort, 8888);
-  const opts = { proxyPort };
+  const opts = {};
   if (cfg.log) opts.log = true;
 
   const svc = start(opts);
