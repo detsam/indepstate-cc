@@ -39,9 +39,15 @@ class AddCommand extends Command {
   }
 
   run(args) {
-    const [ticker, priceStr, slStr, tpStr, riskStr] = args;
+    let [ticker, priceStr, slStr, tpStr, riskStr] = args;
     if (!ticker || priceStr == null || slStr == null) {
       return { ok: false, error: 'Usage: add {ticker} {price} {sl} {tp} {risk}' };
+    }
+    const dot = ticker.indexOf('.');
+    if (dot >= 0) {
+      ticker = ticker.slice(0, dot).toUpperCase() + ticker.slice(dot);
+    } else {
+      ticker = ticker.toUpperCase();
     }
     const price = _normNum(priceStr);
     const sl = parsePtsAuto(slStr, price);

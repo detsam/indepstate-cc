@@ -15,6 +15,16 @@ async function run() {
   assert.strictEqual(res.ok, true);
   assert.strictEqual(row.sl, 25);
 
+  // ticker capitalization without dot
+  res = cmd.run(['bbb', '100', '20']);
+  assert.strictEqual(res.ok, true);
+  assert.strictEqual(row.ticker, 'BBB');
+
+  // ticker capitalization up to dot
+  res = cmd.run(['ccc.def', '100', '20']);
+  assert.strictEqual(res.ok, true);
+  assert.strictEqual(row.ticker, 'CCC.def');
+
   console.log('addCommand tests passed');
 }
 
