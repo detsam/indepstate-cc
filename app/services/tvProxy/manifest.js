@@ -24,7 +24,7 @@ function initService(servicesApi = {}) {
   if (cfg.enabled === false) return;
 
   const proxyPort = intVal(cfg.proxyPort, 8888);
-  const webhookEnabled = cfg.webhookEnabled !== false;
+  const webhookEnabled = cfg.webhookEnabled === true;
   const opts = { proxyPort, webhookEnabled };
   if (cfg.log) opts.log = true;
   if (webhookEnabled) {

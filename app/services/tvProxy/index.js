@@ -18,7 +18,7 @@ function start(opts = {}) {
 
   log(`[start] opts ${JSON.stringify(opts)}`);
   const proxyPort = opts.proxyPort || 8888;
-  const webhookEnabled = opts.webhookEnabled !== false;
+  const webhookEnabled = opts.webhookEnabled === true;
   let webhookUrl = null;
   if (webhookEnabled) {
     const webhookPort = opts.webhookPort || 0;

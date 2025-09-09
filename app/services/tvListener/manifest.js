@@ -29,7 +29,7 @@ function initService(servicesApi = {}) {
           const src = payload?.sources && Object.values(payload.sources)[0];
           if (src?.state?.type === 'LineToolHorzLine') {
             const symbol = src.symbol;
-            const price = Number(src.points?.[0]?.price);
+            const price = Number(src.state?.points?.[0]?.price);
             if (symbol && Number.isFinite(price)) {
               lastActivity = { symbol, price };
             }

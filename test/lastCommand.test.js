@@ -5,7 +5,14 @@ const { createCommandService } = require('../app/services/commandLine');
 function run() {
   const api = { commands: [], tvProxy: { addListener(fn) { this.fn = fn; } } };
   manifest.initService(api);
-  const samplePayload = { sources: { foo: { state: { type: 'LineToolHorzLine' }, points: [{ price: 1.5 }], symbol: 'NYSE:AAA' } } };
+  const samplePayload = {
+    sources: {
+      foo: {
+        state: { type: 'LineToolHorzLine', points: [{ price: 1.5 }] },
+        symbol: 'NYSE:AAA'
+      }
+    }
+  };
   api.tvProxy.fn({ event: 'http_request', text: JSON.stringify(samplePayload) });
 
   let row;
