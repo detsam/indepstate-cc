@@ -5,8 +5,13 @@ async function run() {
   let row;
   const cmd = new AddCommand({ onAdd: r => { row = r; } });
 
+  // default SL
+  let res = cmd.run(['AAA', '100']);
+  assert.strictEqual(res.ok, true);
+  assert.strictEqual(row.sl, 10);
+
   // raw points
-  let res = cmd.run(['AAA', '100', '20']);
+  res = cmd.run(['AAA', '100', '20']);
   assert.strictEqual(res.ok, true);
   assert.strictEqual(row.sl, 20);
 
