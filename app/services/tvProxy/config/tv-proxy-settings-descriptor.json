@@ -15,14 +15,6 @@
     "proxyPort": {
       "type": "number",
       "description": "Proxy port"
-    },
-    "webhookEnabled": {
-      "type": "boolean",
-      "description": "Enable webhook listener"
-    },
-    "webhookPort": {
-      "type": "number",
-      "description": "Webhook port"
     }
   }
 }

@@ -1,4 +1,5 @@
 const path = require('path');
+const fetch = require('node-fetch');
 const settings = require('../settings');
 const loadConfig = require('../../config/load');
 const { AddCommand } = require('../commands/add');
@@ -8,6 +9,11 @@ settings.register(
   path.join(__dirname, 'config', 'tv-listener.json'),
   path.join(__dirname, 'config', 'tv-listener-settings-descriptor.json')
 );
+
+function intVal(v, fallback = 0) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 function initService(servicesApi = {}) {
   let cfg = {};
@@ -37,6 +43,27 @@ function initService(servicesApi = {}) {
         } catch {}
       }
     });
+
+    if (cfg.webhookEnabled === true) {
+      let webhookUrl = typeof cfg.webhookUrl === 'string' ? cfg.webhookUrl : null;
+      if (!webhookUrl) {
+        const port = intVal(cfg.webhookPort);
+        if (port) webhookUrl = `http://localhost:${port}/webhook`;
+      }
+      if (webhookUrl) {
+        tvProxy.addListener((rec) => {
+          if (rec.event === 'message' && typeof rec.text === 'string' && rec.text.includes('@ATR')) {
+            fetch(webhookUrl, {
+              method: 'POST',
+              body: rec.text,
+              headers: { 'content-type': 'text/plain' }
+            }).catch(() => {});
+          }
+        });
+      } else {
+        console.error('[tv-listener] missing webhookPort or webhookUrl');
+      }
+    }
   }
 
   class LastCommand extends AddCommand {

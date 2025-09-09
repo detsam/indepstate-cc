@@ -1,7 +1,6 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
 const electron = require('electron');
 const { APP_ROOT, USER_ROOT } = require('../../config/load');
 
@@ -18,24 +17,7 @@ function start(opts = {}) {
 
   log(`[start] opts ${JSON.stringify(opts)}`);
   const proxyPort = opts.proxyPort || 8888;
-  const webhookEnabled = opts.webhookEnabled === true;
-  let webhookUrl = null;
-  if (webhookEnabled) {
-    const webhookPort = opts.webhookPort || 0;
-    webhookUrl = opts.webhookUrl || (webhookPort ? `http://localhost:${webhookPort}/webhook` : null);
-  }
   const listeners = Array.isArray(opts.listeners) ? opts.listeners.slice() : [];
-  if (webhookEnabled && webhookUrl) {
-    listeners.push((rec) => {
-      if (rec.event === 'message' && typeof rec.text === 'string' && rec.text.includes('@ATR')) {
-        fetch(webhookUrl, {
-          method: 'POST',
-          body: rec.text,
-          headers: { 'content-type': 'text/plain' }
-        }).catch(() => {});
-      }
-    });
-  }
 
   const roots = [];
   const asarRoot = electron.app?.getAppPath ? electron.app.getAppPath() : APP_ROOT;

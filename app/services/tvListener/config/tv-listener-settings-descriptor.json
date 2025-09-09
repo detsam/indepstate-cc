@@ -7,6 +7,18 @@
     "enabled": {
       "type": "boolean",
       "description": "Enable TradingView listener"
+    },
+    "webhookEnabled": {
+      "type": "boolean",
+      "description": "Enable @ATR webhook listener"
+    },
+    "webhookPort": {
+      "type": "number",
+      "description": "Webhook port"
+    },
+    "webhookUrl": {
+      "type": "string",
+      "description": "Webhook URL"
     }
   }
 }

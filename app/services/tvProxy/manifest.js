@@ -24,18 +24,8 @@ function initService(servicesApi = {}) {
   if (cfg.enabled === false) return;
 
   const proxyPort = intVal(cfg.proxyPort, 8888);
-  const webhookEnabled = cfg.webhookEnabled === true;
-  const opts = { proxyPort, webhookEnabled };
+  const opts = { proxyPort };
   if (cfg.log) opts.log = true;
-  if (webhookEnabled) {
-    const webhookPort = intVal(cfg.webhookPort);
-    const webhookUrl = typeof cfg.webhookUrl === 'string' ? cfg.webhookUrl : null;
-    if (!webhookUrl && !webhookPort) {
-      console.error('[tv-proxy] missing webhookPort or webhookUrl');
-      return;
-    }
-    if (webhookUrl) opts.webhookUrl = webhookUrl; else opts.webhookPort = webhookPort;
-  }
 
   const svc = start(opts);
   servicesApi.tvProxy = svc;

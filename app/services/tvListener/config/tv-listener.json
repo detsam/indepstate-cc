@@ -1,3 +1,5 @@
 {
-  "enabled": true
+  "enabled": true,
+  "webhookEnabled": false,
+  "webhookPort": 3210
 }
