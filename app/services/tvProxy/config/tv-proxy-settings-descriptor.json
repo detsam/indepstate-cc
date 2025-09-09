@@ -15,10 +15,6 @@
     "proxyPort": {
       "type": "number",
       "description": "Proxy port"
-    },
-    "webhookPort": {
-      "type": "number",
-      "description": "Webhook port"
     }
   }
 }

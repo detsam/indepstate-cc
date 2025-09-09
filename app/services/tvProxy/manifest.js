@@ -9,11 +9,6 @@ settings.register(
   path.join(__dirname, 'config', 'tv-proxy-settings-descriptor.json')
 );
 
-function intVal(v, fallback = 0) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : fallback;
-}
-
 function initService(servicesApi = {}) {
   let cfg = {};
   try {
@@ -23,17 +18,9 @@ function initService(servicesApi = {}) {
   }
   if (cfg.enabled === false) return;
 
-  const proxyPort = intVal(cfg.proxyPort, 8888);
-  const webhookPort = intVal(cfg.webhookPort);
-  const webhookUrl = typeof cfg.webhookUrl === 'string' ? cfg.webhookUrl : null;
-
-  if (!webhookUrl && !webhookPort) {
-    console.error('[tv-proxy] missing webhookPort or webhookUrl');
-    return;
-  }
-
-  const opts = { proxyPort };
-  if (webhookUrl) opts.webhookUrl = webhookUrl; else opts.webhookPort = webhookPort;
+  const opts = {};
+  if (cfg.log) opts.log = true;
+  if (typeof cfg.proxyPort === 'number') opts.proxyPort = cfg.proxyPort;
 
   const svc = start(opts);
   servicesApi.tvProxy = svc;

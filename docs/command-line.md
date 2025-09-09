@@ -11,10 +11,10 @@ If a command fails (e.g. due to validation error), the entered text remains in t
 ### add (alias: a)
 
 ```
-add {ticker} {price} {sl} {tp} {risk}
+add {ticker} {price} [sl] [tp] [risk]
 ```
 
-Creates a new order card with the given ticker, entry price and stop loss. `tp` and `risk` are optional. If `tp` is omitted, the card computes it automatically from the provided stop loss.
+Creates a new order card with the given ticker, entry price and stop loss. `sl` defaults to `10` points when omitted. `tp` and `risk` are optional. If `tp` is omitted, the card computes it automatically from the provided stop loss.
 
 `sl` and `tp` accept either raw point values or absolute prices containing a decimal dot. When a dotted value is supplied, it is interpreted as a price level and converted to points relative to the entry price (same logic as the input field).
 
