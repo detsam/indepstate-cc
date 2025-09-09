@@ -9,18 +9,17 @@ function register(key, defaultsPath, descriptorPath) {
 }
 
 function deepMerge(target, source) {
-  if (Array.isArray(source)) return source.slice();
   if (!source || typeof source !== 'object') return target;
   for (const key of Object.keys(source)) {
+    if (!(key in target)) continue; // ignore unknown keys
     const srcVal = source[key];
+    const tgtVal = target[key];
     if (Array.isArray(srcVal)) {
-      target[key] = srcVal.slice();
+      if (Array.isArray(tgtVal)) target[key] = srcVal.slice();
     } else if (srcVal && typeof srcVal === 'object') {
-      const tgtVal = target[key];
-      if (!tgtVal || typeof tgtVal !== 'object' || Array.isArray(tgtVal)) {
-        target[key] = {};
+      if (tgtVal && typeof tgtVal === 'object' && !Array.isArray(tgtVal)) {
+        target[key] = deepMerge(tgtVal, srcVal);
       }
-      target[key] = deepMerge(target[key], srcVal);
     } else {
       target[key] = srcVal;
     }
