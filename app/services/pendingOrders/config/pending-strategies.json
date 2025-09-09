@@ -1,6 +1,9 @@
 {
   "consolidation": {
-    "bars": 3
+    "bars": 3,
+    "rangeRule": "B1_RANGE_CONSOLIDATION",
+    "dealPriceRule": "defaultDealPrice",
+    "stoppLossRule": "defaultStopLoss"
   },
   "falseBreak": {
     "tickSize": 0.01
