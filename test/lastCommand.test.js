@@ -17,7 +17,12 @@ function run() {
 
   let row;
   const cmdService = createCommandService({ commands: api.commands, onAdd: r => { row = r; } });
-  const res = cmdService.run('last');
+
+  let res = cmdService.run('add BBB 100 20');
+  assert.strictEqual(res.ok, true);
+  assert.strictEqual(row.ticker, 'BBB');
+
+  res = cmdService.run('last');
   assert.strictEqual(res.ok, true);
   assert.strictEqual(row.ticker, 'AAA');
   assert.strictEqual(row.price, 1.5);
