@@ -48,17 +48,30 @@ if (USER_ROOT !== APP_ROOT) {
 }
 const CONFIG_ROOT = CONFIG_ROOTS[CONFIG_ROOTS.length - 1];
 
-function deepMerge(target, source) {
+function deepMerge(target, source, desc) {
   if (!source || typeof source !== 'object') return target;
+  const allowUnknown = desc && desc.__allowUnknown;
   for (const key of Object.keys(source)) {
-    if (!(key in target)) continue; // ignore unknown keys
     const srcVal = source[key];
+    if (!(key in target)) {
+      if (allowUnknown) {
+        if (Array.isArray(srcVal)) {
+          target[key] = srcVal.slice();
+        } else if (srcVal && typeof srcVal === 'object' && !Array.isArray(srcVal)) {
+          target[key] = JSON.parse(JSON.stringify(srcVal));
+        } else {
+          target[key] = srcVal;
+        }
+      }
+      continue; // ignore unknown keys unless allowed
+    }
     const tgtVal = target[key];
+    const childDesc = desc && desc[key];
     if (Array.isArray(srcVal)) {
       if (Array.isArray(tgtVal)) target[key] = srcVal.slice();
-    } else if (srcVal && typeof srcVal === 'object') {
+    } else if (srcVal && typeof srcVal === 'object' && !Array.isArray(srcVal)) {
       if (tgtVal && typeof tgtVal === 'object' && !Array.isArray(tgtVal)) {
-        target[key] = deepMerge(tgtVal, srcVal);
+        target[key] = deepMerge(tgtVal, srcVal, childDesc);
       }
     } else {
       target[key] = srcVal;
@@ -68,15 +81,22 @@ function deepMerge(target, source) {
 }
 
 function load(name) {
-  const defaultsPath = path.join(__dirname, name);
+  const defaultsPath = path.isAbsolute(name)
+    ? name
+    : path.join(__dirname, name);
   log(`[config] load defaults ${defaultsPath}`);
   let defaults = {};
+  let descriptor = {};
   try {
     defaults = JSON.parse(fs.readFileSync(defaultsPath, 'utf8'));
   } catch (e) {
     console.error(`[config] cannot read default ${name}:`, e.message);
     log(`[config] cannot read default ${defaultsPath}: ${e.message}`);
   }
+  try {
+    const descriptorPath = defaultsPath.replace(/\.json$/, '-settings-descriptor.json');
+    descriptor = JSON.parse(fs.readFileSync(descriptorPath, 'utf8')).options || {};
+  } catch {}
 
   const fileName = path.basename(name);
   for (const root of CONFIG_ROOTS) {
@@ -87,7 +107,7 @@ function load(name) {
         const override = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
         // deepMerge mutates its target but also returns it; assign back so callers
         // receive the fully merged object even if implementation changes
-        defaults = deepMerge(defaults, override);
+        defaults = deepMerge(defaults, override, descriptor);
         log(`[config] merged result ${JSON.stringify(defaults)}`);
       } catch (e) {
         console.error(`[config] cannot read override ${name}:`, e.message);

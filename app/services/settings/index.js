@@ -8,41 +8,8 @@ function register(key, defaultsPath, descriptorPath) {
   registry.set(key, { defaultsPath, descriptorPath });
 }
 
-function deepMerge(target, source) {
-  if (!source || typeof source !== 'object') return target;
-  for (const key of Object.keys(source)) {
-    if (!(key in target)) continue; // ignore unknown keys
-    const srcVal = source[key];
-    const tgtVal = target[key];
-    if (Array.isArray(srcVal)) {
-      if (Array.isArray(tgtVal)) target[key] = srcVal.slice();
-    } else if (srcVal && typeof srcVal === 'object') {
-      if (tgtVal && typeof tgtVal === 'object' && !Array.isArray(tgtVal)) {
-        target[key] = deepMerge(tgtVal, srcVal);
-      }
-    } else {
-      target[key] = srcVal;
-    }
-  }
-  return target;
-}
-
 function loadWithOverrides(info) {
-  let cfg = {};
-  try {
-    cfg = JSON.parse(fs.readFileSync(info.defaultsPath, 'utf8'));
-  } catch {}
-  const fileName = path.basename(info.defaultsPath);
-  for (const root of loadConfig.CONFIG_ROOTS) {
-    const overridePath = path.join(root, fileName);
-    if (fs.existsSync(overridePath)) {
-      try {
-        const override = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
-        cfg = deepMerge(cfg, override);
-      } catch {}
-    }
-  }
-  return cfg;
+  return loadConfig(info.defaultsPath);
 }
 
 function listConfigs() {
