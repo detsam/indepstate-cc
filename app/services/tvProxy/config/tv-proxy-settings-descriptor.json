@@ -11,6 +11,10 @@
     "log": {
       "type": "boolean",
       "description": "Log proxy requests"
+    },
+    "proxyPort": {
+      "type": "number",
+      "description": "Proxy port"
     }
   }
 }

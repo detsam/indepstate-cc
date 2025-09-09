@@ -20,6 +20,7 @@ function initService(servicesApi = {}) {
 
   const opts = {};
   if (cfg.log) opts.log = true;
+  if (typeof cfg.proxyPort === 'number') opts.proxyPort = cfg.proxyPort;
 
   const svc = start(opts);
   servicesApi.tvProxy = svc;
