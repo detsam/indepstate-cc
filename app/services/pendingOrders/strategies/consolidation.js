@@ -15,11 +15,11 @@ function B1_TAIL(bars, side, _price) {
 }
 
 // B1_10p_GAP offsets the entry price by 10% of the breakout bar range
-// (minimum 1) plus 2 points to place the limit order.
+// (minimum 0.01) plus 0.02 to place the limit order.
 function B1_10p_GAP(bars, side, price) {
   const b1 = bars[0];
   const range = b1.high - b1.low;
-  const gap = Math.max(range * 0.1, 1) + 2;
+  const gap = Math.max(range * 0.1, 0.01) + 0.02;
   return side === 'long' ? price + gap : price - gap;
 }
 

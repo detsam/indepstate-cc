@@ -131,7 +131,7 @@ Built-in helper functions:
 - `B1_TAIL` – uses the opposite-direction extremum of the bar that pierced the
   level as the stop price.
 - `B1_10p_GAP` – sets the limit price at the entry level plus 10% of the
-  breakout bar's range (at least 1) and an extra 2 points for longs (subtracts
+  breakout bar's range (at least 0.01) and an extra 0.02 for longs (subtracts
   for shorts).
 
 Override this file in `config/pending-strategies.json` to customize the defaults.

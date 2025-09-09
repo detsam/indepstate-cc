@@ -112,7 +112,7 @@ async function run() {
     { open: 100.7, high: 100.9, low: 100.6, close: 100.8 },
   ];
   barsGapLong.forEach(b => svcGapLong.onBar(b));
-  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 103, stopLoss: 99 });
+  assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 100.22, stopLoss: 99 });
 
   // short order uses B1_10p_GAP to offset limit price
   exec = undefined;
@@ -124,7 +124,7 @@ async function run() {
     { open: 199.7, high: 199.8, low: 199.2, close: 199.3 },
   ];
   barsGapShort.forEach(b => svcGapShort.onBar(b));
-  assert.deepStrictEqual(exec, { id: 1, side: 'short', limitPrice: 197, stopLoss: 201 });
+  assert.deepStrictEqual(exec, { id: 1, side: 'short', limitPrice: 199.78, stopLoss: 201 });
 
   // long order fails if price extends too far above level
   exec = undefined;
