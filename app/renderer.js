@@ -1,5 +1,6 @@
 // renderer.js — crypto & equities cards, stable UI state, safe layout
 const {ipcRenderer} = require('electron');
+const path = require('path');
 const loadConfig = require('./config/load');
 const tradeRules = require('./services/tradeRules');
 const {detectInstrumentType} = require("./services/instruments");
@@ -115,27 +116,27 @@ const $settingsFields = document.getElementById('settings-fields');
 const $settingsClose = document.getElementById('settings-close');
 const settingsForms = new Map();
 
-// If no other input has focus, route keyboard input to the command line
-document.addEventListener('keydown', (e) => {
-  const active = document.activeElement;
-  const isInput = active && (
-    active.tagName === 'INPUT' ||
-    active.tagName === 'TEXTAREA' ||
-    active.isContentEditable
-  );
-  if (!isInput) {
-    $cmdline.focus();
-    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (e.key.length === 1) {
-        $cmdline.value += e.key;
-        e.preventDefault();
-      } else if (e.key === 'Backspace') {
-        $cmdline.value = $cmdline.value.slice(0, -1);
-        e.preventDefault();
+loadRendererHooks();
+
+function loadRendererHooks() {
+  let dirs = [];
+  try {
+    dirs = loadConfig('../services/settings/config/services.json');
+  } catch {
+    dirs = [];
+  }
+  if (!Array.isArray(dirs)) return;
+  for (const dir of dirs) {
+    try {
+      const manifest = require(path.join(__dirname, dir, 'manifest.js'));
+      if (typeof manifest?.hookRenderer === 'function') {
+        manifest.hookRenderer(ipcRenderer);
       }
+    } catch (err) {
+      console.error('[rendererServiceLoader] Failed to load', dir, err.message);
     }
   }
-});
+}
 
 function loadSettingsSections() {
   settingsForms.clear();
@@ -439,6 +440,8 @@ function toast(msg) {
     t.style.opacity = '0';
   }, 2500);
 }
+
+window.toast = toast;
 
 // ======= Command line handling =======
 function runCommand(str) {
