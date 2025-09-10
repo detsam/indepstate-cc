@@ -40,14 +40,16 @@ async function run() {
   require('../app/renderer.js');
   await new Promise(r => setImmediate(r));
 
+  const cmd = document.getElementById('cmdline');
+
   // shortcut executed when no input is focused
   const evt1 = new dom.window.KeyboardEvent('keydown', { key: 'l' });
   document.dispatchEvent(evt1);
   assert.deepStrictEqual(ran, ['l']);
+  assert.notStrictEqual(document.activeElement, cmd);
 
   // shortcut ignored when command line input is focused
   ran.length = 0;
-  const cmd = document.getElementById('cmdline');
   cmd.focus();
   const evt2 = new dom.window.KeyboardEvent('keydown', { key: 'l' });
   cmd.dispatchEvent(evt2);

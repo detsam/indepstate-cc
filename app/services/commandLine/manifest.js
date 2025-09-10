@@ -43,21 +43,21 @@ function hookRenderer(ipcRenderer) {
       active.tagName === 'TEXTAREA' ||
       active.isContentEditable
     );
-    if (!isInput) {
+    if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const cmdline = document.getElementById('cmdline');
-      cmdline?.focus();
-      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (shortcuts.has(e.key)) {
-          ipcRenderer.invoke('cmdline:run', e.key)
-            .then((res) => {
-              if (!res?.ok && res?.error) window.toast?.(res.error);
-            })
-            .catch((err) => {
-              window.toast?.(err.message || String(err));
-            });
-          if (cmdline) cmdline.value = '';
-          e.preventDefault();
-        } else if (e.key.length === 1) {
+      if (shortcuts.has(e.key)) {
+        ipcRenderer.invoke('cmdline:run', e.key)
+          .then((res) => {
+            if (!res?.ok && res?.error) window.toast?.(res.error);
+          })
+          .catch((err) => {
+            window.toast?.(err.message || String(err));
+          });
+        if (cmdline) cmdline.value = '';
+        e.preventDefault();
+      } else {
+        cmdline?.focus();
+        if (e.key.length === 1) {
           if (cmdline) cmdline.value += e.key;
           e.preventDefault();
         } else if (e.key === 'Backspace') {
