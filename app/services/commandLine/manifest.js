@@ -1,5 +1,13 @@
 const { ipcMain, BrowserWindow } = require('electron');
+const path = require('path');
+const settings = require('../settings');
 const { createCommandService } = require('.');
+
+settings.register(
+  'command-line',
+  path.join(__dirname, 'config', 'command-line.json'),
+  path.join(__dirname, 'config', 'command-line-settings-descriptor.json')
+);
 
 function initService(servicesApi = {}) {
   const cmdService = createCommandService({
@@ -12,6 +20,53 @@ function initService(servicesApi = {}) {
     }
   });
   ipcMain.handle('cmdline:run', (_evt, str) => cmdService.run(str));
+  ipcMain.handle('cmdline:shortcuts', () => {
+    const { config } = settings.readConfig('command-line') || {};
+    const list = config && config.shortcuts;
+    return Array.isArray(list) ? list.map(String) : [];
+  });
 }
 
-module.exports = { initService };
+function hookRenderer(ipcRenderer) {
+  let shortcuts = new Set();
+  ipcRenderer
+    .invoke('cmdline:shortcuts')
+    .then((list = []) => {
+      if (Array.isArray(list)) shortcuts = new Set(list.map(String));
+    })
+    .catch(() => {});
+
+  document.addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+    const isInput = active && (
+      active.tagName === 'INPUT' ||
+      active.tagName === 'TEXTAREA' ||
+      active.isContentEditable
+    );
+    if (!isInput) {
+      const cmdline = document.getElementById('cmdline');
+      cmdline?.focus();
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (shortcuts.has(e.key)) {
+          ipcRenderer.invoke('cmdline:run', e.key)
+            .then((res) => {
+              if (!res?.ok && res?.error) window.toast?.(res.error);
+            })
+            .catch((err) => {
+              window.toast?.(err.message || String(err));
+            });
+          if (cmdline) cmdline.value = '';
+          e.preventDefault();
+        } else if (e.key.length === 1) {
+          if (cmdline) cmdline.value += e.key;
+          e.preventDefault();
+        } else if (e.key === 'Backspace') {
+          if (cmdline) cmdline.value = cmdline.value.slice(0, -1);
+          e.preventDefault();
+        }
+      }
+    }
+  });
+}
+
+module.exports = { initService, hookRenderer };

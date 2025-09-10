@@ -1,0 +1,12 @@
+{
+  "properties": {},
+  "options": {
+    "shortcuts": {
+      "description": "Commands executed immediately when typed",
+      "item": {
+        "type": "string",
+        "description": "Command name"
+      }
+    }
+  }
+}
