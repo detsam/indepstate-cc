@@ -341,15 +341,15 @@ function randomId() { return crypto.randomBytes(6).toString('hex'); }
 
 function appendCidToComment(comment, cid) {
   const c = (comment || '').trim();
-  return c.includes('cid:') ? c : (c ? `${c} | cid:${cid}` : `cid:${cid}`);
+  return c.includes('cid:') ? c : (c ? `${c} cid:${cid}` : `cid:${cid}`);
 }
 
 function appendStopsToComment(comment, sl, tp, level) {
   let c = (comment || '').trim();
-  if (Number.isFinite(sl) && !/sl[:=]/.test(c)) c = c ? `${c} | sl:${sl}` : `sl:${sl}`;
-  if (Number.isFinite(tp) && !/tp[:=]/.test(c)) c = c ? `${c} | tp:${tp}` : `tp:${tp}`;
-  if (Number.isFinite(level) && !/level[:=]/.test(c)) c = c ? `${c} | level:${level}` : `level:${level}`;
-  return c;
+  if (Number.isFinite(sl) && !/sl[:=]/.test(c)) c = c ? `${c} sl:${sl}` : `sl:${sl}`;
+  if (Number.isFinite(tp) && !/tp[:=]/.test(c)) c = c ? `${c} tp:${tp}` : `tp:${tp}`;
+  if (Number.isFinite(level) && !/level[:=]/.test(c)) c = c ? `${c} level:${level}` : `level:${level}`;
+  return c.trim();
 }
 
 function extractCid(s) {

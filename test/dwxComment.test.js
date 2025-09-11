@@ -33,6 +33,7 @@ async function run() {
   assert.ok(sentComment.includes(`sl:${slPrice}`), 'sl missing');
   assert.ok(sentComment.includes(`tp:${tpPrice}`), 'tp missing');
   assert.ok(sentComment.includes(`level:${orderPrice}`), 'level missing');
+  assert.ok(!sentComment.includes('|'), 'comment contains forbidden pipe');
   assert.strictEqual(sentSl, slPrice);
   assert.strictEqual(sentTp, tpPrice);
   assert.strictEqual(sentPrice, orderPrice);
