@@ -126,8 +126,13 @@ class DWXAdapter extends ExecutionAdapter {
       sl = order.price + (order.sl * order.tickSize);
     }
 
-    const commentWithStops = appendStopsToComment(order.commentWithCid ?? order.comment ?? '', sl, tp);
-    order.commentWithCid = commentWithStops;
+    const commentWithExtras = appendStopsToComment(
+      order.commentWithCid ?? order.comment ?? '',
+      sl,
+      tp,
+      order.cardPrice ?? order.meta?.cardPrice ?? order.price
+    );
+    order.commentWithCid = commentWithExtras;
 
     await this.client.open_order(
       order.symbol,
@@ -137,7 +142,7 @@ class DWXAdapter extends ExecutionAdapter {
       sl,
       tp,
       order.magic ?? 0,
-      commentWithStops,
+      commentWithExtras,
       order.expiration ?? 0
     );
   }
@@ -339,10 +344,11 @@ function appendCidToComment(comment, cid) {
   return c.includes('cid:') ? c : (c ? `${c} | cid:${cid}` : `cid:${cid}`);
 }
 
-function appendStopsToComment(comment, sl, tp) {
+function appendStopsToComment(comment, sl, tp, price) {
   let c = (comment || '').trim();
   if (Number.isFinite(sl) && !/sl[:=]/.test(c)) c = c ? `${c} | sl:${sl}` : `sl:${sl}`;
   if (Number.isFinite(tp) && !/tp[:=]/.test(c)) c = c ? `${c} | tp:${tp}` : `tp:${tp}`;
+  if (Number.isFinite(price) && !/price[:=]/.test(c)) c = c ? `${c} | price:${price}` : `price:${price}`;
   return c;
 }
 

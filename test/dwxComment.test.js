@@ -7,17 +7,19 @@ async function run() {
   const mtPath = path.join(__dirname, 'tmp');
   fs.mkdirSync(mtPath, { recursive: true });
   const adapter = new DWXAdapter({ metatraderDirPath: mtPath });
-  let sentComment, sentSl, sentTp;
-  adapter.client.open_order = async function(_symbol, _type, _qty, _price, sl, tp, _magic, comment) {
+  let sentComment, sentSl, sentTp, sentPrice;
+  adapter.client.open_order = async function(_symbol, _type, _qty, price, sl, tp, _magic, comment) {
     sentComment = comment;
     sentSl = sl;
     sentTp = tp;
+    sentPrice = price;
   };
+  const orderPrice = 1.0835;
   await adapter.placeOrder({
     symbol: 'EURUSD',
     side: 'buy',
     type: 'limit',
-    price: 1.0835,
+    price: orderPrice,
     sl: 20,
     tp: 40,
     qty: 0.1,
@@ -25,13 +27,15 @@ async function run() {
     comment: 'test-order'
   });
   await new Promise(r => setTimeout(r, 0));
-  const slPrice = 1.0835 - 20 * 0.0001;
-  const tpPrice = 1.0835 + 40 * 0.0001;
+  const slPrice = orderPrice - 20 * 0.0001;
+  const tpPrice = orderPrice + 40 * 0.0001;
   assert.ok(sentComment.includes('cid:'), 'cid missing');
   assert.ok(sentComment.includes(`sl:${slPrice}`), 'sl missing');
   assert.ok(sentComment.includes(`tp:${tpPrice}`), 'tp missing');
+  assert.ok(sentComment.includes(`price:${orderPrice}`), 'price missing');
   assert.strictEqual(sentSl, slPrice);
   assert.strictEqual(sentTp, tpPrice);
+  assert.strictEqual(sentPrice, orderPrice);
   console.log('dwx comment test passed');
 }
 
