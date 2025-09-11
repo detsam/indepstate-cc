@@ -126,6 +126,9 @@ class DWXAdapter extends ExecutionAdapter {
       sl = order.price + (order.sl * order.tickSize);
     }
 
+    const commentWithStops = appendStopsToComment(order.commentWithCid ?? order.comment ?? '', sl, tp);
+    order.commentWithCid = commentWithStops;
+
     await this.client.open_order(
       order.symbol,
       order_type,
@@ -134,7 +137,7 @@ class DWXAdapter extends ExecutionAdapter {
       sl,
       tp,
       order.magic ?? 0,
-      order.commentWithCid ?? order.comment ?? '',
+      commentWithStops,
       order.expiration ?? 0
     );
   }
@@ -334,6 +337,13 @@ function randomId() { return crypto.randomBytes(6).toString('hex'); }
 function appendCidToComment(comment, cid) {
   const c = (comment || '').trim();
   return c.includes('cid:') ? c : (c ? `${c} | cid:${cid}` : `cid:${cid}`);
+}
+
+function appendStopsToComment(comment, sl, tp) {
+  let c = (comment || '').trim();
+  if (Number.isFinite(sl) && !/sl[:=]/.test(c)) c = c ? `${c} | sl:${sl}` : `sl:${sl}`;
+  if (Number.isFinite(tp) && !/tp[:=]/.test(c)) c = c ? `${c} | tp:${tp}` : `tp:${tp}`;
+  return c;
 }
 
 function extractCid(s) {
