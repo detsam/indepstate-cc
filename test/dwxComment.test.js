@@ -32,7 +32,7 @@ async function run() {
   assert.ok(sentComment.includes('cid:'), 'cid missing');
   assert.ok(sentComment.includes(`sl:${slPrice}`), 'sl missing');
   assert.ok(sentComment.includes(`tp:${tpPrice}`), 'tp missing');
-  assert.ok(sentComment.includes(`price:${orderPrice}`), 'price missing');
+  assert.ok(sentComment.includes(`level:${orderPrice}`), 'level missing');
   assert.strictEqual(sentSl, slPrice);
   assert.strictEqual(sentTp, tpPrice);
   assert.strictEqual(sentPrice, orderPrice);
