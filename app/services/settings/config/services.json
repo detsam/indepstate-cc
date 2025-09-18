@@ -13,6 +13,7 @@
   "services/points",
   "services/tradeRules",
   "services/ngrok",
+  "services/actions-bus",
   "services/tvProxy",
   "services/tvListener",
   "services/commandLine",

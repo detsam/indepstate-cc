@@ -19,6 +19,8 @@ async function run() {
       if (ch === 'settings:list') return [];
       if (ch === 'settings:set') return true;
       if (ch === 'cmdline:run') { ran.push(args[0]); return { ok: true }; }
+      if (ch === 'actions-bus:list') return [];
+      if (ch === 'actions-bus:set-enabled') return [];
       return {};
     }
   };

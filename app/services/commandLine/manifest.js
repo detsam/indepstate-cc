@@ -19,6 +19,16 @@ function initService(servicesApi = {}) {
       }
     }
   });
+  servicesApi.commandLine = cmdService;
+  if (servicesApi.actionBus) {
+    const runner = (cmd) => cmdService.run(cmd);
+    if (typeof servicesApi.actionBus.registerCommandRunner === 'function') {
+      servicesApi.actionBus.registerCommandRunner('commandLine', runner);
+    }
+    if (typeof servicesApi.actionBus.setCommandRunner === 'function') {
+      servicesApi.actionBus.setCommandRunner(runner);
+    }
+  }
   ipcMain.handle('cmdline:run', (_evt, str) => cmdService.run(str));
   ipcMain.handle('cmdline:shortcuts', () => {
     const { config } = settings.readConfig('command-line') || {};

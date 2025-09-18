@@ -1,0 +1,29 @@
+{
+  "properties": {
+    "group": "automation",
+    "name": "Actions bus"
+  },
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable actions bus"
+    },
+    "actions": {
+      "description": "Event to command bindings",
+      "item": {
+        "event": {
+          "type": "string",
+          "description": "Event name"
+        },
+        "action": {
+          "type": "string",
+          "description": "Command to run"
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional toggle name"
+        }
+      }
+    }
+  }
+}
