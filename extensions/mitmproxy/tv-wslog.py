@@ -41,20 +41,50 @@ def _decode_bytes(b: bytes):
         return None, base64.b64encode(b).decode("ascii")
 
 
-def _is_line_removal_request(flow: http.HTTPFlow, text: str) -> bool:
+def _extract_source_updates(flow: http.HTTPFlow, text: str):
+    """Вернёт словарь с lineId созданных/удалённых линий, если удалось распарсить тело."""
     if not text:
-        return False
+        return None
+
     path = flow.request.path or ""
     if not path.startswith("/charts-storage/user/sources"):
-        return False
+        return None
+
     try:
         data = json.loads(text)
     except Exception:
-        return False
+        return None
+
     sources = data.get("sources")
     if not isinstance(sources, dict):
-        return False
-    return any(value is None for value in sources.values())
+        return None
+
+    created = []
+    removed = []
+
+    for raw_id, src in sources.items():
+        if raw_id is None:
+            continue
+        line_id = str(raw_id).strip()
+        if not line_id:
+            continue
+
+        if src is None:
+            removed.append(line_id)
+            continue
+
+        if not isinstance(src, dict):
+            continue
+
+        state = src.get("state")
+        tool_type = state.get("type") if isinstance(state, dict) else None
+        if tool_type == "LineToolHorzLine":
+            created.append(line_id)
+
+    if not created and not removed:
+        return None
+
+    return {"created": created, "removed": removed}
 
 
 # ================== WebSocket хуки ==================
@@ -136,12 +166,12 @@ def request(flow: http.HTTPFlow):
     body_bytes = flow.request.raw_content or flow.request.content
     text, b64 = _decode_bytes(body_bytes)
 
-    removal = False
+    source_updates = None
 
     # Фильтрация: ищем строку в тексте (если текст декодировался)
     if text is not None:
-        removal = _is_line_removal_request(flow, text)
-        if not removal and not _http_text_ok(text):
+        source_updates = _extract_source_updates(flow, text)
+        if not source_updates and not _http_text_ok(text):
             return
         out = {
             "event": "http_request",
@@ -151,8 +181,12 @@ def request(flow: http.HTTPFlow):
             "method": method,
             "text": text[:MAX_LOG_TEXT]
         }
-        if removal:
-            out["line_removal"] = True
+        if source_updates:
+            if source_updates.get("created"):
+                out["line_creations"] = source_updates["created"]
+            if source_updates.get("removed"):
+                out["line_removals"] = source_updates["removed"]
+                out["line_removal"] = True
     else:
         # если текст не декодировался — всё равно логируем, но без фильтра по содержимому
         # (если нужно жёстко фильтровать, можно вместо этого return)
