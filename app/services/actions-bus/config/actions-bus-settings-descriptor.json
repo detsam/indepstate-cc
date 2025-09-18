@@ -21,7 +21,25 @@
         },
         "name": {
           "type": "string",
-          "description": "Optional toggle name"
+          "description": "Toggle group key (optional)"
+        },
+        "label": {
+          "type": "string",
+          "description": "Toggle label (optional, defaults to key)"
+        },
+        "bindings": {
+          "description": "Grouped event bindings",
+          "item": {
+            "description": "Binding",
+            "event": {
+              "type": "string",
+              "description": "Event name"
+            },
+            "action": {
+              "type": "string",
+              "description": "Command to run"
+            }
+          }
         }
       }
     }

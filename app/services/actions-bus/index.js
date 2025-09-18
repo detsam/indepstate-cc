@@ -57,6 +57,18 @@ function createActionsBus(opts = {}) {
     };
   }
 
+  function normalizeName(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  function normalizeLabel(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
   function queuePending(runnerKey, entry, payload) {
     const key = runnerKey || DEFAULT_RUNNER_KEY;
     if (!pending.has(key)) pending.set(key, []);
@@ -150,32 +162,49 @@ function createActionsBus(opts = {}) {
     clearConfigHandlers();
     const grouped = new Map();
     const seenNames = new Set();
+    const nameLabels = new Map();
     nameOrder.length = 0;
     pending.clear();
+
+    function registerEntry(actionItem, nameOverride, labelOverride) {
+      if (!actionItem || typeof actionItem !== 'object') return;
+      const eventName = typeof actionItem.event === 'string' ? actionItem.event.trim() : '';
+      const command = typeof actionItem.action === 'string' ? actionItem.action.trim() : '';
+      if (!eventName || !command) return;
+      const spec = parseActionSpec(command);
+      if (!spec || !spec.commandTemplate) return;
+      const name = nameOverride != null ? nameOverride : normalizeName(actionItem.name);
+      const label = labelOverride != null ? labelOverride : normalizeLabel(actionItem.label);
+      const entry = {
+        event: eventName,
+        command: spec.raw,
+        commandTemplate: spec.commandTemplate,
+        runnerName: spec.runnerName,
+        runnerKey: spec.runnerKey,
+        name
+      };
+      if (!grouped.has(eventName)) grouped.set(eventName, []);
+      grouped.get(eventName).push(entry);
+      if (name && !seenNames.has(name)) {
+        seenNames.add(name);
+        nameOrder.push(name);
+      }
+      if (name && label) {
+        nameLabels.set(name, label);
+      }
+    }
 
     if (Array.isArray(actions)) {
       actions.forEach((item) => {
         if (!item || typeof item !== 'object') return;
-        const eventName = typeof item.event === 'string' ? item.event.trim() : '';
-        const command = typeof item.action === 'string' ? item.action.trim() : '';
-        if (!eventName || !command) return;
-        const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : null;
-        const spec = parseActionSpec(command);
-        if (!spec || !spec.commandTemplate) return;
-        const entry = {
-          event: eventName,
-          command: spec.raw,
-          commandTemplate: spec.commandTemplate,
-          runnerName: spec.runnerName,
-          runnerKey: spec.runnerKey,
-          name
-        };
-        if (!grouped.has(eventName)) grouped.set(eventName, []);
-        grouped.get(eventName).push(entry);
-        if (name && !seenNames.has(name)) {
-          seenNames.add(name);
-          nameOrder.push(name);
+        const groupName = normalizeName(item.name);
+        const groupLabel = normalizeLabel(item.label);
+        if (Array.isArray(item.bindings)) {
+          item.bindings.forEach((binding) => {
+            registerEntry(binding, groupName, groupLabel);
+          });
         }
+        registerEntry(item);
       });
     }
 
@@ -188,7 +217,7 @@ function createActionsBus(opts = {}) {
       const cur = namedStates.get(name) || {};
       namedStates.set(name, {
         enabled: cur.enabled !== false,
-        label: cur.label || name
+        label: (nameLabels.has(name) ? nameLabels.get(name) : cur.label) || name
       });
     }
 

@@ -175,9 +175,14 @@ function showSection(name) {
     const form = document.createElement('form');
     form.dataset.section = name;
     const build = (parent, cfgObj, descObj, prefix = '') => {
-      if (Array.isArray(cfgObj) || Array.isArray(descObj)) {
+      const hasItemDesc = !!(descObj && typeof descObj === 'object' && !Array.isArray(descObj) && descObj.item);
+      if (Array.isArray(cfgObj) || Array.isArray(descObj) || hasItemDesc) {
         const arr = Array.isArray(cfgObj) ? cfgObj : [];
-        const itemDesc = Array.isArray(descObj) ? descObj[0] : (descObj && descObj.item) || {};
+        const itemDesc = Array.isArray(descObj)
+          ? descObj[0]
+          : hasItemDesc
+            ? descObj.item
+            : (descObj && descObj.item) || {};
         const itemsWrap = document.createElement('div');
         const baseParts = prefix ? prefix.split('.') : [];
         const itemIsObjDesc = itemDesc && typeof itemDesc === 'object' && !itemDesc.type && Object.keys(itemDesc).length;

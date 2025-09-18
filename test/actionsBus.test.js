@@ -6,15 +6,23 @@ function run() {
   const bus = createActionsBus();
 
   bus.configure([
-    { event: 'foo', action: 'commandLine:test {symbol}', name: 'Foo action' },
+    {
+      name: 'Foo action',
+      label: 'Foo toggle',
+      bindings: [
+        { event: 'foo', action: 'commandLine:test {symbol}' },
+        { event: 'bar', action: 'commandLine:bar {symbol}' }
+      ]
+    },
     { event: 'foo', action: 'other:always-run' },
     { event: 'foo', action: 'no-prefix-run' }
   ]);
 
   let named = bus.listNamedActions();
-  assert.deepStrictEqual(named, [{ name: 'Foo action', label: 'Foo action', enabled: true }]);
+  assert.deepStrictEqual(named, [{ name: 'Foo action', label: 'Foo toggle', enabled: true }]);
 
   bus.emit('foo', { symbol: 'AAA' });
+  bus.emit('bar', { symbol: 'AAA' });
   assert.deepStrictEqual(executed, []);
 
   const commandLineRunner = (cmd) => {
@@ -30,28 +38,39 @@ function run() {
     return { ok: true };
   });
 
-  assert.deepStrictEqual(executed, ['cli:test AAA', 'cli:no-prefix-run', 'other:always-run']);
-
-  bus.emit('foo', { symbol: 'AAA' });
   assert.deepStrictEqual(executed, [
     'cli:test AAA',
+    'cli:bar AAA',
+    'cli:no-prefix-run',
+    'other:always-run'
+  ]);
+
+  bus.emit('foo', { symbol: 'AAA' });
+  bus.emit('bar', { symbol: 'AAA' });
+  assert.deepStrictEqual(executed, [
+    'cli:test AAA',
+    'cli:bar AAA',
     'cli:no-prefix-run',
     'other:always-run',
     'cli:test AAA',
     'other:always-run',
-    'cli:no-prefix-run'
+    'cli:no-prefix-run',
+    'cli:bar AAA'
   ]);
 
   bus.setActionEnabled('Foo action', false);
   assert.strictEqual(bus.getActionState('Foo action'), false);
   bus.emit('foo', { symbol: 'BBB' });
+  bus.emit('bar', { symbol: 'BBB' });
   assert.deepStrictEqual(executed, [
     'cli:test AAA',
+    'cli:bar AAA',
     'cli:no-prefix-run',
     'other:always-run',
     'cli:test AAA',
     'other:always-run',
     'cli:no-prefix-run',
+    'cli:bar AAA',
     'other:always-run',
     'cli:no-prefix-run'
   ]);
