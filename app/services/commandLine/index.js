@@ -3,15 +3,23 @@
 // Commands may expose multiple names/aliases
 
 const { AddCommand } = require('../commands/add');
+const { RemoveCommand } = require('../commands/remove');
 
 function createCommandService(opts = {}) {
   const extra = Array.isArray(opts.commands)
     ? opts.commands.map(c => {
-        if (c && typeof c === 'object' && c.onAdd == null) c.onAdd = opts.onAdd;
+        if (c && typeof c === 'object') {
+          if (c.onAdd == null) c.onAdd = opts.onAdd;
+          if (c.onRemove == null) c.onRemove = opts.onRemove;
+        }
         return c;
       })
     : [];
-  const list = [new AddCommand({ onAdd: opts.onAdd }), ...extra];
+  const list = [
+    new AddCommand({ onAdd: opts.onAdd }),
+    new RemoveCommand({ onRemove: opts.onRemove }),
+    ...extra
+  ];
 
   function run(str) {
     if (!str) return { ok: false, error: 'Empty command' };
