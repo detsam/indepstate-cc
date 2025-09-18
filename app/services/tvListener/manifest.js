@@ -16,6 +16,11 @@ function intVal(v, fallback = 0) {
 }
 
 function initService(servicesApi = {}) {
+  const tvApi = servicesApi.tvListener = servicesApi.tvListener || {};
+
+  let lastActivity = null;
+  tvApi.getLastActivity = () => lastActivity;
+
   let cfg = {};
   try {
     cfg = loadConfig('../services/tvListener/config/tv-listener.json');
@@ -24,24 +29,36 @@ function initService(servicesApi = {}) {
   }
   if (cfg.enabled === false) return;
 
-  let lastActivity = null;
 
   const tvProxy = servicesApi.tvProxy;
   if (tvProxy && typeof tvProxy.addListener === 'function') {
     tvProxy.addListener((rec) => {
-      if (rec && rec.event === 'http_request' && typeof rec.text === 'string' && rec.text.includes('LineToolHorzLine')) {
-        try {
-          const payload = JSON.parse(rec.text);
-          const src = payload?.sources && Object.values(payload.sources)[0];
-          if (src?.state?.type === 'LineToolHorzLine') {
+      if (!rec || rec.event !== 'http_request' || typeof rec.text !== 'string') return;
+      try {
+        const payload = JSON.parse(rec.text);
+        const sources = payload?.sources;
+        if (!sources || typeof sources !== 'object') return;
+
+        Object.entries(sources).forEach(([sourceId, src]) => {
+          const lineId = sourceId != null && sourceId !== '' ? String(sourceId) : null;
+          if (src && src.state?.type === 'LineToolHorzLine') {
             const symbol = src.symbol;
             const price = Number(src.state?.points?.[0]?.price);
             if (symbol && Number.isFinite(price)) {
-              lastActivity = { symbol, price };
+              const payload = { symbol, price };
+              if (lineId) payload.lineId = lineId;
+              lastActivity = payload;
+              if (servicesApi.actionBus && typeof servicesApi.actionBus.emit === 'function') {
+                servicesApi.actionBus.emit('tv-tool-horzline', payload);
+              }
+            }
+          } else if (src === null && lineId) {
+            if (servicesApi.actionBus && typeof servicesApi.actionBus.emit === 'function') {
+              servicesApi.actionBus.emit('tv-tool-horzline-remove', { lineId });
             }
           }
-        } catch {}
-      }
+        });
+      } catch {}
     });
 
     if (cfg.webhook && cfg.webhook.enabled === true) {
@@ -75,9 +92,22 @@ function initService(servicesApi = {}) {
     run(args) {
       if (!lastActivity) return { ok: false, error: 'No last activity' };
       const [tpStr, riskStr] = args;
-      const { symbol, price } = lastActivity;
+      const { symbol, price, lineId } = lastActivity;
       const ticker = typeof symbol === 'string' && symbol.includes(':') ? symbol.split(':')[1] : symbol;
-      return super.run([ticker, price, 6, tpStr, riskStr]);
+      const hasLine = typeof lineId === 'string' && lineId !== '';
+      const prevOnAdd = this.onAdd;
+      if (hasLine) {
+        const producingLineId = lineId;
+        this.onAdd = (row) => {
+          row.producingLineId = producingLineId;
+          if (typeof prevOnAdd === 'function') prevOnAdd(row);
+        };
+      }
+      try {
+        return super.run([ticker, price, 6, tpStr, riskStr]);
+      } finally {
+        this.onAdd = prevOnAdd;
+      }
     }
   }
 

@@ -17,8 +17,27 @@ function initService(servicesApi = {}) {
       if (win && !win.isDestroyed()) {
         win.webContents.send('orders:new', row);
       }
+    },
+    onRemove(filter) {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!filter || typeof filter !== 'object') return { ok: false, error: 'Invalid remove payload' };
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('orders:remove', filter);
+        return { ok: true };
+      }
+      return { ok: false, error: 'No window' };
     }
   });
+  servicesApi.commandLine = cmdService;
+  if (servicesApi.actionBus) {
+    const runner = (cmd) => cmdService.run(cmd);
+    if (typeof servicesApi.actionBus.registerCommandRunner === 'function') {
+      servicesApi.actionBus.registerCommandRunner('commandLine', runner);
+    }
+    if (typeof servicesApi.actionBus.setCommandRunner === 'function') {
+      servicesApi.actionBus.setCommandRunner(runner);
+    }
+  }
   ipcMain.handle('cmdline:run', (_evt, str) => cmdService.run(str));
   ipcMain.handle('cmdline:shortcuts', () => {
     const { config } = settings.readConfig('command-line') || {};

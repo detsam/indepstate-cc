@@ -175,9 +175,14 @@ function showSection(name) {
     const form = document.createElement('form');
     form.dataset.section = name;
     const build = (parent, cfgObj, descObj, prefix = '') => {
-      if (Array.isArray(cfgObj) || Array.isArray(descObj)) {
+      const hasItemDesc = !!(descObj && typeof descObj === 'object' && !Array.isArray(descObj) && descObj.item);
+      if (Array.isArray(cfgObj) || Array.isArray(descObj) || hasItemDesc) {
         const arr = Array.isArray(cfgObj) ? cfgObj : [];
-        const itemDesc = Array.isArray(descObj) ? descObj[0] : (descObj && descObj.item) || {};
+        const itemDesc = Array.isArray(descObj)
+          ? descObj[0]
+          : hasItemDesc
+            ? descObj.item
+            : (descObj && descObj.item) || {};
         const itemsWrap = document.createElement('div');
         const baseParts = prefix ? prefix.split('.') : [];
         const itemIsObjDesc = itemDesc && typeof itemDesc === 'object' && !itemDesc.type && Object.keys(itemDesc).length;
@@ -1802,6 +1807,37 @@ ipcRenderer.on('execution:retry-stopped', (_evt, rec) => {
     }
   }
   setCardState(key, null);
+  render();
+});
+
+ipcRenderer.on('orders:remove', (_evt, filter) => {
+  if (!filter || typeof filter !== 'object') return;
+  const { producingLineId } = filter;
+  if (producingLineId == null) return;
+  const targetId = String(producingLineId);
+  if (!targetId) return;
+  const matches = state.rows.filter(row => String(row.producingLineId || '') === targetId);
+  if (matches.length === 0) return;
+  const keysToRemove = new Set(matches.map(row => rowKey(row)));
+  const nextRows = [];
+  const removed = [];
+  for (const row of state.rows) {
+    const key = rowKey(row);
+    if (keysToRemove.has(key)) {
+      removed.push({ row, key });
+    } else {
+      nextRows.push(row);
+    }
+  }
+  if (removed.length === 0) return;
+  state.rows = nextRows;
+  removed.forEach(({ row, key }) => {
+    uiState.delete(key);
+    cardStates.delete(key);
+    clearPendingByKey(key);
+    userTouchedByTicker.delete(row.ticker);
+    forgetInstrument(row.ticker, row.provider);
+  });
   render();
 });
 

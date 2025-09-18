@@ -16,6 +16,8 @@ async function run() {
       if (ch === 'settings:get') return { autoscroll: true };
       if (ch === 'settings:list') return [];
       if (ch === 'settings:set') return true;
+      if (ch === 'actions-bus:list') return [];
+      if (ch === 'actions-bus:set-enabled') return [];
       return {};
     }
   };

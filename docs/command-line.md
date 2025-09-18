@@ -24,3 +24,23 @@ Creates a new order card with the given ticker, entry price and stop loss. `sl` 
 
 `sl` and `tp` accept either raw point values or absolute prices containing a decimal dot. When a dotted value is supplied, it is interpreted as a price level and converted to points relative to the entry price (same logic as the input field).
 
+### last (alias: l)
+
+```
+last [tp] [risk]
+```
+
+Creates a card from the latest TradingView horizontal line captured by the `tvListener` service. The service stores the symbol and price from incoming `LineToolHorzLine` updates and the command reuses them as the ticker and entry price. Optional arguments follow the `add` command semantics: the first argument overrides the take-profit (`tp`) and the second overrides the `risk` value.
+
+When the TradingView payload includes the line identifier, the resulting card receives a `producingLineId` field matching that ID. Automation rules and manual commands can use the field to correlate cards with the TradingView objects that created them.
+
+### rm
+
+```
+rm producingLineId:{id}
+```
+
+Removes cards that match a specified criterion. Criteria are written as `key:value` pairs. The first supported key is `producingLineId`, which deletes the card created from the TradingView line with the given identifier. The command returns a validation error when the criterion is missing or malformed.
+
+Additional criteria may be added in the future; attempting to use an unknown key results in `Unknown criterion: {key}`.
+
