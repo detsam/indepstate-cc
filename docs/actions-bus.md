@@ -17,6 +17,11 @@ with a `name` exposes a checkbox that enables or disables the action at runtime.
       "event": "tv-tool-horzline",
       "action": "commandLine:add {symbol} {price}",
       "name": "Auto add last line"
+    },
+    {
+      "event": "tv-tool-horzline-remove",
+      "action": "commandLine:rm producingLineId:{lineId}",
+      "name": "Auto remove deleted lines"
     }
   ]
 }
@@ -26,7 +31,8 @@ with a `name` exposes a checkbox that enables or disables the action at runtime.
 - `actions` – array describing event bindings:
   - `event` – emitter event name (`bus.emit(eventName, payload)`).
   - `action` – command template. Values wrapped in `{curlyBraces}` are replaced with properties from
-the emitted payload. Objects are stringified, missing values resolve to empty strings.
+the emitted payload. Nested paths are not supported, but any top-level property can be referenced.
+Objects are stringified and missing values resolve to empty strings.
   - `name` (optional) – groups actions under a toggle. Named actions run only when the corresponding
     checkbox is enabled in the toolbar.
 
@@ -55,9 +61,5 @@ arguments: the rendered command string, the action entry and the original payloa
 action. Toggling a checkbox invokes `actions-bus:set-enabled` and the main process replies with the
 updated state so the UI re-renders. When no named actions exist the container remains hidden.
 
-## TradingView integration
-
-`tvListener` emits the `tv-tool-horzline` event whenever TradingView sends a horizontal line update.
-The payload matches the last activity used by the `last` command: `{ symbol, price }`. Actions bound
-to this event can forward the symbol and price directly to the command line service or to any custom
-runner that understands the payload.
+Service-specific integrations are documented alongside each service module. For TradingView
+automation, see the [tv-listener service notes](tv-listener.md).
