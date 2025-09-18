@@ -20,6 +20,7 @@ This directory contains high-level notes about the codebase.
 - `app/services/brokerage-adapter-*/comps/*` – execution adapters such as the DWX connector and the CCXT adapter; each can provide `listOpenOrders()` and `listClosedPositions()`
 - `app/services/servicesApi.js` – global object that service manifests extend to expose their APIs (e.g. `servicesApi.brokerage` with adapter helpers)
 - `app/services/commandLine.js` – parses text commands sent from the renderer. See [command-line.md](command-line.md) for available commands.
+- `app/services/actions-bus/*` – automation bus connecting service events to command runners. See [actions-bus.md](actions-bus.md) for configuration and usage details.
 - `app/services/orderCalculator.js` – shared service computing stop-loss, take-profit and position size for cards and pending orders.
   - `app/services/tvProxy/*` – spawns a mitmdump proxy exposing TradingView traffic to listeners. See [tv-proxy.md](tv-proxy.md) for details.
   - `app/services/tvListener/*` – registers listeners for TradingView messages, storing the last horizontal line and optionally forwarding `@ATR` messages to a webhook.
