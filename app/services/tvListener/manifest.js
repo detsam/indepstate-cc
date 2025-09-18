@@ -1,6 +1,5 @@
 const path = require('path');
 const fetch = require('node-fetch');
-const { EventEmitter } = require('events');
 const settings = require('../settings');
 const loadConfig = require('../../config/load');
 const { AddCommand } = require('../commands/add');
@@ -17,21 +16,7 @@ function intVal(v, fallback = 0) {
 }
 
 function initService(servicesApi = {}) {
-  const emitter = new EventEmitter();
   const tvApi = servicesApi.tvListener = servicesApi.tvListener || {};
-  tvApi.on = (eventName, handler) => {
-    if (typeof handler === 'function') {
-      emitter.on(eventName, handler);
-      return () => emitter.off(eventName, handler);
-    }
-    return () => {};
-  };
-  tvApi.off = (eventName, handler) => {
-    if (typeof handler === 'function') emitter.off(eventName, handler);
-  };
-  tvApi.once = (eventName, handler) => {
-    if (typeof handler === 'function') emitter.once(eventName, handler);
-  };
 
   let lastActivity = null;
   tvApi.getLastActivity = () => lastActivity;
@@ -57,8 +42,6 @@ function initService(servicesApi = {}) {
             const price = Number(src.state?.points?.[0]?.price);
             if (symbol && Number.isFinite(price)) {
               lastActivity = { symbol, price };
-              emitter.emit('LineToolHorzLine', lastActivity);
-              emitter.emit('tv-tool-horzline', lastActivity);
               if (servicesApi.actionBus && typeof servicesApi.actionBus.emit === 'function') {
                 servicesApi.actionBus.emit('tv-tool-horzline', lastActivity);
               }

@@ -10,8 +10,6 @@ function run() {
     tvProxy: { addListener(fn) { this.fn = fn; } }
   };
   manifest.initService(api);
-  let fromEmitter;
-  api.tvListener.on('tv-tool-horzline', (payload) => { fromEmitter = payload; });
   const samplePayload = {
     sources: {
       foo: {
@@ -23,7 +21,6 @@ function run() {
   api.tvProxy.fn({ event: 'http_request', text: JSON.stringify(samplePayload) });
 
   assert.deepStrictEqual(emitted, [{ event: 'tv-tool-horzline', payload: { symbol: 'NYSE:AAA', price: 1.5 } }]);
-  assert.deepStrictEqual(fromEmitter, { symbol: 'NYSE:AAA', price: 1.5 });
   assert.deepStrictEqual(api.tvListener.getLastActivity(), { symbol: 'NYSE:AAA', price: 1.5 });
 
   let row;
