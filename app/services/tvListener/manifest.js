@@ -16,6 +16,11 @@ function intVal(v, fallback = 0) {
 }
 
 function initService(servicesApi = {}) {
+  const tvApi = servicesApi.tvListener = servicesApi.tvListener || {};
+
+  let lastActivity = null;
+  tvApi.getLastActivity = () => lastActivity;
+
   let cfg = {};
   try {
     cfg = loadConfig('../services/tvListener/config/tv-listener.json');
@@ -24,7 +29,6 @@ function initService(servicesApi = {}) {
   }
   if (cfg.enabled === false) return;
 
-  let lastActivity = null;
 
   const tvProxy = servicesApi.tvProxy;
   if (tvProxy && typeof tvProxy.addListener === 'function') {
@@ -38,6 +42,9 @@ function initService(servicesApi = {}) {
             const price = Number(src.state?.points?.[0]?.price);
             if (symbol && Number.isFinite(price)) {
               lastActivity = { symbol, price };
+              if (servicesApi.actionBus && typeof servicesApi.actionBus.emit === 'function') {
+                servicesApi.actionBus.emit('tv-tool-horzline', lastActivity);
+              }
             }
           }
         } catch {}

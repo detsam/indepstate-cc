@@ -3,7 +3,12 @@ const manifest = require('../app/services/tvListener/manifest');
 const { createCommandService } = require('../app/services/commandLine');
 
 function run() {
-  const api = { commands: [], tvProxy: { addListener(fn) { this.fn = fn; } } };
+  const emitted = [];
+  const api = {
+    commands: [],
+    actionBus: { emit: (event, payload) => emitted.push({ event, payload }) },
+    tvProxy: { addListener(fn) { this.fn = fn; } }
+  };
   manifest.initService(api);
   const samplePayload = {
     sources: {
@@ -14,6 +19,9 @@ function run() {
     }
   };
   api.tvProxy.fn({ event: 'http_request', text: JSON.stringify(samplePayload) });
+
+  assert.deepStrictEqual(emitted, [{ event: 'tv-tool-horzline', payload: { symbol: 'NYSE:AAA', price: 1.5 } }]);
+  assert.deepStrictEqual(api.tvListener.getLastActivity(), { symbol: 'NYSE:AAA', price: 1.5 });
 
   let row;
   const cmdService = createCommandService({ commands: api.commands, onAdd: r => { row = r; } });
