@@ -1805,6 +1805,37 @@ ipcRenderer.on('execution:retry-stopped', (_evt, rec) => {
   render();
 });
 
+ipcRenderer.on('orders:remove', (_evt, filter) => {
+  if (!filter || typeof filter !== 'object') return;
+  const { producingLineId } = filter;
+  if (producingLineId == null) return;
+  const targetId = String(producingLineId);
+  if (!targetId) return;
+  const matches = state.rows.filter(row => String(row.producingLineId || '') === targetId);
+  if (matches.length === 0) return;
+  const keysToRemove = new Set(matches.map(row => rowKey(row)));
+  const nextRows = [];
+  const removed = [];
+  for (const row of state.rows) {
+    const key = rowKey(row);
+    if (keysToRemove.has(key)) {
+      removed.push({ row, key });
+    } else {
+      nextRows.push(row);
+    }
+  }
+  if (removed.length === 0) return;
+  state.rows = nextRows;
+  removed.forEach(({ row, key }) => {
+    uiState.delete(key);
+    cardStates.delete(key);
+    clearPendingByKey(key);
+    userTouchedByTicker.delete(row.ticker);
+    forgetInstrument(row.ticker, row.provider);
+  });
+  render();
+});
+
 // Обновлённая логика получения ивента
 ipcRenderer.on('orders:new', (_evt, row) => {
   // ищем существующую карточку по ТИКЕРУ
