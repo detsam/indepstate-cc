@@ -44,6 +44,8 @@ Notable configuration files include:
 - **Points** – converts price differences into point values using tick sizes. [Details](app/services/points/README.md)
 - **Order Calculator** – shared stop-loss, take-profit and position sizing math. [Details](docs/order-calculator.md)
 - **Event Bus** – broadcasts order lifecycle events. [Details](docs/events.md)
+- **Actions Bus** – routes service events to command runners for automation. [Details](docs/actions-bus.md)
+- **TV Listener** – watches TradingView messages and surfaces automation hooks. [Details](docs/tv-listener.md)
 
 ## Documentation
 
