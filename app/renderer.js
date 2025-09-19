@@ -838,8 +838,6 @@ function createCard(row, index) {
 
   // meta
   const meta = el('div', 'meta');
-  meta.appendChild(el('span', null, `#${index + 1}`));
-
 
   const instrumentType = row.instrumentType || detectInstrumentType(row.ticker); // fallback to EQ if not set
 
