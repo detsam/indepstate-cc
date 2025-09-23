@@ -118,10 +118,29 @@ const tvLogs = require('../app/services/dealTrackers-source-tv-log/comps');
   const file = path.join(dir, 'log.csv');
   fs.writeFileSync(file, csv);
   const svc = tvLogs.start({ accounts: [{ dir }], pollMs: 20 });
-  await new Promise(r => setTimeout(r, 50));
-  svc.stop();
-  assert.strictEqual(composeCount, 0);
-  assert.strictEqual(notifyCount, 0);
-  fs.rmSync(dir, { recursive: true, force: true });
+  try {
+    await new Promise(r => setTimeout(r, 50));
+    assert.strictEqual(fs.existsSync(file), false);
+    assert.strictEqual(composeCount, 0);
+    assert.strictEqual(notifyCount, 0);
+  } finally {
+    svc.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
   console.log('dealTrackers-source-tv-log skipExisting ok');
+})();
+
+(async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tvlogs-keep-'));
+  const file = path.join(dir, 'log.csv');
+  fs.writeFileSync(file, csv);
+  const svc = tvLogs.start({ accounts: [{ dir, deleteProcessedLogs: false }], pollMs: 20 });
+  try {
+    await new Promise(r => setTimeout(r, 50));
+    assert.strictEqual(fs.existsSync(file), true);
+  } finally {
+    svc.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  console.log('dealTrackers-source-tv-log keep logs opt-out ok');
 })();

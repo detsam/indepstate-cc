@@ -250,7 +250,12 @@ function waitFor(fn, timeout = 5000, interval = 100) {
 
 function start(config = cfg, { dwxClients = {}, compose1D, compose5M } = {}) {
   const resolved = resolveSecrets(config);
-  const accounts = Array.isArray(resolved.accounts) ? resolved.accounts : [];
+  const accounts = Array.isArray(resolved.accounts)
+    ? resolved.accounts.map(acc => ({
+      ...acc,
+      deleteProcessedLogs: acc.deleteProcessedLogs !== false
+    }))
+    : [];
   const pollMs = resolved.pollMs || 5000;
   const sessions = resolved.sessions;
   const opts = Array.isArray(resolved.skipExisting) ? { skipExisting: resolved.skipExisting } : undefined;
@@ -329,6 +334,30 @@ function start(config = cfg, { dwxClients = {}, compose1D, compose5M } = {}) {
     }
   }
 
+  function deleteProcessedFile(file, info) {
+    try {
+      fs.unlinkSync(file);
+      if (info && info.files) info.files.delete(file);
+      return true;
+    } catch (err) {
+      if (err && err.code === 'ENOENT') {
+        if (info && info.files) info.files.delete(file);
+        return true;
+      }
+      console.error('mt5Logs: failed to delete processed log', err);
+      return false;
+    }
+  }
+
+  function handleProcessedFile(file, acc, info) {
+    if (acc.deleteProcessedLogs) {
+      const deleted = deleteProcessedFile(file, info);
+      if (!deleted && info && info.files) info.files.add(file);
+    } else if (info && info.files) {
+      info.files.add(file);
+    }
+  }
+
   function listFiles(dir) {
     let names;
     try { names = fs.readdirSync(dir); } catch { return []; }
@@ -359,13 +388,13 @@ function start(config = cfg, { dwxClients = {}, compose1D, compose5M } = {}) {
       if (!info.initialized) {
         const latest = files[files.length - 1].file;
         await processAndNotify(latest, acc, info);
-        info.files.add(latest);
+        handleProcessedFile(latest, acc, info);
         info.initialized = true;
       } else {
         for (const { file } of files) {
           if (info.files.has(file)) continue;
           await processAndNotify(file, acc, info);
-          info.files.add(file);
+          handleProcessedFile(file, acc, info);
         }
       }
     }

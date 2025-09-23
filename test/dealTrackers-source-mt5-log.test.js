@@ -3,7 +3,8 @@ const path = require('path');
 const os = require('os');
 const assert = require('assert');
 
-const { processFile } = require('../app/services/dealTrackers-source-mt5-log/comps');
+const mt5Logs = require('../app/services/dealTrackers-source-mt5-log/comps');
+const { processFile } = mt5Logs;
 
 function testManifest() {
   const manifestPath = require.resolve('../app/services/dealTrackers-source-mt5-log/manifest.js');
@@ -352,6 +353,32 @@ async function run() {
   const deals3 = await processFile(tmp, undefined, Infinity, fetchBars2, include);
   assert.strictEqual(called, 1);
   assert.strictEqual(deals3.length, 1);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mt5logs-'));
+  const file = path.join(dir, 'report.html');
+  fs.writeFileSync(file, buildHtml(rows));
+  const svc = mt5Logs.start({ accounts: [{ dir }], pollMs: 20 });
+  try {
+    await new Promise(r => setTimeout(r, 50));
+    assert.strictEqual(fs.existsSync(file), false);
+  } finally {
+    svc.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  console.log('dealTrackers-source-mt5-log delete processed logs ok');
+
+  const dirKeep = fs.mkdtempSync(path.join(os.tmpdir(), 'mt5logs-keep-'));
+  const fileKeep = path.join(dirKeep, 'report.html');
+  fs.writeFileSync(fileKeep, buildHtml(rows));
+  const svcKeep = mt5Logs.start({ accounts: [{ dir: dirKeep, deleteProcessedLogs: false }], pollMs: 20 });
+  try {
+    await new Promise(r => setTimeout(r, 50));
+    assert.strictEqual(fs.existsSync(fileKeep), true);
+  } finally {
+    svcKeep.stop();
+    fs.rmSync(dirKeep, { recursive: true, force: true });
+  }
+  console.log('dealTrackers-source-mt5-log keep logs opt-out ok');
 
   console.log('dealTrackers-source-mt5-log parsing test passed');
 }

@@ -23,6 +23,7 @@ Settings live in `app/services/dealTrackers-source-tv-log/config/tv-logs.json`:
       "tactic": "example",
       "dir": "${ENV:TV_LOG_EXAMPLE}",
       "maxAgeDays": 2,
+      "deleteProcessedLogs": true,
       "symbolReplace": "return s.replace(/(.*)PERP$/, 'BINANCE:$1.P');",
       "fees": { "maker": 0.02, "taker": 0.05 }
     }
@@ -36,6 +37,7 @@ Settings live in `app/services/dealTrackers-source-tv-log/config/tv-logs.json`:
 - `accounts[n].symbolReplace` – optional JavaScript function body run with each raw symbol string. By default it converts `FOOUSDTPERP` into `BINANCE:FOOUSDT.P` so image composers can resolve tickers.
 - `accounts[n].fees` – optional maker/taker commission percentages used when a log has no commission column. Defaults to `0.02%` maker and `0.05%` taker.
 - `accounts[n].maxAgeDays` – only emit deals with a placing date within this many days for the given account. Set to `0` to allow all deals (default `2`).
+- `accounts[n].deleteProcessedLogs` – set to `false` to keep processed log files instead of deleting them (default `true`).
 - `skipExisting` – array mapping front‑matter fields to trade properties so trackers can detect existing notes.
 - `sessions` – optional mapping of `"HH:MM-HH:MM"` ranges to session numbers used for the `tradeSession` field.
 
