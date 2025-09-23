@@ -45,6 +45,7 @@ class FalseBreak2BStrategy {
     this.tick = Number(tickSize) || 0.01;
     this.stage = 0; // waiting for bar1
     this.done = false;
+    this.firstBar = null;
   }
 
   onBar(bar) {
@@ -57,10 +58,12 @@ class FalseBreak2BStrategy {
       if (this.side === 'long') {
         if (open > p && close < p && low < p - t) {
           this.stage = 1;
+          this.firstBar = { low };
           return null;
         }
       } else if (open < p && close > p && high > p + t) {
         this.stage = 1;
+        this.firstBar = { high };
         return null;
       }
       this.done = true;
@@ -70,10 +73,12 @@ class FalseBreak2BStrategy {
     this.done = true;
     if (this.side === 'long') {
       if (open < p && close > p) {
-        return { limitPrice: close, stopLoss: low - t };
+        const refLow = this.firstBar ? this.firstBar.low : low;
+        return { limitPrice: close, stopLoss: refLow - t };
       }
     } else if (open > p && close < p) {
-      return { limitPrice: close, stopLoss: high + t };
+      const refHigh = this.firstBar ? this.firstBar.high : high;
+      return { limitPrice: close, stopLoss: refHigh + t };
     }
     return { cancel: true };
   }
