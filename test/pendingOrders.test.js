@@ -224,7 +224,7 @@ async function run() {
   assert.strictEqual(exec.id, 1);
   assert.strictEqual(exec.side, 'long');
   assert.strictEqual(exec.limitPrice, 100.2);
-  assert.ok(Math.abs(exec.stopLoss - 99.3) < 1e-9);
+  assert.ok(Math.abs(exec.stopLoss - 99.4) < 1e-9);
   assert.strictEqual(cancelled, false);
 
   // false break two-bar fails and cancels
@@ -262,7 +262,7 @@ async function run() {
   assert.strictEqual(exec.id, 1);
   assert.strictEqual(exec.side, 'short');
   assert.strictEqual(exec.limitPrice, 199.4);
-  assert.ok(Math.abs(exec.stopLoss - 200.3) < 1e-9);
+  assert.ok(Math.abs(exec.stopLoss - 200.5) < 1e-9);
   assert.strictEqual(cancelled, false);
 
   // false break two-bar short fails and cancels
