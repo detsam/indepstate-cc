@@ -48,6 +48,10 @@
           "type": "number",
           "description": "Maximum age in days"
         },
+        "deleteProcessedLogs": {
+          "type": "boolean",
+          "description": "Delete log files after processing"
+        },
         "dwxProvider": {
           "type": "string",
           "description": "DWX provider id"

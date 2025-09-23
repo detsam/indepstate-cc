@@ -342,7 +342,8 @@ function start(config = cfg) {
         const taker = fees && typeof fees.taker === 'number' ? fees.taker : DEFAULT_TAKER_FEE_PCT;
         fees = { maker, taker };
       }
-      return { ...acc, symbolReplace: fn, fees };
+      const deleteProcessedLogs = acc.deleteProcessedLogs !== false;
+      return { ...acc, symbolReplace: fn, fees, deleteProcessedLogs };
     })
     : [];
   const pollMs = resolved.pollMs || 5000;
@@ -384,6 +385,30 @@ function start(config = cfg) {
     }
   }
 
+  function deleteProcessedFile(file, info) {
+    try {
+      fs.unlinkSync(file);
+      if (info && info.files) info.files.delete(file);
+      return true;
+    } catch (err) {
+      if (err && err.code === 'ENOENT') {
+        if (info && info.files) info.files.delete(file);
+        return true;
+      }
+      console.error('tvLogs: failed to delete processed log', err);
+      return false;
+    }
+  }
+
+  function handleProcessedFile(file, acc, info) {
+    if (acc.deleteProcessedLogs) {
+      const deleted = deleteProcessedFile(file, info);
+      if (!deleted && info && info.files) info.files.add(file);
+    } else if (info && info.files) {
+      info.files.add(file);
+    }
+  }
+
   function listFiles(dir) {
     let names;
     try { names = fs.readdirSync(dir); } catch { return []; }
@@ -414,13 +439,13 @@ function start(config = cfg) {
       if (!info.initialized) {
         const latest = files[files.length - 1].file;
         processAndNotify(latest, acc, info);
-        info.files.add(latest);
+        handleProcessedFile(latest, acc, info);
         info.initialized = true;
       } else {
         for (const { file } of files) {
           if (info.files.has(file)) continue;
           processAndNotify(file, acc, info);
-          info.files.add(file);
+          handleProcessedFile(file, acc, info);
         }
       }
     }
