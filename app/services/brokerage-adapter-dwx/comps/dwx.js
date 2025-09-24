@@ -149,6 +149,19 @@ class DWXAdapter extends ExecutionAdapter {
     this.pending.delete(cid);
   }
 
+  async cancelOrder(ticket) {
+    const t = String(ticket || '').trim();
+    if (!t) {
+      return { status: 'error', provider: this.provider, reason: 'ticket required' };
+    }
+    try {
+      await this.client.close_order(t, 0);
+      return { status: 'ok', provider: this.provider };
+    } catch (err) {
+      return { status: 'error', provider: this.provider, reason: err?.message || String(err) };
+    }
+  }
+
   #trackPending(cid, order, order_type) {
     this.pending.set(cid, { order, order_type, createdAt: Date.now(), cycles: 0 });
   }

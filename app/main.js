@@ -513,6 +513,36 @@ function setupIpc(orderSvc) {
     }
   });
 
+  ipcMain.handle('execution:cancel-order', async (_evt, payload = {}) => {
+    const providerNameRaw = payload.provider;
+    const ticketRaw = payload.ticket;
+    const symbolRaw = payload.symbol;
+    const providerName = typeof providerNameRaw === 'string' ? providerNameRaw : String(providerNameRaw || '');
+    const ticket = typeof ticketRaw === 'string' ? ticketRaw : String(ticketRaw || '');
+    const symbol = typeof symbolRaw === 'string' ? symbolRaw : (symbolRaw == null ? undefined : String(symbolRaw));
+
+    if (!providerName || !ticket) {
+      return { status: 'error', reason: 'provider and ticket required' };
+    }
+
+    try {
+      const adapter = getAdapter(providerName);
+      wireAdapter(adapter, providerName);
+      if (typeof adapter?.cancelOrder !== 'function') {
+        const res = { status: 'unsupported', provider: providerName };
+        appendJsonl(EXEC_LOG, { t: nowTs(), kind: 'cancel', provider: providerName, ticket, symbol, result: res });
+        return res;
+      }
+      const result = await adapter.cancelOrder(ticket, symbol);
+      appendJsonl(EXEC_LOG, { t: nowTs(), kind: 'cancel', provider: providerName, ticket, symbol, result });
+      return result || { status: 'ok', provider: providerName };
+    } catch (err) {
+      const reason = err?.message || String(err || '');
+      appendJsonl(EXEC_LOG, { t: nowTs(), kind: 'cancel', provider: providerName, ticket, symbol, error: reason });
+      return { status: 'error', provider: providerName, reason };
+    }
+  });
+
   ipcMain.handle('instrument:get', async (_evt, arg) => {
     try {
       const symbol = typeof arg === 'object' ? arg.symbol : arg;
