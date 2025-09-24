@@ -13,7 +13,8 @@
     {
       "tactic": "example",
       "dir": "${ENV:TV_LOG_EXAMPLE}",
-      "maxAgeDays": 2
+      "maxAgeDays": 2,
+      "deleteProcessedLogs": true
     }
   ]
 }
