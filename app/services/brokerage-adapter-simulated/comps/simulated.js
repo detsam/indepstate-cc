@@ -30,5 +30,9 @@ class SimulatedAdapter extends ExecutionAdapter {
     // для симуляции вернём фиксированную цену
     return { bid: 100, ask: 100, price: 100, tickSize: 0.01 };
   }
+
+  async cancelOrder() {
+    return { status: 'ok', provider: this.provider };
+  }
 }
 module.exports = { SimulatedAdapter };

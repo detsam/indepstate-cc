@@ -534,6 +534,43 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     }
   }
 
+  async cancelOrder(orderId, symbol) {
+    try {
+      await this.ensureReady();
+      const ticket = String(orderId || '').trim();
+      if (!ticket) {
+        return { status: 'error', provider: this.provider, reason: 'orderId required' };
+      }
+      const mappedSymbol = symbol ? this.mapSymbol(symbol) : undefined;
+      try {
+        await this.exchange.cancelOrder(ticket, mappedSymbol);
+      } catch (err) {
+        if (mappedSymbol) {
+          try {
+            await this.exchange.cancelOrder(undefined, mappedSymbol, {
+              origClientOrderId: ticket,
+              clientOrderId: ticket
+            });
+          } catch {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
+      try { await this._cancelChildOrders(ticket); } catch {}
+      const watcher = this._parentWatchers.get(ticket);
+      if (watcher) {
+        clearInterval(watcher);
+        this._parentWatchers.delete(ticket);
+      }
+      this._ticketToSymbol.delete(ticket);
+      return { status: 'ok', provider: this.provider };
+    } catch (err) {
+      return { status: 'error', provider: this.provider, reason: err?.message || String(err) };
+    }
+  }
+
   /** @returns {Promise<any[]>} список відкритих ордерів */
   async listOpenOrders() {
     try {

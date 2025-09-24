@@ -94,6 +94,7 @@ const pendingExecLabels = new Map(); // key -> label
 const pendingByReqId = new Map();
 const pendingIdByReqId = new Map();
 const ticketToKey = new Map(); // ticket -> rowKey
+const placedOrderByKey = new Map(); // rowKey -> { provider, ticket, symbol }
 const retryCounts = new Map(); // reqId -> retry count
 
 // --- пользователь вручную менял поля карточки для этого тикера?
@@ -490,8 +491,17 @@ function setCardState(key, state) {
 
     if (state === 'placed') {
       status.style.cursor = 'pointer';
-      status.title = 'Вернуть в готово к отправке';
+      status.title = 'Return to ready to send';
       status.onclick = () => {
+        const orderInfo = placedOrderByKey.get(key);
+        if (orderInfo && orderInfo.ticket && orderInfo.provider) {
+          ipcRenderer.invoke('execution:cancel-order', {
+            provider: orderInfo.provider,
+            ticket: orderInfo.ticket,
+            symbol: orderInfo.symbol
+          }).catch(() => {});
+        }
+        placedOrderByKey.delete(key);
         for (const [ticket, k] of ticketToKey.entries()) {
           if (k === key) ticketToKey.delete(ticket);
         }
@@ -599,6 +609,7 @@ function setCardState(key, state) {
       card.querySelectorAll('input').forEach(inp => inp.disabled = false);
       card.querySelectorAll('button.btn').forEach(btn => btn.disabled = false);
     }
+    placedOrderByKey.delete(key);
   }
 }
 
@@ -713,6 +724,11 @@ function migrateKey(oldKey, newKey, {preserveUi = false, nextUiPatch = null} = {
   if (pendingExecLabels.has(oldKey)) {
     pendingExecLabels.set(newKey, pendingExecLabels.get(oldKey));
     pendingExecLabels.delete(oldKey);
+  }
+
+  if (placedOrderByKey.has(oldKey)) {
+    placedOrderByKey.set(newKey, placedOrderByKey.get(oldKey));
+    placedOrderByKey.delete(oldKey);
   }
 }
 
@@ -1687,6 +1703,7 @@ function clearPendingByKey(key) {
     }
   }
   pendingExecLabels.delete(key);
+  placedOrderByKey.delete(key);
 }
 
 function removeRow(row) {
@@ -1698,6 +1715,7 @@ function removeRow(row) {
   }
   uiState.delete(key);
   cardStates.delete(key);
+  placedOrderByKey.delete(key);
   clearPendingByKey(key);
   userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
   render();
@@ -1711,6 +1729,7 @@ function removeRowByKey(key) {
     state.rows.splice(idx, 1);
     uiState.delete(key);
     cardStates.delete(key);
+    placedOrderByKey.delete(key);
     clearPendingByKey(key);
     userTouchedByTicker.delete(row.ticker); // reset touched flag for ticker
     render();
@@ -1923,6 +1942,16 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
       setCardState(key, 'placed');
     }
     if (rec.providerOrderId) ticketToKey.set(String(rec.providerOrderId), key);
+    const providerOrderId = String(rec.providerOrderId || '');
+    if (providerOrderId) {
+      const row = state.rows.find(r => rowKey(r) === key);
+      const symbol = rec.order?.symbol || rec.order?.ticker || row?.ticker || row?.symbol || '';
+      placedOrderByKey.set(key, {
+        provider: rec.provider || (row && row.provider) || '',
+        ticket: providerOrderId,
+        symbol: symbol
+      });
+    }
     toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
     render();
   } else {
@@ -1944,6 +1973,7 @@ ipcRenderer.on('position:opened', (_evt, rec) => {
     }
   }
   if (!key) return;
+  placedOrderByKey.delete(key);
   setCardState(key, 'executing');
   render();
 });
@@ -1964,6 +1994,7 @@ ipcRenderer.on('order:cancelled', (_evt, rec) => {
   const key = ticketToKey.get(String(rec.ticket));
   if (key) {
     ticketToKey.delete(String(rec.ticket));
+    placedOrderByKey.delete(key);
     removeRowByKey(key);
   }
 });
