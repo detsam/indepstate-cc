@@ -6,5 +6,8 @@ A minimal event emitter used across the application. It broadcasts the following
 - `position:opened`
 - `position:closed`
 - `order:cancelled`
+- `execution:order-message`
 
-Other services subscribe to these events to react to changes.
+Other services subscribe to these events to react to changes. `execution:order-message`
+is emitted with the JSON order payload right before it is handed to the execution
+adapter.

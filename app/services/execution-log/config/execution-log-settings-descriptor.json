@@ -1,0 +1,20 @@
+{
+  "properties": {
+    "group": "logging",
+    "name": "Execution log"
+  },
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable execution log writer"
+    },
+    "file": {
+      "type": "string",
+      "description": "Path to the JSONL file that stores order messages"
+    },
+    "retentionDays": {
+      "type": "number",
+      "description": "Number of days to retain entries"
+    }
+  }
+}

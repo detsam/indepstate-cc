@@ -1,0 +1,5 @@
+{
+  "enabled": true,
+  "file": "logs/execution-log.jsonl",
+  "retentionDays": 2
+}

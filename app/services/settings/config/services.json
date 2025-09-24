@@ -9,6 +9,7 @@
   "services/dealTrackers-source-tv-log",
   "services/dealTrackers-source-mt5-log",
   "services/orderCards",
+  "services/execution-log",
   "services/pendingOrders",
   "services/points",
   "services/tradeRules",

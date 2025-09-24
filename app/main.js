@@ -378,6 +378,13 @@ function setupIpc(orderSvc) {
 
       execOrder = normalizeEquityOrderForExecution(order);
 
+      const logOrder = {
+        ...execOrder,
+        sentAt: ts,
+        meta: { ...(execOrder.meta || {}), sentAt: ts, provider: providerName }
+      };
+      events.emit('execution:order-message', logOrder);
+
       const adapter = getAdapter(providerName);
       // разово подключим слушатели подтверждений (если адаптер их поддерживает)
       wireAdapter(adapter, providerName);
