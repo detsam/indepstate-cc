@@ -22,13 +22,15 @@ const { createExecutionLogService } = require('../app/services/execution-log');
   const kept = JSON.parse(lines[0]);
   assert.strictEqual(kept.symbol, 'NEW');
 
-  const payload = { symbol: 'APPEND', meta: { sentAt: now } };
+  const payload = { symbol: 'APPEND', cid: 'deadbeef', meta: { sentAt: now, cid: 'deadbeef' } };
   events.emit('execution:order-message', payload);
 
   lines = fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean);
   assert.strictEqual(lines.length, 2, 'expected appended entry');
   const appended = JSON.parse(lines[1]);
   assert.strictEqual(appended.symbol, 'APPEND');
+  assert.strictEqual(appended.cid, 'deadbeef');
+  assert.strictEqual(appended.meta.cid, 'deadbeef');
 
   svc.stop();
   console.log('executionLogService tests passed');
