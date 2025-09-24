@@ -19,7 +19,7 @@ Settings live in `app/services/dealTrackers-source-mt5-log/config/mt5-logs.json`
     "16:30-02:00": 3
   },
   "accounts": [
-    { "tactic": "example", "dir": "${ENV:MT5_LOG_EXAMPLE}", "maxAgeDays": 2, "dwxProvider": "dwx" }
+    { "tactic": "example", "dir": "${ENV:MT5_LOG_EXAMPLE}", "maxAgeDays": 2, "deleteProcessedLogs": true, "dwxProvider": "dwx" }
   ]
 }
 ```
@@ -28,6 +28,7 @@ Settings live in `app/services/dealTrackers-source-mt5-log/config/mt5-logs.json`
 - `pollMs` – interval in milliseconds used to check directories for new files.
 - `accounts` – list of tactic accounts with a `tactic` name and directories containing HTML reports. Paths may reference environment variables using `${ENV:VAR}`.
 - `accounts[n].maxAgeDays` – only emit deals with a placing date within this many days for the given account. Set to `0` to allow all deals (default `2`).
+- `accounts[n].deleteProcessedLogs` – set to `false` to keep processed log files instead of deleting them (default `true`).
 - `skipExisting` – array mapping front‑matter fields to trade properties so trackers can detect existing notes.
 - `sessions` – optional mapping of `"HH:MM-HH:MM"` ranges to session numbers used for the `tradeSession` field.
 - `accounts[n].dwxProvider` – optional name of an execution provider whose DWX adapter supplies historic bars for that account. When omitted the service can init its own `dwx_client` if `dwx[provider].metatraderDirPath` is configured.

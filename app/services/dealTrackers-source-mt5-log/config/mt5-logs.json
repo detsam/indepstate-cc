@@ -14,6 +14,7 @@
       "tactic": "example",
       "dir": "${ENV:MT5_LOG_EXAMPLE}",
       "maxAgeDays": 2,
+      "deleteProcessedLogs": true,
       "dwxProvider": "dwx"
     }
   ]
