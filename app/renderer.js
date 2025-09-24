@@ -491,7 +491,7 @@ function setCardState(key, state) {
 
     if (state === 'placed') {
       status.style.cursor = 'pointer';
-      status.title = 'Вернуть в готово к отправке';
+      status.title = 'Return to ready to send';
       status.onclick = () => {
         const orderInfo = placedOrderByKey.get(key);
         if (orderInfo && orderInfo.ticket && orderInfo.provider) {
