@@ -9,6 +9,10 @@
           "type": "string",
           "description": "Source type (webhook, file)"
         },
+        "truncateOnStart": {
+          "type": "boolean",
+          "description": "Truncate webhook log on start"
+        },
         "pathEnvVar": {
           "type": "string",
           "description": "Env var with file path (file)"
