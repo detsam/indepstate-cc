@@ -3,8 +3,10 @@ const path = require('path');
 const dealTrackers = require('../../dealTrackers/comps');
 const { calcDealData } = require('../../dealTrackers/comps/calc');
 const loadConfig = require('../../../config/load');
+const { resolveFilePath: resolveExecutionLogPath } = require('../../execution-log');
 
 const DEFAULT_MAX_AGE_DAYS = 2;
+const CID_IN_TEXT_RE = /cid[:=]\s*([a-z0-9]+)/i;
 let cfg = {};
 try {
   cfg = loadConfig('../services/dealTrackers-source-mt5-log/config/mt5-logs.json');
@@ -27,6 +29,90 @@ function resolveSecrets(obj) {
   return out;
 }
 
+function normalizeCid(candidate) {
+  if (candidate == null) return '';
+  let str = String(candidate).trim();
+  if (!str) return '';
+  const cidMatch = str.match(CID_IN_TEXT_RE);
+  if (cidMatch) return cidMatch[1];
+  if (str.startsWith('pending:')) return str.slice('pending:'.length);
+  return str;
+}
+
+function extractCidFromRow(html) {
+  if (!html) return undefined;
+  const match = String(html).match(CID_IN_TEXT_RE);
+  if (!match) return undefined;
+  return normalizeCid(match[0]);
+}
+
+function toNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function resolveExecutionLogFilePathFromConfig() {
+  let executionCfg = {};
+  try {
+    executionCfg = loadConfig('../services/execution-log/config/execution-log.json');
+  } catch {
+    executionCfg = {};
+  }
+  if (typeof resolveExecutionLogPath === 'function') {
+    try {
+      return resolveExecutionLogPath(executionCfg.file);
+    } catch {}
+  }
+  const base = loadConfig.USER_ROOT || loadConfig.APP_ROOT || process.cwd();
+  if (executionCfg && typeof executionCfg.file === 'string' && executionCfg.file.trim()) {
+    const normalized = executionCfg.file.trim();
+    if (path.isAbsolute(normalized)) return normalized;
+    return path.join(base, normalized);
+  }
+  return path.join(base, 'logs', 'execution-log.jsonl');
+}
+
+function createExecutionLogLookup(filePath) {
+  if (!filePath) return null;
+  let text;
+  try {
+    text = fs.readFileSync(filePath, 'utf8');
+  } catch (err) {
+    if (err && err.code !== 'ENOENT') {
+      console.error('mt5Logs: cannot read execution log', err);
+    }
+    return null;
+  }
+  if (!text) {
+    return () => undefined;
+  }
+  const map = new Map();
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const trimmed = line && line.trim();
+    if (!trimmed) continue;
+    let entry;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    const cid = normalizeCid(entry?.cid || entry?.meta?.cid || entry?.comment || entry?.meta?.comment || entry?.clientOrderId);
+    if (!cid || map.has(cid)) continue;
+    const sl = toNumber(entry?.sl ?? entry?.stopPrice ?? entry?.meta?.sl ?? entry?.meta?.stopPrice);
+    const tp = toNumber(entry?.tp ?? entry?.meta?.tp ?? entry?.takeProfit ?? entry?.meta?.takeProfit);
+    map.set(cid, { sl, tp });
+  }
+  if (!map.size) {
+    return () => undefined;
+  }
+  return (rawCid) => {
+    const cid = normalizeCid(rawCid);
+    if (!cid) return undefined;
+    return map.get(cid);
+  };
+}
+
 function extractText(html) {
   return String(html).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
 }
@@ -42,6 +128,7 @@ function parseHtmlText(text) {
   let match;
   while ((match = trRe.exec(section))) {
     const rowHtml = match[1];
+    const cid = extractCidFromRow(rowHtml);
     if (/^\s*<th/i.test(rowHtml)) continue;
     const cells = [];
     // Skip hidden cells regardless of quoting style
@@ -66,7 +153,8 @@ function parseHtmlText(text) {
       closePrice: Number(closePriceStr),
       commission: commissionStr ? Number(commissionStr) : 0,
       swap: swapStr ? Number(swapStr) : 0,
-      profit: profitStr ? Number(profitStr) : 0
+      profit: profitStr ? Number(profitStr) : 0,
+      cid
     });
   }
   return rows;
@@ -135,7 +223,7 @@ function computeMoveReverse({ side, openPrice, openTime, closeTime }, bars = [])
   return diffPoints(extreme, openPrice) || 0;
 }
 
-async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
+async function buildDeal(row, sessions = cfg.sessions, fetchBars, include, executionLookup) {
   if (!row) return null;
   const {
     symbol: rawSymbol,
@@ -148,7 +236,8 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
     closeTime: rawCloseTime,
     closePrice,
     commission: rawCommission,
-    profit
+    profit,
+    cid
   } = row;
   const [placingDateRaw = '', placingTime = ''] = String(rawOpenTime).split(/\s+/);
   const placingDate = placingDateRaw.replace(/\./g, '-');
@@ -158,9 +247,25 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
     return null;
   }
 
-  let takeSetup, stopSetup;
-  if (tp != null) takeSetup = diffPoints(tp, openPrice);
-  if (sl != null) stopSetup = diffPoints(sl, openPrice);
+  let takeSetup;
+  let stopSetup;
+  if (executionLookup && cid) {
+    try {
+      const initial = executionLookup(cid);
+      if (initial) {
+        if (initial.tp != null) {
+          const tpPrice = toNumber(initial.tp);
+          if (tpPrice != null) takeSetup = diffPoints(tpPrice, openPrice);
+        }
+        if (initial.sl != null) {
+          const slPrice = toNumber(initial.sl);
+          if (slPrice != null) stopSetup = diffPoints(slPrice, openPrice);
+        }
+      }
+    } catch {}
+  }
+  if (takeSetup == null && tp != null) takeSetup = diffPoints(tp, openPrice);
+  if (stopSetup == null && sl != null) stopSetup = diffPoints(sl, openPrice);
 
   const status = profit >= 0 ? 'take' : 'stop';
   let takePoints; let stopPoints;
@@ -206,10 +311,16 @@ async function buildDeal(row, sessions = cfg.sessions, fetchBars, include) {
     sessions,
     status
   });
-  return { _key: key, placingDate, placingTime, moveActualEP, moveReverse, ...base };
+  return { _key: key, placingDate, placingTime, moveActualEP, moveReverse, cid, ...base };
 }
 
-async function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, fetchBars, include) {
+async function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_MAX_AGE_DAYS, fetchBars, include, options = {}) {
+  const opts = options || {};
+  let executionLookup = opts.executionLookup;
+  if (!executionLookup && (opts.executionLogPath || opts.useExecutionLogProvider)) {
+    const resolvedPath = opts.executionLogPath || resolveExecutionLogFilePathFromConfig();
+    executionLookup = createExecutionLogLookup(resolvedPath);
+  }
   let text;
   try {
     const buf = fs.readFileSync(file);
@@ -225,7 +336,7 @@ async function processFile(file, sessions = cfg.sessions, maxAgeDays = DEFAULT_M
   }
   if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
   const rows = parseHtmlText(text);
-  const deals = (await Promise.all(rows.map(r => buildDeal(r, sessions, fetchBars, include)))).filter(Boolean);
+  const deals = (await Promise.all(rows.map(r => buildDeal(r, sessions, fetchBars, include, executionLookup)))).filter(Boolean);
   if (typeof maxAgeDays === 'number' && maxAgeDays > 0) {
     const cutoff = Date.now() - maxAgeDays * 86400000;
     return deals.filter(d => {
@@ -265,6 +376,9 @@ function start(config = cfg, { dwxClients = {}, compose1D, compose5M } = {}) {
   const clients = { ...dwxClients };
   const fetchBarsCache = new Map();
   const defaultProvider = resolved.dwxProvider;
+  const useExecutionLogProvider =
+    resolved.executionLogProvider === true ||
+    (resolved.executionLogProvider == null && cfg.executionLogProvider === true);
 
   function getFetchBars(name) {
     const provider = name || defaultProvider;
@@ -299,11 +413,11 @@ function start(config = cfg, { dwxClients = {}, compose1D, compose5M } = {}) {
 
   // chart image composer handled by default service
 
-  async function processAndNotify(file, acc, info) {
+  async function processAndNotify(file, acc, info, executionOptions) {
     const maxAgeDays = typeof acc.maxAgeDays === 'number' ? acc.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
     const fetchBars = getFetchBars(acc.dwxProvider);
     const include = d => dealTrackers.shouldWritePositionClosed(d, opts);
-    const deals = await processFile(file, sessions, maxAgeDays, fetchBars, include);
+    const deals = await processFile(file, sessions, maxAgeDays, fetchBars, include, executionOptions);
     for (const d of deals) {
       const symKey = d.symbol && [d.symbol.exchange, d.symbol.ticker].filter(Boolean).join(':');
       const key = d._key || `${symKey}|${d.placingDate} ${d.placingTime}`;
@@ -375,6 +489,14 @@ function start(config = cfg, { dwxClients = {}, compose1D, compose5M } = {}) {
   }
 
   async function tick() {
+    let executionOptions;
+    if (useExecutionLogProvider) {
+      const logPath = resolveExecutionLogFilePathFromConfig();
+      const lookup = logPath ? createExecutionLogLookup(logPath) : null;
+      executionOptions = lookup
+        ? { executionLookup: lookup }
+        : { useExecutionLogProvider: true, executionLogPath: logPath };
+    }
     for (const acc of accounts) {
       const dir = acc.dir || acc.path;
       if (!dir) continue;
@@ -387,13 +509,13 @@ function start(config = cfg, { dwxClients = {}, compose1D, compose5M } = {}) {
       }
       if (!info.initialized) {
         const latest = files[files.length - 1].file;
-        await processAndNotify(latest, acc, info);
+        await processAndNotify(latest, acc, info, executionOptions);
         handleProcessedFile(latest, acc, info);
         info.initialized = true;
       } else {
         for (const { file } of files) {
           if (info.files.has(file)) continue;
-          await processAndNotify(file, acc, info);
+          await processAndNotify(file, acc, info, executionOptions);
           handleProcessedFile(file, acc, info);
         }
       }

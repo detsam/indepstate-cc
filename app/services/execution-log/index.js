@@ -131,4 +131,5 @@ function createExecutionLogService(opts) {
 module.exports = {
   ExecutionLogService,
   createExecutionLogService,
+  resolveFilePath,
 };

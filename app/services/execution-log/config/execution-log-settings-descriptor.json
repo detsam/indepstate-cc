@@ -1,6 +1,6 @@
 {
   "properties": {
-    "group": "logging",
+    "group": "deal-tracker",
     "name": "Execution log"
   },
   "options": {

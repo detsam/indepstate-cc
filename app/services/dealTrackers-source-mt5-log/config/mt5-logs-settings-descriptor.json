@@ -26,6 +26,10 @@
         }
       }
     },
+    "executionLogProvider": {
+      "type": "boolean",
+      "description": "Use execution log service for initial SL/TP"
+    },
     "sessions": {
       "description": "Session identifiers by time range",
       "02:00-06:00": { "type": "number", "description": "Session ID for 02:00-06:00" },

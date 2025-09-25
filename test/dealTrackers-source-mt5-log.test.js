@@ -32,6 +32,7 @@ const rows = [
   {
     openTime: '2025.08.26 16:30:47',
     positionId: '236993502',
+    cid: 'cid0001',
     symbol: 'KDP',
     side: 'buy',
     volume: '642',
@@ -47,6 +48,7 @@ const rows = [
   {
     openTime: '2025.08.26 16:35:28',
     positionId: '236993719',
+    cid: 'cid0002',
     symbol: 'ETSY',
     side: 'buy',
     volume: '360',
@@ -277,7 +279,7 @@ function buildHtml(rows) {
     `<tr align="center"><th colspan="14"><div><b>Positions</b></div></th></tr>` +
     `<tr align="center" bgcolor="#E5F0FC"><td><b>Time</b></td><td><b>Position</b></td><td><b>Symbol</b></td><td><b>Type</b></td><td><b>Volume</b></td><td><b>Price</b></td><td><b>S / L</b></td><td><b>T / P</b></td><td><b>Time</b></td><td><b>Price</b></td><td><b>Commission</b></td><td><b>Swap</b></td><td colspan="2"><b>Profit</b></td></tr>`;
   const rowsHtml = rows.map((r, i) =>
-    `<tr bgcolor="${i % 2 ? '#F7F7F7' : '#FFFFFF'}" align="right"><td>${r.openTime}</td><td>${r.positionId}</td><td>${r.symbol}</td><td>${r.side}</td><td class="hidden" colspan="8">cid:x</td><td>${r.volume}</td><td>${r.openPrice}</td><td>${r.sl}</td><td>${r.tp}</td><td>${r.closeTime}</td><td>${r.closePrice}</td><td>${r.commission}</td><td>${r.swap}</td><td colspan="2">${r.profit}</td></tr>`
+    `<tr bgcolor="${i % 2 ? '#F7F7F7' : '#FFFFFF'}" align="right"><td>${r.openTime}</td><td>${r.positionId}</td><td>${r.symbol}</td><td>${r.side}</td><td class="hidden" colspan="8">cid:${r.cid || ''}</td><td>${r.volume}</td><td>${r.openPrice}</td><td>${r.sl}</td><td>${r.tp}</td><td>${r.closeTime}</td><td>${r.closePrice}</td><td>${r.commission}</td><td>${r.swap}</td><td colspan="2">${r.profit}</td></tr>`
   ).join('');
   const footer = `<tr><td></td></tr><tr align="center"><th colspan="14"><div><b>Orders</b></div></th></tr></table></div></body></html>`;
   return header + positionsHeader + rowsHtml + footer;
@@ -290,7 +292,7 @@ function buildHtmlPositionsOnly(rows) {
     `<tr align="center" bgcolor="#E5F0FC"><td><b>Time</b></td><td><b>Position</b></td><td><b>Symbol</b></td><td><b>Type</b></td>` +
     `<td><b>Volume</b></td><td><b>Price</b></td><td><b>S / L</b></td><td><b>T / P</b></td><td><b>Time</b></td><td><b>Price</b></td><td><b>Commission</b></td><td><b>Swap</b></td><td colspan="2"><b>Profit</b></td></tr>`;
   const rowsHtml = rows.map((r, i) =>
-    `<tr bgcolor="${i % 2 ? '#F7F7F7' : '#FFFFFF'}" align="right"><td>${r.openTime}</td><td>${r.positionId}</td><td>${r.symbol}</td><td>${r.side}</td><td class="hidden" colspan="8">cid:x</td><td>${r.volume}</td><td>${r.openPrice}</td><td>${r.sl}</td><td>${r.tp}</td><td>${r.closeTime}</td><td>${r.closePrice}</td><td>${r.commission}</td><td>${r.swap}</td><td colspan="2">${r.profit}</td></tr>`
+    `<tr bgcolor="${i % 2 ? '#F7F7F7' : '#FFFFFF'}" align="right"><td>${r.openTime}</td><td>${r.positionId}</td><td>${r.symbol}</td><td>${r.side}</td><td class="hidden" colspan="8">cid:${r.cid || ''}</td><td>${r.volume}</td><td>${r.openPrice}</td><td>${r.sl}</td><td>${r.tp}</td><td>${r.closeTime}</td><td>${r.closePrice}</td><td>${r.commission}</td><td>${r.swap}</td><td colspan="2">${r.profit}</td></tr>`
   ).join('');
   const footer = `</table></div></body></html>`;
   return header + positionsHeader + rowsHtml + footer;
@@ -353,6 +355,24 @@ async function run() {
   const deals3 = await processFile(tmp, undefined, Infinity, fetchBars2, include);
   assert.strictEqual(called, 1);
   assert.strictEqual(deals3.length, 1);
+
+  const executionLogFile = path.join(os.tmpdir(), 'mt5-execution-log.jsonl');
+  const executionEntries = [
+    { cid: 'cid0001', sl: 30.5, tp: 31.6 },
+    { cid: 'cid0002', sl: 54.735, tp: 56.235 }
+  ];
+  fs.writeFileSync(executionLogFile, executionEntries.map(e => JSON.stringify(e)).join('\n'));
+  const dealsWithExec = await processFile(tmp, undefined, Infinity, fetchBars, undefined, {
+    executionLogPath: executionLogFile,
+    useExecutionLogProvider: true
+  });
+  assert.strictEqual(dealsWithExec[0].sp, 40);
+  assert.strictEqual(dealsWithExec[0].tp, 70);
+  assert.strictEqual(dealsWithExec[0].cid, 'cid0001');
+  assert.strictEqual(dealsWithExec[1].sp, 50);
+  assert.strictEqual(dealsWithExec[1].tp, 100);
+  assert.strictEqual(dealsWithExec[2].sp, deals[2].sp);
+  try { fs.unlinkSync(executionLogFile); } catch {}
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mt5logs-'));
   const file = path.join(dir, 'report.html');
