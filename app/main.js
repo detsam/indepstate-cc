@@ -55,6 +55,14 @@ function envInt(name, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function resolveWebhookPort(candidate, fallback) {
+  const num = Number(candidate);
+  if (!Number.isFinite(num)) return fallback;
+  const port = Math.trunc(num);
+  if (port <= 0 || port > 65535) return fallback;
+  return port;
+}
+
 const CID_IN_COMMENT_RE = /cid[:=]\s*([a-z0-9]+)/i;
 
 function normalizeCid(candidate) {
@@ -267,7 +275,7 @@ app.whenReady().then(() => {
       }
     };
     if (src.type === 'webhook') {
-      opts.port = src.port ?? PORT;
+      opts.port = resolveWebhookPort(src.port, PORT);
       opts.logFile = path.join(LOG_DIR, src.logFile || 'webhooks.jsonl');
       opts.truncateOnStart = src.truncateOnStart ?? true;
     }
