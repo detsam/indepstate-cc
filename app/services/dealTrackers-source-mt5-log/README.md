@@ -13,6 +13,7 @@ Settings live in `app/services/dealTrackers-source-mt5-log/config/mt5-logs.json`
   "skipExisting": [
     { "field": "MT5-LOG-KEY", "prop": "_key" }
   ],
+  "executionLogProvider": false,
   "sessions": {
     "02:00-06:00": 1,
     "06:00-16:30": 2,
@@ -30,6 +31,8 @@ Settings live in `app/services/dealTrackers-source-mt5-log/config/mt5-logs.json`
 - `accounts[n].maxAgeDays` – only emit deals with a placing date within this many days for the given account. Set to `0` to allow all deals (default `2`).
 - `accounts[n].deleteProcessedLogs` – set to `false` to keep processed log files instead of deleting them (default `true`).
 - `skipExisting` – array mapping front‑matter fields to trade properties so trackers can detect existing notes.
+- `executionLogProvider` – when `true` the parser reads the execution log service JSONL file, matching entries by `cid` to
+  recover the original SL/TP that were sent for execution before computing setups.
 - `sessions` – optional mapping of `"HH:MM-HH:MM"` ranges to session numbers used for the `tradeSession` field.
 - `accounts[n].dwxProvider` – optional name of an execution provider whose DWX adapter supplies historic bars for that account. When omitted the service can init its own `dwx_client` if `dwx[provider].metatraderDirPath` is configured.
 - `dwx[provider].metatraderDirPath` – optional path to the MetaTrader `MQLx/Files` directory for the given provider. When provided the service uses `dwx_client` to retrieve 5‑minute bars for computing `moveActualEP` and `moveReverse`.
@@ -42,7 +45,7 @@ For each account the service:
 
 1. Reads the MetaTrader 5 trade history HTML file and extracts rows from the **Positions** table.
 2. Derives trade side, entry price and exit price from each row.
-3. Calculates price differences such as `takeSetup` and `stopSetup` from the row's price fields, rounds them to two decimals and multiplies by `100` to get point distances.
+3. Calculates price differences such as `takeSetup` and `stopSetup` from the row's price fields, rounds them to two decimals and multiplies by `100` to get point distances. When the execution log provider option is enabled it prefers SL/TP values recovered from the execution log by `cid`, ensuring the original setup is preserved even if the order was later modified.
 4. Uses these values to determine the result (`take` or `stop`), derives `takePoints`/`stopPoints` the same way, adjusts commission so that any fee under `3` is replaced with either `3` (when volume < `500`) or `volume * 0.006 * 2` (when volume ≥ `500`), always stores commission as a positive amount, rounds profit to two decimals and calculates `tradeRisk`.
 5. Splits the placing time into date and time (date normalized to `YYYY-MM-DD`), then determines `tradeSession` using the configured `sessions` map.
 6. Optionally queries a `dwx_client` for 5‑minute bars of the trade's symbol for the trading day. Bars are only requested when deal trackers are enabled and a deal does not already have a matching report. From the entry time forward it searches for the furthest favourable price movement, calculating `moveActualEP` – the distance in points from entry to that extreme. For profitable trades it also scans bars between entry and exit to find the worst counter move, storing that distance as `moveReverse`. If the deal stops out, `moveReverse` equals `stopSetup`.

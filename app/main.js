@@ -4,6 +4,7 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..','.env') });
 
@@ -52,6 +53,53 @@ function envBool(name, fallback = false) {
 function envInt(name, fallback = 0) {
   const n = parseInt(process.env[name] ?? '', 10);
   return Number.isFinite(n) ? n : fallback;
+}
+
+const CID_IN_COMMENT_RE = /cid[:=]\s*([a-z0-9]+)/i;
+
+function normalizeCid(candidate) {
+  if (candidate == null) return '';
+  let str = String(candidate).trim();
+  if (!str) return '';
+  const cidMatch = str.match(CID_IN_COMMENT_RE);
+  if (cidMatch) return cidMatch[1];
+  if (str.startsWith('pending:')) return str.slice('pending:'.length);
+  return str;
+}
+
+function generateCid() {
+  return crypto.randomBytes(6).toString('hex');
+}
+
+function ensureCommentHasCid(comment, cid) {
+  const base = comment == null ? '' : String(comment).trim();
+  if (!cid) return base;
+  if (base.includes(cid)) return base;
+  if (CID_IN_COMMENT_RE.test(base)) {
+    return base.replace(CID_IN_COMMENT_RE, `cid:${cid}`);
+  }
+  return base ? `${base} | cid:${cid}` : `cid:${cid}`;
+}
+
+function ensureOrderCid(order) {
+  if (!order || typeof order !== 'object') return '';
+  if (!order.meta) order.meta = {};
+  const candidates = [order.meta.cid, order.clientOrderId, order.cid];
+  let cid = '';
+  for (const candidate of candidates) {
+    const normalized = normalizeCid(candidate);
+    if (normalized) {
+      cid = normalized;
+      break;
+    }
+  }
+  if (!cid) cid = generateCid();
+  order.meta.cid = cid;
+  if (!normalizeCid(order.clientOrderId)) {
+    order.clientOrderId = cid;
+  }
+  order.comment = ensureCommentHasCid(order.comment, cid);
+  return cid;
 }
 // ----------------- CONSTS -----------------
 const PORT = envInt("TV_WEBHOOK_PORT", 3210);
@@ -263,8 +311,8 @@ function normalizeOrderPayload(payload) {
   const legacy = payload && payload.ticker && payload.meta;
   if (legacy) {
     const symbol = String(payload.ticker || '');
-
     const instrumentType =  payload.instrumentType;
+    const comment = payload.comment ?? payload.meta?.comment;
     return {
         instrumentType ,                // 'CX' | 'EQ' | 'FX'
       symbol,                        // 'BTCUSDT.P' | 'AAPL'
@@ -277,6 +325,7 @@ function normalizeOrderPayload(payload) {
       price: Number(payload.price || 0),
       sl: Number(payload.meta.stopPts || 0),
       tp: payload.meta.takePts == null ? undefined : Number(payload.meta.takePts),
+      comment: comment == null ? undefined : String(comment),
       meta: payload.meta || {}
     };
   }
@@ -284,6 +333,7 @@ function normalizeOrderPayload(payload) {
   // новый формат
   const symbol = String(payload.symbol || payload.ticker || '');
   const instrumentType =  payload.instrumentType;
+  const comment = payload.comment ?? payload.meta?.comment;
   return {
     instrumentType,
     symbol,
@@ -296,6 +346,7 @@ function normalizeOrderPayload(payload) {
     price: Number(payload.price || 0),
     sl: Number(payload.sl || 0),
     tp: payload.tp === '' || payload.tp == null ? undefined : Number(payload.tp),
+    comment: comment == null ? undefined : String(comment),
     meta: payload.meta || {}
   };
 }
@@ -359,11 +410,13 @@ function setupIpc(orderSvc) {
     // выбор адаптера, requestId и нормализация под исполнение
     const providerName = pickProviderName(order.instrumentType);
     let execOrder;
+    let cid = '';
     try {
       const ts = nowTs();
       const reqId = order?.meta?.requestId || `${ts}_${Math.random().toString(36).slice(2,8)}`;
       if (!order.meta) order.meta = {};
       order.meta.requestId = reqId;
+      cid = ensureOrderCid(order);
 
         const sideCode = String(order.side || '').toUpperCase();
         const sideDir = sideCode.startsWith('S') || sideCode === 'SELL' ? 'short' : 'long';
@@ -372,11 +425,24 @@ function setupIpc(orderSvc) {
           tp: order.meta?.takePts,
           sp: order.meta?.stopPts,
           side: sideDir,
+          cid,
           price: order.price,
           qty: order.qty
         });
 
       execOrder = normalizeEquityOrderForExecution(order);
+      execOrder.comment = ensureCommentHasCid(execOrder.comment, cid);
+      if (!execOrder.meta) execOrder.meta = {};
+      execOrder.meta.cid = cid;
+
+      const logOrder = {
+        ...execOrder,
+        cid,
+        comment: execOrder.comment,
+        sentAt: ts,
+        meta: { ...(execOrder.meta || {}), cid, sentAt: ts, provider: providerName }
+      };
+      events.emit('execution:order-message', logOrder);
 
       const adapter = getAdapter(providerName);
       // разово подключим слушатели подтверждений (если адаптер их поддерживает)
@@ -385,17 +451,17 @@ function setupIpc(orderSvc) {
       const quote = await adapter.getQuote?.(execOrder.symbol);
       if (!quote || !Number.isFinite(quote.price)) {
         const rej = { status: 'rejected', provider: providerName, reason: 'No quote' };
-        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, provider: providerName, order: execOrder, result: rej });
+        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });
         return rej;
       }
       const rule = tradeRules.validate(execOrder, quote);
       if (!rule.ok) {
         const rej = { status: 'rejected', provider: providerName, reason: rule.reason };
-        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, provider: providerName, order: execOrder, result: rej });
+        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });
         return rej;
       }
 
-      console.log('[EXEC][REQ]', { provider: providerName, reqId, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price, sl: execOrder.sl, tp: execOrder.tp });
+      console.log('[EXEC][REQ]', { provider: providerName, reqId, cid, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price, sl: execOrder.sl, tp: execOrder.tp });
 
       const result = await adapter.placeOrder(execOrder);
 
@@ -403,8 +469,8 @@ function setupIpc(orderSvc) {
       // отправляем в UI спец-событие и ждём order:confirmed
       const maybePending = String(result?.providerOrderId || '');
       if (maybePending.startsWith('pending:')) {
-        const pendingId = maybePending.slice('pending:'.length);
-        pendingIndex.set(pendingId, { reqId, adapter, providerName, order: execOrder, ts });
+        const pendingId = normalizeCid(maybePending) || cid;
+        pendingIndex.set(pendingId, { reqId, adapter, providerName, order: execOrder, ts, cid: pendingId });
 
         appendJsonl(EXEC_LOG, {
           t: ts,
@@ -412,6 +478,7 @@ function setupIpc(orderSvc) {
           reqId,
           provider: providerName,
           pendingId,
+          cid: pendingId,
           order: execOrder
         });
 
@@ -421,16 +488,17 @@ function setupIpc(orderSvc) {
             reqId,
             provider: providerName,
             pendingId,
+            cid: pendingId,
             order: execOrder
           });
         }
 
-        events.emit('order:placed', { order: execOrder, result: { status: 'ok', provider: providerName, providerOrderId: result.providerOrderId } });
+        events.emit('order:placed', { order: execOrder, result: { status: 'ok', provider: providerName, providerOrderId: result.providerOrderId, cid: pendingId } });
 
-        console.log('[EXEC][QUEUED]', { reqId, pendingId });
+        console.log('[EXEC][QUEUED]', { reqId, pendingId, cid: pendingId });
         // для синхронного ответа IPC можно вернуть «ok» с pendingId,
         // но UI должен ждать финального события 'execution:result'
-        return { status: 'ok', provider: providerName, providerOrderId: result.providerOrderId };
+        return { status: 'ok', provider: providerName, providerOrderId: result.providerOrderId, cid: pendingId };
       }
 
       // иначе — поведение как раньше (simulated/rejected/другие адаптеры)
@@ -438,6 +506,7 @@ function setupIpc(orderSvc) {
         t: ts,
         kind: 'place',
         reqId,
+        cid,
         valid: true,
         provider: (result && result.provider) || providerName,
         order: execOrder,
@@ -453,6 +522,7 @@ function setupIpc(orderSvc) {
           status: result?.status || 'rejected',
           reason: result?.reason,
           providerOrderId: result?.providerOrderId,
+          cid,
           order: execOrder
         });
       }
@@ -463,13 +533,14 @@ function setupIpc(orderSvc) {
       }
       trackerPending.delete(reqId);
 
-      events.emit('order:placed', { order: execOrder, result: { status: result?.status || 'rejected', provider: execRecord.provider, providerOrderId: result?.providerOrderId, reason: result?.reason } });
+      events.emit('order:placed', { order: execOrder, result: { status: result?.status || 'rejected', provider: execRecord.provider, providerOrderId: result?.providerOrderId, reason: result?.reason, cid } });
 
-      console.log('[EXEC][RES]', { reqId, status: result?.status, reason: result?.reason, providerOrderId: result?.providerOrderId });
+      console.log('[EXEC][RES]', { reqId, cid, status: result?.status, reason: result?.reason, providerOrderId: result?.providerOrderId });
       return result;
   } catch (err) {
       const rej = { status: 'rejected', reason: err.message || 'adapter error' };
-      appendJsonl(EXEC_LOG, { t: nowTs(), kind: 'place', valid: true, order, error: String(err) });
+      const errorCid = cid || normalizeCid(order?.meta?.cid);
+      appendJsonl(EXEC_LOG, { t: nowTs(), kind: 'place', valid: true, order, reqId: order?.meta?.requestId, cid: errorCid || undefined, error: String(err) });
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('execution:result', {
@@ -478,12 +549,13 @@ function setupIpc(orderSvc) {
           provider: providerName,
           status: 'rejected',
           reason: rej.reason,
+          cid: errorCid || undefined,
           order
         });
       }
       trackerPending.delete(order?.meta?.requestId);
-      console.log('[EXEC][ERR]', { provider: providerName, reqId: order?.meta?.requestId, error: String(err) });
-      events.emit('order:placed', { order: execOrder, result: { status: 'rejected', provider: providerName, reason: rej.reason } });
+      console.log('[EXEC][ERR]', { provider: providerName, reqId: order?.meta?.requestId, cid: errorCid || undefined, error: String(err) });
+      events.emit('order:placed', { order: execOrder, result: { status: 'rejected', provider: providerName, reason: rej.reason, cid: errorCid || undefined } });
       return rej;
     }
   }

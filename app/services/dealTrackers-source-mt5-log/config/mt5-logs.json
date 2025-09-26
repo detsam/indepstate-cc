@@ -4,6 +4,7 @@
   "skipExisting": [
     { "field": "MT5-LOG-KEY", "prop": "_key" }
   ],
+  "executionLogProvider": false,
   "sessions": {
     "02:00-06:00": 1,
     "06:00-16:30": 2,

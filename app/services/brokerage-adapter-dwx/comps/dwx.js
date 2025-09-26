@@ -88,8 +88,16 @@ class DWXAdapter extends ExecutionAdapter {
     const reason = validate(order);
     if (reason) return { status: 'rejected', provider: this.provider, reason, raw: { order } };
 
-    // делаем cid и (если нет) проставляем его в comment, чтобы потом надёжно матчинговалось
-    const cid = randomId();
+    // берём cid из заказа (если есть) или генерируем свой и проставляем его в comment
+    let cid = '';
+    if (order?.meta?.cid) {
+      cid = String(order.meta.cid).trim();
+    } else if (order?.clientOrderId) {
+      cid = String(order.clientOrderId).trim();
+    }
+    if (!cid) cid = randomId();
+    if (!order.meta) order.meta = {};
+    order.meta.cid = cid;
     const comment = appendCidToComment(order.comment, cid);
     order.commentWithCid = comment;
 
@@ -346,7 +354,12 @@ function randomId() { return crypto.randomBytes(6).toString('hex'); }
 
 function appendCidToComment(comment, cid) {
   const c = (comment || '').trim();
-  return c.includes('cid:') ? c : (c ? `${c} | cid:${cid}` : `cid:${cid}`);
+  if (!cid) return c;
+  if (includesCid(c, cid)) return c;
+  if (/cid[:=]\s*[a-f0-9]+/i.test(c)) {
+    return c.replace(/cid[:=]\s*[a-f0-9]+/i, `cid:${cid}`);
+  }
+  return c ? `${c} | cid:${cid}` : `cid:${cid}`;
 }
 
 function extractCid(s) {

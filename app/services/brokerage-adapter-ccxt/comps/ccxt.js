@@ -421,6 +421,21 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       let ccxtType = typeIn;
       const params = { ...(this.defaultParams || {}), ...(order.params || {}) };
 
+      let cid = '';
+      if (order?.meta?.cid) {
+        cid = String(order.meta.cid).trim();
+      } else if (order?.clientOrderId) {
+        cid = String(order.clientOrderId).trim();
+      } else if (order?.cid) {
+        cid = String(order.cid).trim();
+      }
+      if (!cid) cid = crypto.randomBytes(6).toString('hex');
+      if (!order.meta) order.meta = {};
+      order.meta.cid = cid;
+      if (!order.clientOrderId) {
+        order.clientOrderId = cid;
+      }
+
       // Підтримка stop/stoplimit через stopPrice у params (поширений шаблон у ccxt)
       if (typeIn === 'stop' || typeIn === 'stopmarket') {
         ccxtType = 'market';
@@ -453,7 +468,6 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       }
 
       // --- Pending: повертаємо відразу, а виконання — асинхронно ---
-      const cid = crypto.randomBytes(6).toString('hex');
       this.pending.set(cid, { order, createdAt: Date.now() });
 
       (async () => {
