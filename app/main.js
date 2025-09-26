@@ -55,6 +55,14 @@ function envInt(name, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function resolveWebhookPort(candidate, fallback) {
+  const num = Number(candidate);
+  if (!Number.isFinite(num)) return fallback;
+  const port = Math.trunc(num);
+  if (port <= 0 || port > 65535) return fallback;
+  return port;
+}
+
 const CID_IN_COMMENT_RE = /cid[:=]\s*([a-z0-9]+)/i;
 
 function normalizeCid(candidate) {
@@ -254,8 +262,13 @@ app.whenReady().then(() => {
 
   const sourcesCfg = orderCardsCfg?.sources || [{ type: 'webhook' }];
   orderCardServices = sourcesCfg.map((src) => {
+    const normalized = (src && typeof src === 'object' && !Array.isArray(src))
+      ? src
+      : { type: typeof src === 'string' ? src : 'webhook' };
+    const type = normalized.type || 'webhook';
     const opts = {
-      ...src,
+      ...normalized,
+      type,
       nowTs,
       onRow(row) {
         const ticker = row.ticker || row.symbol;
@@ -266,10 +279,10 @@ app.whenReady().then(() => {
         }
       }
     };
-    if (src.type === 'webhook') {
-      opts.port = src.port ?? PORT;
-      opts.logFile = path.join(LOG_DIR, src.logFile || 'webhooks.jsonl');
-      opts.truncateOnStart = src.truncateOnStart ?? true;
+    if (type === 'webhook') {
+      opts.port = resolveWebhookPort(normalized.port, PORT);
+      opts.logFile = path.join(LOG_DIR, normalized.logFile || 'webhooks.jsonl');
+      opts.truncateOnStart = normalized.truncateOnStart ?? true;
     }
     return createOrderCardService(opts);
   });

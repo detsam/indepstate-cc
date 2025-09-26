@@ -8,10 +8,20 @@ const path = require('path');
 const { parseWebhook } = require('../webhooks');
 const { OrderCardsSource } = require('./base');
 
+const DEFAULT_WEBHOOK_PORT = 3210;
+
+function sanitizePort(candidate, fallback = DEFAULT_WEBHOOK_PORT) {
+  const num = Number(candidate);
+  if (!Number.isFinite(num)) return fallback;
+  const port = Math.trunc(num);
+  if (port <= 0 || port > 65535) return fallback;
+  return port;
+}
+
 class WebhookOrderCardsSource extends OrderCardsSource {
   constructor(opts = {}) {
     super();
-    this.port = opts.port || 0;
+    this.port = sanitizePort(opts.port);
     this.nowTs = opts.nowTs || (() => Date.now());
     const userData = require('electron')?.app?.getPath('userData') || path.join(__dirname, '..');
     this.logFile = opts.logFile || path.join(userData, 'logs', 'webhooks.jsonl');
