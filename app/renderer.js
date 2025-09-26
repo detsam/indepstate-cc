@@ -175,6 +175,8 @@ function showSection(name) {
     const desc = (res.descriptor && res.descriptor.options) || {};
     const form = document.createElement('form');
     form.dataset.section = name;
+    const hasOwn = Object.prototype.hasOwnProperty;
+    const getDefault = (d) => (d && hasOwn.call(d, 'default') ? d.default : undefined);
     const build = (parent, cfgObj, descObj, prefix = '') => {
       const hasItemDesc = !!(descObj && typeof descObj === 'object' && !Array.isArray(descObj) && descObj.item);
       if (Array.isArray(cfgObj) || Array.isArray(descObj) || hasItemDesc) {
@@ -189,7 +191,9 @@ function showSection(name) {
         const itemIsObjDesc = itemDesc && typeof itemDesc === 'object' && !itemDesc.type && Object.keys(itemDesc).length;
         const renderItem = (val, idx) => {
           const d = itemDesc;
-          const isObj = (val && typeof val === 'object' && !Array.isArray(val)) || itemIsObjDesc;
+          const defaultVal = getDefault(d);
+          const effectiveVal = val !== undefined ? val : defaultVal;
+          const isObj = (effectiveVal && typeof effectiveVal === 'object' && !Array.isArray(effectiveVal)) || itemIsObjDesc;
           const path = prefix ? `${prefix}.${idx}` : String(idx);
           if (isObj) {
             const group = document.createElement('div');
@@ -212,7 +216,8 @@ function showSection(name) {
             });
             head.appendChild(rm);
             group.appendChild(head);
-            build(group, val || {}, d || {}, path);
+            const nested = effectiveVal && typeof effectiveVal === 'object' ? effectiveVal : {};
+            build(group, nested, d || {}, path);
             itemsWrap.appendChild(group);
           } else {
             const label = document.createElement('label');
@@ -220,19 +225,23 @@ function showSection(name) {
             span.textContent = (d && d.description) || String(idx);
             label.appendChild(span);
             let input;
-            const type = (d && d.type) || typeof val;
+            const type = (d && d.type) || typeof effectiveVal;
             if (type === 'boolean') {
               input = document.createElement('input');
               input.type = 'checkbox';
-              input.checked = !!val;
+              if (val !== undefined) input.checked = !!val;
+              else if (defaultVal !== undefined) input.checked = !!defaultVal;
+              else input.checked = false;
             } else if (type === 'number') {
               input = document.createElement('input');
               input.type = 'number';
-              input.value = val ?? '';
+              const initial = val !== undefined ? val : defaultVal;
+              input.value = initial ?? '';
             } else {
               input = document.createElement('input');
               input.type = 'text';
-              input.value = val ?? '';
+              const initial = val !== undefined ? val : defaultVal;
+              input.value = initial ?? '';
             }
             input.dataset.field = path;
             input.addEventListener('input', () => { form.dataset.dirty = '1'; });
@@ -269,7 +278,9 @@ function showSection(name) {
         addBtn.className = 'settings-array-add';
         addBtn.addEventListener('click', () => {
           let v;
+          const defaultVal = getDefault(itemDesc);
           if (itemIsObjDesc) v = {};
+          else if (defaultVal !== undefined) v = defaultVal;
           else if (itemDesc && itemDesc.type === 'number') v = 0;
           else if (itemDesc && itemDesc.type === 'boolean') v = false;
           else v = '';
@@ -286,9 +297,12 @@ function showSection(name) {
       ]);
       for (const key of keys) {
         if (key === 'description' || key === 'type') continue;
-        const val = cfgObj ? cfgObj[key] : undefined;
+        const hasValue = cfgObj && hasOwn.call(cfgObj, key);
+        const val = hasValue ? cfgObj[key] : undefined;
         const d = descObj ? descObj[key] : undefined;
-        const isObj = (val && typeof val === 'object' && !Array.isArray(val)) ||
+        const defaultVal = getDefault(d);
+        const effectiveVal = hasValue ? val : defaultVal;
+        const isObj = (effectiveVal && typeof effectiveVal === 'object' && !Array.isArray(effectiveVal)) ||
           (d && typeof d === 'object' && !d.type);
         if (isObj) {
           const group = document.createElement('div');
@@ -297,7 +311,8 @@ function showSection(name) {
           title.className = 'settings-group-title';
           title.textContent = (d && d.description) || key;
           group.appendChild(title);
-          build(group, val || {}, d || {}, prefix ? `${prefix}.${key}` : key);
+          const nested = effectiveVal && typeof effectiveVal === 'object' ? effectiveVal : {};
+          build(group, nested, d || {}, prefix ? `${prefix}.${key}` : key);
           parent.appendChild(group);
         } else {
           const label = document.createElement('label');
@@ -305,19 +320,23 @@ function showSection(name) {
           span.textContent = (d && d.description) || key;
           label.appendChild(span);
           let input;
-          const type = (d && d.type) || typeof val;
+          const type = (d && d.type) || typeof effectiveVal;
           if (type === 'boolean') {
             input = document.createElement('input');
             input.type = 'checkbox';
-            input.checked = !!val;
+            if (hasValue) input.checked = !!val;
+            else if (defaultVal !== undefined) input.checked = !!defaultVal;
+            else input.checked = false;
           } else if (type === 'number') {
             input = document.createElement('input');
             input.type = 'number';
-            input.value = val ?? '';
+            const initial = hasValue ? val : defaultVal;
+            input.value = initial ?? '';
           } else {
             input = document.createElement('input');
             input.type = 'text';
-            input.value = val ?? '';
+            const initial = hasValue ? val : defaultVal;
+            input.value = initial ?? '';
           }
           const path = prefix ? `${prefix}.${key}` : key;
           input.dataset.field = path;

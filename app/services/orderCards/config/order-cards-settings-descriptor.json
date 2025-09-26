@@ -11,7 +11,8 @@
         },
         "port": {
           "type": "number",
-          "description": "Webhook port (webhook)"
+          "description": "Webhook port (webhook)",
+          "default": 3210
         },
         "truncateOnStart": {
           "type": "boolean",
