@@ -9,6 +9,10 @@
           "type": "string",
           "description": "Source type (webhook, file)"
         },
+        "port": {
+          "type": "number",
+          "description": "Webhook port (webhook)"
+        },
         "truncateOnStart": {
           "type": "boolean",
           "description": "Truncate webhook log on start"
