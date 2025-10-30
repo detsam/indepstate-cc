@@ -18,6 +18,12 @@ class PendingOrderService {
       rangeRule,
       dealPriceRule,
       stoppLossRule,
+      priceSource,
+      historyBars,
+      historyTimeframe,
+      historyLoader,
+      getQuote,
+      symbol,
       onExecute,
       onCancel
     } = opts;
@@ -27,6 +33,12 @@ class PendingOrderService {
     if (rangeRule != null) params.rangeRule = rangeRule;
     if (dealPriceRule != null) params.dealPriceRule = dealPriceRule;
     if (stoppLossRule != null) params.stoppLossRule = stoppLossRule;
+    if (priceSource != null) params.priceSource = priceSource;
+    if (historyBars != null) params.historyBars = historyBars;
+    if (historyTimeframe != null) params.historyTimeframe = historyTimeframe;
+    if (historyLoader != null) params.historyLoader = historyLoader;
+    if (getQuote != null) params.getQuote = getQuote;
+    if (symbol != null) params.symbol = symbol;
     const strategyInst = this.createStrategy(strategy, params);
     const id = this.nextId++;
     this.orders.set(id, { id, side, strategy: strategyInst, onExecute, onCancel });
@@ -39,17 +51,33 @@ class PendingOrderService {
 
   onBar(bar) {
     for (const [id, order] of Array.from(this.orders.entries())) {
-      const res = order.strategy.onBar(bar);
-      if (res) {
-        this.orders.delete(id);
-        if (res.limitPrice != null && res.stopLoss != null) {
-          if (typeof order.onExecute === 'function') {
-            order.onExecute({ id, side: order.side, ...res });
-          }
-        } else if (res.cancel && typeof order.onCancel === 'function') {
-          order.onCancel({ id, side: order.side });
-        }
+      try {
+        const res = order.strategy.onBar(bar);
+        this.#handleResult(id, order, res);
+      } catch (err) {
+        console.error('pending strategy error', err);
       }
+    }
+  }
+
+  #handleResult(id, order, res) {
+    if (!res) return;
+    if (typeof res.then === 'function') {
+      res.then(value => {
+        this.#handleResult(id, order, value);
+      }).catch(err => {
+        console.error('pending strategy async error', err);
+      });
+      return;
+    }
+    if (!this.orders.has(id)) return;
+    this.orders.delete(id);
+    if (res.limitPrice != null && res.stopLoss != null) {
+      if (typeof order.onExecute === 'function') {
+        order.onExecute({ id, side: order.side, ...res });
+      }
+    } else if (res.cancel && typeof order.onCancel === 'function') {
+      order.onCancel({ id, side: order.side });
     }
   }
 }

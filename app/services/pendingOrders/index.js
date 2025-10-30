@@ -7,6 +7,7 @@ const {
   B1_10p_GAP
 } = require('./strategies/consolidation');
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
+const { LimitByCurrentStrategy } = require('./strategies/limitByCurrent');
 const { PendingOrderHub, createPendingOrderHub } = require('./hub');
 const { createStrategyFactory } = require('./factory');
 
@@ -24,6 +25,7 @@ module.exports = {
   B1_TAIL,
   B1_10p_GAP,
   FalseBreakStrategy,
+  LimitByCurrentStrategy,
   PendingOrderHub,
   createPendingOrderHub,
   createStrategyFactory

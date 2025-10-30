@@ -7,5 +7,11 @@
   },
   "falseBreak": {
     "tickSize": 0.01
+  },
+  "limitByCurrent": {
+    "stoppLossRule": "B1_TAIL",
+    "priceSource": "bid",
+    "historyBars": 15,
+    "historyTimeframe": "M1"
   }
 }

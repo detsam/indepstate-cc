@@ -26,6 +26,63 @@ function pickProviderName(instrumentType) {
 
 const orderCalc = new OrderCalculator({ tradeRules });
 
+const TF_SECONDS = {
+  M1: 60,
+  M5: 300,
+  M15: 900,
+  M30: 1800,
+  H1: 3600,
+  H4: 14400,
+  D1: 86400
+};
+
+async function waitFor(fn, attempts = 10, delay = 100) {
+  for (let i = 0; i < attempts; i++) {
+    const value = fn();
+    if (value) return value;
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  return fn();
+}
+
+async function fetchAdapterHistory(adapter, symbol, timeframe = 'M1', limit = 15) {
+  if (!adapter || !symbol) return [];
+  if (typeof adapter.getHistoricBars === 'function') {
+    try {
+      const res = await adapter.getHistoricBars({ symbol, timeframe, limit });
+      return Array.isArray(res) ? res : [];
+    } catch (err) {
+      console.error('pending: getHistoricBars failed', err);
+      return [];
+    }
+  }
+  const client = adapter?.client;
+  if (!client || typeof client.get_historic_data !== 'function') return [];
+  const seconds = TF_SECONDS[timeframe] || TF_SECONDS.M1;
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - seconds * Math.max(5, limit + 5);
+  try {
+    await client.get_historic_data({ symbol, time_frame: timeframe, start, end });
+  } catch (err) {
+    console.error('pending: get_historic_data failed', err);
+    return [];
+  }
+  const key = `${symbol}_${timeframe}`;
+  const data = await waitFor(() => client.historic_data?.[key], 10, 100);
+  if (!data) return [];
+  return Object.entries(data)
+    .map(([time, o]) => ({
+      time: Number(time),
+      open: Number(o?.open),
+      high: Number(o?.high),
+      low: Number(o?.low),
+      close: Number(o?.close)
+    }))
+    .filter(b => Number.isFinite(b.high) && Number.isFinite(b.low) && Number.isFinite(b.close))
+    .sort((a, b) => a.time - b.time)
+    .slice(-limit);
+}
+
 class PendingOrderHub {
   constructor({ strategies = {}, strategyConfig, subscribe, ipcMain, queuePlaceOrder, wireAdapter, mainWindow, getAdapter } = {}) {
     this.subscribe = subscribe;
@@ -89,12 +146,38 @@ class PendingOrderHub {
     if (!payload.meta) payload.meta = {};
     payload.meta.requestId = reqId;
 
+    const historyBars = payload.historyBars;
+    const historyTimeframe = payload.historyTimeframe;
+    const historyLoader = adapter
+      ? async ({ limit, timeframe } = {}) => fetchAdapterHistory(
+        adapter,
+        symbol,
+        timeframe || historyTimeframe || 'M1',
+        Math.max(1, Number(limit) || Number(historyBars) || 15)
+      )
+      : null;
+    const getQuote = adapter
+      ? async () => {
+        try { return await adapter.getQuote?.(symbol); }
+        catch (err) {
+          console.error('pending: getQuote failed', err);
+          return null;
+        }
+      }
+      : async () => null;
+
     const pendingId = this.addOrder(providerName, symbol, {
       price: Number(payload.price),
       side: payload.side,
       strategy: payload.strategy,
       tickSize: payload.tickSize,
       bars: payload.bars,
+      priceSource: payload.priceSource,
+      historyBars,
+      historyTimeframe,
+      historyLoader,
+      getQuote,
+      symbol,
       onExecute: async ({ limitPrice, stopLoss, takeProfit }) => {
         this.pendingIndex.delete(pendingId);
 

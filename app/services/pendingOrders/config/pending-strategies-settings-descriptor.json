@@ -26,6 +26,25 @@
         "type": "number",
         "description": "Tick size for breakout"
       }
+    },
+    "limitByCurrent": {
+      "description": "Limit by current price strategy",
+      "stoppLossRule": {
+        "type": "string",
+        "description": "Stop loss rule name"
+      },
+      "priceSource": {
+        "type": "string",
+        "description": "Price source to use (bid|ask|mid)"
+      },
+      "historyBars": {
+        "type": "number",
+        "description": "Number of historic bars to load"
+      },
+      "historyTimeframe": {
+        "type": "string",
+        "description": "Timeframe for historic bars"
+      }
     }
   }
 }

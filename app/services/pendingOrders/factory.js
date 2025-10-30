@@ -6,6 +6,7 @@ const {
   B1_TAIL,
   B1_10p_GAP
 } = require('./strategies/consolidation');
+const { LimitByCurrentStrategy } = require('./strategies/limitByCurrent');
 const { FalseBreakStrategy } = require('./strategies/falseBreak');
 
 function createStrategyFactory(strategyConfig, extraStrategies = {}, extraHelpers = {}) {
@@ -17,19 +18,22 @@ function createStrategyFactory(strategyConfig, extraStrategies = {}, extraHelper
     B1_10p_GAP,
     ...extraHelpers
   };
-  const classes = { consolidation: ConsolidationStrategy, falseBreak: FalseBreakStrategy, ...extraStrategies };
+  const classes = {
+    consolidation: ConsolidationStrategy,
+    falseBreak: FalseBreakStrategy,
+    limitByCurrent: LimitByCurrentStrategy,
+    ...extraStrategies
+  };
   return function (name, params = {}) {
     const Strategy = classes[name];
     if (!Strategy) throw new Error(`Unknown strategy: ${name}`);
     const base = cfg?.[name] || {};
     const opts = { ...base, ...params };
-    if (name === 'consolidation') {
-      ['rangeRule', 'dealPriceRule', 'stoppLossRule'].forEach(key => {
-        if (typeof opts[key] === 'string') {
-          opts[key] = helpers[opts[key]] || opts[key];
-        }
-      });
-    }
+    ['rangeRule', 'dealPriceRule', 'stoppLossRule'].forEach(key => {
+      if (typeof opts[key] === 'string' && helpers[opts[key]]) {
+        opts[key] = helpers[opts[key]];
+      }
+    });
     return new Strategy(opts);
   };
 }
