@@ -1612,6 +1612,15 @@ function revalidateCardsForTicker(ticker) {
 }
 
 // ======= Order placement (shared) =======
+const PENDING_ACTIONS = {
+  BC: { strategy: 'consolidation', side: 'long' },
+  SC: { strategy: 'consolidation', side: 'short' },
+  BFB: { strategy: 'falseBreak', side: 'long' },
+  SFB: { strategy: 'falseBreak', side: 'short' },
+  BP: { strategy: 'limitByCurrent', side: 'long' },
+  SP: { strategy: 'limitByCurrent', side: 'short' }
+};
+
 async function place(kind, row, v, instrumentType, btnLabel) {
   if (!v.valid) return;
 
@@ -1619,10 +1628,9 @@ async function place(kind, row, v, instrumentType, btnLabel) {
   const requestId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   pendingByReqId.set(requestId, key);
   retryCounts.set(requestId, 0);
-  const isPendingExec = kind === 'BC' || kind === 'SC' || kind === 'BFB' || kind === 'SFB';
-  let isLong = null;
-  if (kind === 'BC' || kind === 'BFB') isLong = true;
-  else if (kind === 'SC' || kind === 'SFB') isLong = false;
+  const pendingInfo = PENDING_ACTIONS[kind];
+  const isPendingExec = !!pendingInfo;
+  const isLong = pendingInfo ? pendingInfo.side === 'long' : null;
   const alias = isPendingExec ? btnLabel : null;
   if (alias) pendingExecLabels.set(key, alias);
   setCardState(key, isPendingExec ? 'pending-exec' : 'pending');
@@ -1666,13 +1674,13 @@ async function place(kind, row, v, instrumentType, btnLabel) {
 
   let res;
   try {
-    if (kind === 'BC' || kind === 'SC' || kind === 'BFB' || kind === 'SFB') {
+    if (isPendingExec) {
       const pendPayload = {
         ticker: row.ticker,
         event: row.event,
         price: Number(priceVal),
         side: isLong ? 'long' : 'short',
-        strategy: (kind === 'BFB' || kind === 'SFB') ? 'falseBreak' : 'consolidation',
+        strategy: pendingInfo?.strategy,
         instrumentType: instrumentType,
         tickSize: tick,
         meta: baseMeta,
