@@ -13,6 +13,11 @@ const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
 
+const envCxStop = Number(process.env.DEFAULT_CX_STOP_USD);
+const CX_DEFAULT_STOP_USD = Number.isFinite(envCxStop)
+  ? envCxStop
+  : Number(orderCardsCfg?.defaultCxStopUsd) || 0;
+
 const SHOW_BID_ASK = !!(orderCardsCfg && orderCardsCfg.showBidAsk);
 const SHOW_SPREAD = !!(orderCardsCfg && orderCardsCfg.showSpread);
 
@@ -936,7 +941,7 @@ function createCryptoBody(row, key) {
     price: row.price != null ? String(row.price) : '',
     sl: row.sl != null ? String(row.sl) : '',
     tp: row.tp != null ? String(row.tp) : '',
-    risk: EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига, // як у FX: Risk $, використовується для автоперерахунку qty
+    risk: CX_DEFAULT_STOP_USD ? String(CX_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига, // як у FX: Risk $, використовується для автоперерахунку qty
     tpTouched: row.tp != null, // если TP пришёл с хуком — не перезатираем авто-логикой
   };
   let tpTouched = !!saved.tpTouched;
