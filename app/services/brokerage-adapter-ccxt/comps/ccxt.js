@@ -60,6 +60,17 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this.watchIntervalMs = Number.isFinite(cfg.watchIntervalMs) ? cfg.watchIntervalMs : 2000;
     this._watchTimer = null;
     this._startWatchLoop();
+
+    // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
+    this._desiredProtectionByTicket = new Map(); // ticket -> { symbol, side, amount, slPts, tpPts, tickSize }
+
+    // Автоматичне забезпечення/скасування SL/TP по подіях позицій
+    this.on('position:opened', async ({ ticket }) => {
+      try { await this._ensureProtectiveOrdersForTicket(ticket); } catch {}
+    });
+    this.on('position:closed', async ({ ticket }) => {
+      try { await this._cancelAllProtectionForTicket(ticket); } catch {}
+    });
   }
 
   async ensureReady() {
@@ -277,12 +288,25 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       ? (side === 'buy' ? (entryPrice + Number(tpPts) * tick) : (entryPrice - Number(tpPts) * tick))
       : undefined;
 
-    // SL: stop-limit (для сумісності з біржами, які вимагають price у 'stop', напр. Binance)
+    // SL: спершу намагаємось чистий stop-market (без price), фолбек — stop-limit
     if (hasSL && Number.isFinite(slPrice) && slPrice > 0) {
       const slParams = { ...reduceParams, stopPrice: slPrice };
       try {
-        // Для ccxt/binance 'stop' потребує і price, і stopPrice (STOP/STOP_LIMIT)
-        const slOrder = await this.exchange.createOrder(mappedSymbol, 'stop', opposite, amount, slPrice, slParams);
+        // 1) Спроба створити чистий stop-market (без price)
+        // Binance: деривативи — STOP_MARKET, spot — STOP_LOSS
+        let slOrder;
+        try {
+          const mkt = typeof this.exchange.market === 'function' ? this.exchange.market(mappedSymbol) : null;
+          const isDeriv = !!(mkt && (mkt.contract || mkt.swap || mkt.future));
+          const stopType =
+            (this.exchangeId === 'binance')
+              ? (isDeriv ? 'STOP_MARKET' : 'STOP_LOSS')
+              : 'STOP_MARKET';
+          slOrder = await this.exchange.createOrder(mappedSymbol, stopType, opposite, amount, undefined, slParams);
+        } catch (e1) {
+          // 2) Фолбек: stop-limit (деякі біржі вимагають наявність price разом зі stopPrice)
+          slOrder = await this.exchange.createOrder(mappedSymbol, 'stop', opposite, amount, slPrice, slParams);
+        }
         const slId = this._resolveOrderId(slOrder);
         if (slId) childIds.push(slId);
       } catch (e) {
@@ -390,6 +414,165 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this._childOrdersByParent.delete(parentId);
   }
 
+  // Класифікація ордеру як SL або TP за його типом
+  _classifyOrderAsSLorTP(ord) {
+    try {
+      const t = String(ord?.type || ord?.info?.orderType || ord?.info?.type || '').toLowerCase();
+      if (!t) return null;
+      if (t.includes('take')) return 'TP';
+      if (t.includes('stop') && !t.includes('take')) return 'SL';
+      if (t.includes('stop_loss') || t.includes('stoploss') || t === 'stop') return 'SL';
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Забезпечити наявність SL/TP після фактичного відкриття позиції
+  async _ensureProtectiveOrdersForTicket(ticket) {
+    try {
+      const mappedSymbol = this._ticketToSymbol.get(ticket);
+      if (!mappedSymbol) return;
+
+      // Зчитуємо бажану конфіг
+      const cfg = this._desiredProtectionByTicket.get(ticket) || {};
+      let { side, amount, slPts, tpPts, tickSize } = cfg;
+
+      // Отримаємо поточний розмір позиції та середню ціну входу
+      let positions = [];
+      try { positions = await this.exchange.fetchPositions(); } catch { positions = []; }
+      const pos = (positions || []).find(p =>
+        (p?.symbol || p?.info?.symbol || p?.info?.instId) === mappedSymbol
+      );
+
+      const rawSz = Number(
+        pos?.contracts ?? pos?.positionAmt ?? pos?.size ?? pos?.info?.positionAmt ?? pos?.info?.pos ?? 0
+      );
+      const netSize = Number.isFinite(rawSz) ? rawSz : 0;
+
+      // Визначимо сторону й кількість з позиції, якщо не вдалося зберегти раніше
+      if (!side) side = netSize >= 0 ? 'buy' : 'sell';
+      if (!Number.isFinite(amount) || amount <= 0) amount = Math.abs(netSize);
+
+      // Якщо розміру немає — немає що захищати
+      if (!Number.isFinite(amount) || amount <= 0) return;
+
+      // Визначимо entryPrice
+      let entryPrice =
+        Number(pos?.entryPrice) ||
+        Number(pos?.info?.entryPrice) ||
+        Number(pos?.info?.avgPrice) ||
+        Number(pos?.info?.avgPx) ||
+        Number(pos?.info?.avg_entry_price);
+
+      if (!Number.isFinite(entryPrice) || entryPrice <= 0) {
+        // Фолбек — поточний ринок
+        const q = await this.getQuote(mappedSymbol);
+        entryPrice = Number(q?.price);
+      }
+      if (!Number.isFinite(entryPrice) || entryPrice <= 0) return;
+
+      // Визначимо tickSize
+      const tick = Number.isFinite(Number(tickSize)) && Number(tickSize) > 0
+        ? Number(tickSize)
+        : this._getTickSizeFromMarket(mappedSymbol);
+
+      // Перевіримо існування SL/TP у відкритих ордерах
+      let openOrders = [];
+      try { openOrders = await this.exchange.fetchOpenOrders(mappedSymbol); } catch { openOrders = []; }
+
+      const opposite = side === 'buy' ? 'sell' : 'buy';
+      const hasReduce = (o) => !!(o?.reduceOnly || o?.info?.reduce_only || o?.info?.reduceOnly);
+      const isOpposite = (o) => String(o?.side || '').toLowerCase() === opposite;
+
+      let hasSL = false;
+      let hasTP = false;
+      for (const o of openOrders || []) {
+        if (!isOpposite(o) || !hasReduce(o)) continue;
+        const kind = this._classifyOrderAsSLorTP(o);
+        if (kind === 'SL') hasSL = true;
+        if (kind === 'TP') hasTP = true;
+      }
+
+      // Якщо сл/тп не налаштовано користувачем — не створюємо їх відповідно
+      const wantSL = Number.isFinite(Number(slPts)) && Number(slPts) > 0;
+      const wantTP = Number.isFinite(Number(tpPts)) && Number(tpPts) > 0;
+
+      const needSL = wantSL && !hasSL;
+      const needTP = wantTP && !hasTP;
+
+      if (!needSL && !needTP) return;
+
+      // Створимо відсутні (частково)
+      const children = await this._placeProtectiveOrders({
+        mappedSymbol,
+        side,
+        amount,
+        entryPrice,
+        slPts: needSL ? Number(slPts) : undefined,
+        tpPts: needTP ? Number(tpPts) : undefined,
+        tickSize: tick,
+        baseParams: this.defaultParams || {}
+      });
+
+      if (children && children.length) {
+        const exist = this._childOrdersByParent.get(ticket);
+        const merged = exist ? Array.from(new Set([...(exist.children || []), ...children])) : children;
+        this._childOrdersByParent.set(ticket, { symbol: mappedSymbol, children: merged });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Скасувати всі захисні ордери (SL/TP) після виходу з позиції
+  async _cancelAllProtectionForTicket(ticket) {
+    try {
+      const mappedSymbol = this._ticketToSymbol.get(ticket);
+      if (!mappedSymbol) return;
+
+      // 1) Спробуємо відмінити ті, що ми створювали/відстежували
+      try { await this._cancelChildOrders(ticket); } catch {}
+
+      // 2) Підчистимо можливі інші reduce-only SL/TP для цього символу
+      let openOrders = [];
+      try { openOrders = await this.exchange.fetchOpenOrders(mappedSymbol); } catch { openOrders = []; }
+
+      const cfg = this._desiredProtectionByTicket.get(ticket) || {};
+      const side = String(cfg?.side || '').toLowerCase();
+      const opposite = side === 'buy' ? 'sell' : (side === 'sell' ? 'buy' : null);
+
+      const hasReduce = (o) => !!(o?.reduceOnly || o?.info?.reduce_only || o?.info?.reduceOnly);
+      for (const o of openOrders || []) {
+        const isOpposite = opposite ? String(o?.side || '').toLowerCase() === opposite : true;
+        if (!hasReduce(o) || !isOpposite) continue;
+        const kind = this._classifyOrderAsSLorTP(o);
+        if (!kind) continue;
+        try {
+          await this.exchange.cancelOrder(o?.id, mappedSymbol);
+        } catch {
+          try {
+            const cid = o?.clientOrderId || o?.info?.origClientOrderId || o?.info?.clientOrderId;
+            await this.exchange.cancelOrder(undefined, mappedSymbol, { origClientOrderId: cid, clientOrderId: cid });
+          } catch {
+            // ignore last attempt
+          }
+        }
+      }
+
+      // 3) Зупинимо вотчер для батьківського, якщо був
+      const t = this._parentWatchers.get(ticket);
+      if (t) { clearInterval(t); this._parentWatchers.delete(ticket); }
+
+      // 4) Очистимо стани
+      this._childOrdersByParent.delete(ticket);
+      this._desiredProtectionByTicket.delete(ticket);
+      // не видаляємо _ticketToSymbol тут: він ще може бути корисний для історії подій/логів
+    } catch {
+      // ignore
+    }
+  }
+
   /**
    * Очікуваний нормалізований формат замовлення:
    * {
@@ -482,8 +665,20 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
                         : undefined;
             const slPts = Number(order.sl);
             const tpPts = Number(order.tp);
-            const tickSize = Number(order.tickSize);
+            const tickSize = Number(order.tickSize) > 0 ? Number(order.tickSize) : this._getTickSizeFromMarket(symbol);
             // console.log('entry', entry, 'slPts', slPts, 'tpPts', tpPts, 'tickSize', tickSize);
+            // Збережемо бажану конфіг, щоб у разі відсутності SL/TP при вході забезпечити їх автоматично
+            if (providerOrderId) {
+              this._desiredProtectionByTicket.set(providerOrderId, {
+                symbol,
+                side,
+                amount,
+                slPts,
+                tpPts,
+                tickSize
+              });
+            }
+
             if (providerOrderId && Number.isFinite(entry)) {
               const children = await this._placeProtectiveOrders({
                 mappedSymbol: symbol,
