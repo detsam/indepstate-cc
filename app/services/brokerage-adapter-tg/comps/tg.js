@@ -125,7 +125,7 @@ class TGExecutionAdapter extends ExecutionAdapter {
     const s = String(symbol || '').trim();
     if (!s) return null;
 
-    const url = `${this.baseURL}/strategies/quote?symbol=${encodeURIComponent(s)}&strategyId=${encodeURIComponent(this.strategyId)}`;
+    const url = `${this.baseURL}/strategies/${encodeURIComponent(this.strategyId)}/quote?symbol=${encodeURIComponent(s)}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     const headers = { ...this.headers };
