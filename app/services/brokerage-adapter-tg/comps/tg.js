@@ -121,6 +121,50 @@ class TGExecutionAdapter extends ExecutionAdapter {
     return this.placeOrder({ type: 'close', symbol });
   }
 
+  async getQuote(symbol) {
+    const s = String(symbol || '').trim();
+    if (!s) return null;
+
+    const url = `${this.baseURL}/strategies/quote?symbol=${encodeURIComponent(s)}&strategyId=${encodeURIComponent(this.strategyId)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const headers = { ...this.headers };
+
+    try {
+      const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+      clearTimeout(timer);
+      if (!response.ok) return null;
+
+      const text = await response.text();
+      let data;
+      try { data = JSON.parse(text); } catch (_) {}
+      const payload = data?.data ?? data ?? {};
+
+      const bid = Number(payload.bid);
+      const ask = Number(payload.ask);
+      const tickSize = Number(payload.tickSize ?? payload.tick ?? payload.point ?? payload.step);
+
+      let price = Number(payload.price ?? payload.last ?? payload.mid);
+      if (!Number.isFinite(price)) {
+        if (Number.isFinite(bid) && Number.isFinite(ask)) price = (bid + ask) / 2;
+        else if (Number.isFinite(bid)) price = bid;
+        else if (Number.isFinite(ask)) price = ask;
+      }
+
+      if (!Number.isFinite(price)) return null;
+      return {
+        bid: Number.isFinite(bid) ? bid : undefined,
+        ask: Number.isFinite(ask) ? ask : undefined,
+        price,
+        tickSize: Number.isFinite(tickSize) ? tickSize : undefined,
+      };
+    } catch (err) {
+      clearTimeout(timer);
+      if (err?.name === 'AbortError') return null;
+      throw err;
+    }
+  }
+
   #mapDirection(side) {
     const s = (side || '').toString().toLowerCase();
     if (s === 'buy') return 'long';
