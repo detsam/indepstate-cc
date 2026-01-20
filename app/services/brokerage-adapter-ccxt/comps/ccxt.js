@@ -2,6 +2,7 @@
 const { ExecutionAdapter } = require('../../brokerage/comps/base');
 const ccxt = require('ccxt');
 const crypto = require('crypto');
+const events = require('../../events');
 
 class CCXTExecutionAdapter extends ExecutionAdapter {
   /**
@@ -61,6 +62,15 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this._watchTimer = null;
     this._startWatchLoop();
 
+    // Бар-полінг для OHLCV
+    this.barPollIntervalMs = Number.isFinite(cfg.barPollIntervalMs) ? cfg.barPollIntervalMs : 5000;
+    this._barSubscriptions = new Map(); // key -> { originalSymbol, mappedSymbol, timeframe, ccxtTimeframe }
+    this._lastEmittedBarTs = new Map(); // key -> last timestamp
+    this._barTimer = null;
+    this.client = {
+      subscribe_symbols_bar_data: this.subscribe_symbols_bar_data.bind(this)
+    };
+
     // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
     this._desiredProtectionByTicket = new Map(); // ticket -> { symbol, side, amount, slPts, tpPts, tickSize }
 
@@ -71,6 +81,119 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this.on('position:closed', async ({ ticket }) => {
       try { await this._cancelAllProtectionForTicket(ticket); } catch {}
     });
+  }
+
+  _normalizeTimeframe(timeframe) {
+    if (!timeframe) return timeframe;
+    const raw = String(timeframe).trim();
+    const upper = raw.toUpperCase();
+    const m = upper.match(/^M(\d+)$/);
+    if (m) return `${Number(m[1])}m`;
+    const h = upper.match(/^H(\d+)$/);
+    if (h) return `${Number(h[1])}h`;
+    const d = upper.match(/^D(\d+)$/);
+    if (d) return `${Number(d[1])}d`;
+    const w = upper.match(/^W(\d+)$/);
+    if (w) return `${Number(w[1])}w`;
+    const mn = upper.match(/^MN(\d+)$/);
+    if (mn) return `${Number(mn[1])}M`;
+    return raw;
+  }
+
+  _getTimeframeMs(timeframe) {
+    const normalized = this._normalizeTimeframe(timeframe);
+    try {
+      if (typeof ccxt.parseTimeframe === 'function') {
+        const seconds = ccxt.parseTimeframe(normalized);
+        if (Number.isFinite(seconds)) return seconds * 1000;
+      }
+    } catch {}
+    const m = String(normalized).match(/^(\d+)([smhdw])$/i);
+    if (m) {
+      const count = Number(m[1]);
+      const unit = m[2].toLowerCase();
+      const unitMs = { s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 }[unit];
+      if (Number.isFinite(count) && unitMs) return count * unitMs;
+    }
+    const map = {
+      M1: 60000,
+      M5: 300000,
+      M15: 900000,
+      M30: 1800000,
+      H1: 3600000,
+      H4: 14400000,
+      D1: 86400000
+    };
+    return map[String(timeframe || '').toUpperCase()] || 60000;
+  }
+
+  async subscribe_symbols_bar_data(symbols = [['EURUSD', 'M1']]) {
+    if (!Array.isArray(symbols)) return;
+    await this.ensureReady();
+    for (const entry of symbols) {
+      const pair = Array.isArray(entry) ? entry : [entry, 'M1'];
+      const originalSymbol = String(pair[0] || '').trim();
+      if (!originalSymbol) continue;
+      const timeframe = String(pair[1] || 'M1').trim() || 'M1';
+      const mappedSymbol = this.mapSymbol(originalSymbol);
+      const ccxtTimeframe = this._normalizeTimeframe(timeframe);
+      const key = `${originalSymbol}|${timeframe}`;
+      this._barSubscriptions.set(key, { originalSymbol, mappedSymbol, timeframe, ccxtTimeframe });
+    }
+    this._startBarPollLoop();
+  }
+
+  _startBarPollLoop() {
+    if (this._barTimer) return;
+    if (typeof this.exchange.fetchOHLCV !== 'function') return;
+    const interval = Math.max(1000, this.barPollIntervalMs);
+    this._barTimer = setInterval(() => {
+      this._pollBarsOnce().catch(() => {});
+    }, interval);
+    this._pollBarsOnce().catch(() => {});
+  }
+
+  async _pollBarsOnce() {
+    if (this._barSubscriptions.size === 0) return;
+    if (typeof this.exchange.fetchOHLCV !== 'function') return;
+    const now = Date.now();
+    for (const sub of this._barSubscriptions.values()) {
+      const timeframeMs = this._getTimeframeMs(sub.timeframe);
+      const key = `${sub.originalSymbol}|${sub.timeframe}`;
+      let bars = [];
+      try {
+        bars = await this.exchange.fetchOHLCV(sub.mappedSymbol, sub.ccxtTimeframe, undefined, 10);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(bars) || bars.length === 0) continue;
+      let lastEmitted = Number(this._lastEmittedBarTs.get(key) || 0);
+      const closedBars = bars
+        .filter(b => Array.isArray(b) && Number.isFinite(Number(b[0])) && (Number(b[0]) + timeframeMs <= now))
+        .sort((a, b) => Number(a[0]) - Number(b[0]));
+      for (const bar of closedBars) {
+        const time = Number(bar[0]);
+        if (time <= lastEmitted) continue;
+        const open = Number(bar[1]);
+        const high = Number(bar[2]);
+        const low = Number(bar[3]);
+        const close = Number(bar[4]);
+        const vol = Number(bar[5]);
+        events.emit('bar', {
+          provider: this.provider,
+          symbol: sub.originalSymbol,
+          tf: sub.timeframe,
+          time,
+          open,
+          high,
+          low,
+          close,
+          vol
+        });
+        lastEmitted = time;
+        this._lastEmittedBarTs.set(key, time);
+      }
+    }
   }
 
   async ensureReady() {
@@ -852,6 +975,32 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       return { bid, ask, price, tickSize };
     } catch {
       return null;
+    }
+  }
+
+  async getHistoricBars({ symbol, timeframe = 'M1', limit = 15 } = {}) {
+    try {
+      await this.ensureReady();
+      if (!symbol || typeof this.exchange.fetchOHLCV !== 'function') return [];
+      const mappedSymbol = this.mapSymbol(symbol);
+      const ccxtTimeframe = this._normalizeTimeframe(timeframe);
+      const timeframeMs = this._getTimeframeMs(timeframe);
+      const now = Date.now();
+      const bars = await this.exchange.fetchOHLCV(mappedSymbol, ccxtTimeframe, undefined, Number(limit) || 15);
+      if (!Array.isArray(bars)) return [];
+      return bars
+        .filter(b => Array.isArray(b) && Number.isFinite(Number(b[0])) && (Number(b[0]) + timeframeMs <= now))
+        .map(b => ({
+          time: Number(b[0]),
+          open: Number(b[1]),
+          high: Number(b[2]),
+          low: Number(b[3]),
+          close: Number(b[4]),
+          vol: Number(b[5])
+        }))
+        .filter(b => Number.isFinite(b.high) && Number.isFinite(b.low) && Number.isFinite(b.close));
+    } catch {
+      return [];
     }
   }
 }
