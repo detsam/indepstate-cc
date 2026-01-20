@@ -2,6 +2,7 @@
 const { ExecutionAdapter } = require('../../brokerage/comps/base');
 const ccxt = require('ccxt');
 const crypto = require('crypto');
+const events = require('../../events');
 
 class CCXTExecutionAdapter extends ExecutionAdapter {
   /**
@@ -60,6 +61,14 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this.watchIntervalMs = Number.isFinite(cfg.watchIntervalMs) ? cfg.watchIntervalMs : 2000;
     this._watchTimer = null;
     this._startWatchLoop();
+
+    this.barPollIntervalMs = Number.isFinite(cfg.barPollIntervalMs) ? cfg.barPollIntervalMs : 5000;
+    this._barSubscriptions = new Map(); // key: originalSymbol::timeframe -> { originalSymbol, mappedSymbol, timeframe }
+    this._barLastTs = new Map(); // key: originalSymbol::timeframe -> last bar timestamp
+    this._barPollTimer = null;
+    this.client = {
+      subscribe_symbols_bar_data: this.subscribe_symbols_bar_data.bind(this)
+    };
 
     // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
     this._desiredProtectionByTicket = new Map(); // ticket -> { symbol, side, amount, slPts, tpPts, tickSize }
@@ -121,6 +130,105 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         if (idKey) add(idKey);
       }
     } catch {}
+  }
+
+  subscribe_symbols_bar_data(symbols = []) {
+    if (!Array.isArray(symbols)) return;
+    for (const entry of symbols) {
+      const [symbol, timeframe] = Array.isArray(entry) ? entry : [];
+      if (!symbol || !timeframe) continue;
+      const originalSymbol = String(symbol);
+      const tf = String(timeframe);
+      const mappedSymbol = this.mapSymbol(originalSymbol);
+      const key = `${originalSymbol}::${tf}`;
+      this._barSubscriptions.set(key, { originalSymbol, mappedSymbol, timeframe: tf });
+    }
+    this._startBarPolling();
+  }
+
+  _normalizeTimeframe(timeframe) {
+    const raw = String(timeframe || '').trim();
+    if (!raw) return '';
+    if (this.exchange?.timeframes) {
+      if (this.exchange.timeframes[raw]) return raw;
+      const lower = raw.toLowerCase();
+      if (this.exchange.timeframes[lower]) return lower;
+      const upper = raw.toUpperCase();
+      if (this.exchange.timeframes[upper]) return upper;
+    }
+    const upper = raw.toUpperCase();
+    const mapping = {
+      M1: '1m',
+      M5: '5m',
+      M15: '15m',
+      M30: '30m',
+      H1: '1h',
+      H4: '4h',
+      D1: '1d',
+      W1: '1w'
+    };
+    if (mapping[upper]) return mapping[upper];
+    return raw;
+  }
+
+  _startBarPolling() {
+    if (this._barPollTimer || typeof this.exchange.fetchOHLCV !== 'function') return;
+    const interval = Math.max(1000, this.barPollIntervalMs);
+    this._barPollTimer = setInterval(() => {
+      this._pollBarsOnce().catch(() => {});
+    }, interval);
+    this._pollBarsOnce().catch(() => {});
+  }
+
+  async _pollBarsOnce() {
+    if (this._barSubscriptions.size === 0) return;
+    try {
+      await this.ensureReady();
+    } catch {
+      return;
+    }
+    for (const [key, sub] of this._barSubscriptions.entries()) {
+      const { originalSymbol, mappedSymbol, timeframe } = sub;
+      const refreshedSymbol = this.mapSymbol(originalSymbol);
+      if (!refreshedSymbol || !timeframe) continue;
+      if (refreshedSymbol !== mappedSymbol) {
+        this._barSubscriptions.set(key, { ...sub, mappedSymbol: refreshedSymbol });
+      }
+      const normalizedTimeframe = this._normalizeTimeframe(timeframe);
+      if (!normalizedTimeframe) continue;
+      let bars;
+      try {
+        bars = await this.exchange.fetchOHLCV(refreshedSymbol, normalizedTimeframe);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(bars) || bars.length === 0) continue;
+      const last = bars[bars.length - 1];
+      if (!Array.isArray(last) || last.length < 5) continue;
+      const time = Number(last[0]);
+      if (!Number.isFinite(time)) continue;
+      const lastTs = this._barLastTs.get(key);
+      if (Number.isFinite(lastTs) && time <= lastTs) continue;
+      this._barLastTs.set(key, time);
+      const open = Number(last[1]);
+      const high = Number(last[2]);
+      const low = Number(last[3]);
+      const close = Number(last[4]);
+      const vol = Number(last[5]);
+      try {
+        events.emit('bar', {
+          provider: this.provider,
+          symbol: originalSymbol,
+          tf: timeframe,
+          time,
+          open,
+          high,
+          low,
+          close,
+          vol
+        });
+      } catch {}
+    }
   }
 
   _getTickSizeFromMarket(mappedSymbol) {
@@ -852,6 +960,32 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       return { bid, ask, price, tickSize };
     } catch {
       return null;
+    }
+  }
+
+  async getHistoricBars({ symbol, timeframe = 'M1', limit = 50 } = {}) {
+    try {
+      await this.ensureReady();
+      if (!symbol) return [];
+      const mapped = this.mapSymbol(symbol);
+      if (!mapped) return [];
+      const tf = this._normalizeTimeframe(timeframe || 'M1');
+      if (!tf) return [];
+      const lim = Number.isFinite(Number(limit)) ? Number(limit) : 50;
+      const bars = await this.exchange.fetchOHLCV(mapped, tf, undefined, lim);
+      if (!Array.isArray(bars)) return [];
+      return bars
+        .map((b) => ({
+          time: Number(b?.[0]),
+          open: Number(b?.[1]),
+          high: Number(b?.[2]),
+          low: Number(b?.[3]),
+          close: Number(b?.[4]),
+          vol: Number(b?.[5])
+        }))
+        .filter(b => Number.isFinite(b.time));
+    } catch {
+      return [];
     }
   }
 }
