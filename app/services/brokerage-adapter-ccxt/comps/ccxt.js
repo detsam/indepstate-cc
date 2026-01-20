@@ -146,6 +146,31 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this._startBarPolling();
   }
 
+  _normalizeTimeframe(timeframe) {
+    const raw = String(timeframe || '').trim();
+    if (!raw) return '';
+    if (this.exchange?.timeframes) {
+      if (this.exchange.timeframes[raw]) return raw;
+      const lower = raw.toLowerCase();
+      if (this.exchange.timeframes[lower]) return lower;
+      const upper = raw.toUpperCase();
+      if (this.exchange.timeframes[upper]) return upper;
+    }
+    const upper = raw.toUpperCase();
+    const mapping = {
+      M1: '1m',
+      M5: '5m',
+      M15: '15m',
+      M30: '30m',
+      H1: '1h',
+      H4: '4h',
+      D1: '1d',
+      W1: '1w'
+    };
+    if (mapping[upper]) return mapping[upper];
+    return raw;
+  }
+
   _startBarPolling() {
     if (this._barPollTimer || typeof this.exchange.fetchOHLCV !== 'function') return;
     const interval = Math.max(1000, this.barPollIntervalMs);
@@ -164,10 +189,16 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     }
     for (const [key, sub] of this._barSubscriptions.entries()) {
       const { originalSymbol, mappedSymbol, timeframe } = sub;
-      if (!mappedSymbol || !timeframe) continue;
+      const refreshedSymbol = this.mapSymbol(originalSymbol);
+      if (!refreshedSymbol || !timeframe) continue;
+      if (refreshedSymbol !== mappedSymbol) {
+        this._barSubscriptions.set(key, { ...sub, mappedSymbol: refreshedSymbol });
+      }
+      const normalizedTimeframe = this._normalizeTimeframe(timeframe);
+      if (!normalizedTimeframe) continue;
       let bars;
       try {
-        bars = await this.exchange.fetchOHLCV(mappedSymbol, timeframe);
+        bars = await this.exchange.fetchOHLCV(refreshedSymbol, normalizedTimeframe);
       } catch {
         continue;
       }
@@ -938,7 +969,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       if (!symbol) return [];
       const mapped = this.mapSymbol(symbol);
       if (!mapped) return [];
-      const tf = String(timeframe || 'M1');
+      const tf = this._normalizeTimeframe(timeframe || 'M1');
+      if (!tf) return [];
       const lim = Number.isFinite(Number(limit)) ? Number(limit) : 50;
       const bars = await this.exchange.fetchOHLCV(mapped, tf, undefined, lim);
       if (!Array.isArray(bars)) return [];
