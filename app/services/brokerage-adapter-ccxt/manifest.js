@@ -1,7 +1,7 @@
 const brokerageAdapters = require('../brokerage/brokerageAdapters');
 
 function initService() {
-  brokerageAdapters.ccxt = (cfg = {}) => {
+  brokerageAdapters.ccxt = (cfg = {}, providerName) => {
     const { CCXTExecutionAdapter } = require('./comps/ccxt');
     return new CCXTExecutionAdapter(cfg);
   };
