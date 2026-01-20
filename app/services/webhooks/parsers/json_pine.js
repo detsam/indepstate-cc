@@ -8,7 +8,7 @@ module.exports = {
   test(raw) {
     if (typeof raw !== 'string') return false;
     const s = raw.trim();
-    return s.startsWith('{') && s.endsWith('}' && s.contains('direction') && s.contains('symbol'));
+    return s.startsWith('{') && s.endsWith('}') && s.includes("direction") && s.includes("symbol");
   },
   parse(raw, nowTs) {
     let js;
