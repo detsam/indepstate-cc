@@ -67,6 +67,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this._barSubscriptions = new Map(); // key -> { originalSymbol, mappedSymbol, timeframe, ccxtTimeframe }
     this._lastEmittedBarTs = new Map(); // key -> last timestamp
     this._barTimer = null;
+    this._barPollInFlight = false;
     this.client = {
       subscribe_symbols_bar_data: this.subscribe_symbols_bar_data.bind(this)
     };
@@ -154,45 +155,51 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   }
 
   async _pollBarsOnce() {
+    if (this._barPollInFlight) return;
     if (this._barSubscriptions.size === 0) return;
     if (typeof this.exchange.fetchOHLCV !== 'function') return;
-    const now = Date.now();
-    for (const sub of this._barSubscriptions.values()) {
-      const timeframeMs = this._getTimeframeMs(sub.timeframe);
-      const key = `${sub.originalSymbol}|${sub.timeframe}`;
-      let bars = [];
-      try {
-        bars = await this.exchange.fetchOHLCV(sub.mappedSymbol, sub.ccxtTimeframe, undefined, 10);
-      } catch {
-        continue;
+    this._barPollInFlight = true;
+    try {
+      const now = Date.now();
+      for (const sub of this._barSubscriptions.values()) {
+        const timeframeMs = this._getTimeframeMs(sub.timeframe);
+        const key = `${sub.originalSymbol}|${sub.timeframe}`;
+        let bars = [];
+        try {
+          bars = await this.exchange.fetchOHLCV(sub.mappedSymbol, sub.ccxtTimeframe, undefined, 10);
+        } catch {
+          continue;
+        }
+        if (!Array.isArray(bars) || bars.length === 0) continue;
+        let lastEmitted = Number(this._lastEmittedBarTs.get(key) || 0);
+        const closedBars = bars
+          .filter(b => Array.isArray(b) && Number.isFinite(Number(b[0])) && (Number(b[0]) + timeframeMs <= now))
+          .sort((a, b) => Number(a[0]) - Number(b[0]));
+        for (const bar of closedBars) {
+          const time = Number(bar[0]);
+          if (time <= lastEmitted) continue;
+          const open = Number(bar[1]);
+          const high = Number(bar[2]);
+          const low = Number(bar[3]);
+          const close = Number(bar[4]);
+          const vol = Number(bar[5]);
+          events.emit('bar', {
+            provider: this.provider,
+            symbol: sub.originalSymbol,
+            tf: sub.timeframe,
+            time,
+            open,
+            high,
+            low,
+            close,
+            vol
+          });
+          lastEmitted = time;
+          this._lastEmittedBarTs.set(key, time);
+        }
       }
-      if (!Array.isArray(bars) || bars.length === 0) continue;
-      let lastEmitted = Number(this._lastEmittedBarTs.get(key) || 0);
-      const closedBars = bars
-        .filter(b => Array.isArray(b) && Number.isFinite(Number(b[0])) && (Number(b[0]) + timeframeMs <= now))
-        .sort((a, b) => Number(a[0]) - Number(b[0]));
-      for (const bar of closedBars) {
-        const time = Number(bar[0]);
-        if (time <= lastEmitted) continue;
-        const open = Number(bar[1]);
-        const high = Number(bar[2]);
-        const low = Number(bar[3]);
-        const close = Number(bar[4]);
-        const vol = Number(bar[5]);
-        events.emit('bar', {
-          provider: this.provider,
-          symbol: sub.originalSymbol,
-          tf: sub.timeframe,
-          time,
-          open,
-          high,
-          low,
-          close,
-          vol
-        });
-        lastEmitted = time;
-        this._lastEmittedBarTs.set(key, time);
-      }
+    } finally {
+      this._barPollInFlight = false;
     }
   }
 
