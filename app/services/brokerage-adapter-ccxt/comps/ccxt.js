@@ -62,12 +62,15 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this._watchTimer = null;
     this._startWatchLoop();
 
+    // Бар-стріми: спочатку websocket (watchOHLCV), з фолбеком на polling fetchOHLCV.
     this.barPollIntervalMs = Number.isFinite(cfg.barPollIntervalMs) ? cfg.barPollIntervalMs : 5000;
+    this.barWatchFailuresLimit = Number.isFinite(cfg.barWatchFailuresLimit) ? cfg.barWatchFailuresLimit : 3;
     this._barSubscriptions = new Map(); // key: originalSymbol::timeframe -> { originalSymbol, mappedSymbol, timeframe }
     this._barLastTs = new Map(); // key: originalSymbol::timeframe -> last bar timestamp
-    this._barPollTimer = null;
+    this._barTasks = new Map(); // key -> { stop, mode, failures, timer }
     this.client = {
-      subscribe_symbols_bar_data: this.subscribe_symbols_bar_data.bind(this)
+      subscribe_symbols_bar_data: this.subscribe_symbols_bar_data.bind(this),
+      unsubscribe_symbols_bar_data: this.unsubscribe_symbols_bar_data.bind(this)
     };
 
     // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
@@ -146,6 +149,19 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this._startBarPolling();
   }
 
+  unsubscribe_symbols_bar_data(symbols = []) {
+    if (!Array.isArray(symbols)) return;
+    for (const entry of symbols) {
+      const [symbol, timeframe] = Array.isArray(entry) ? entry : [];
+      if (!symbol || !timeframe) continue;
+      const originalSymbol = String(symbol);
+      const tf = String(timeframe);
+      const key = `${originalSymbol}::${tf}`;
+      this._barSubscriptions.delete(key);
+      this._stopBarTask(key);
+    }
+  }
+
   _normalizeTimeframe(timeframe) {
     const raw = String(timeframe || '').trim();
     if (!raw) return '';
@@ -171,64 +187,176 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     return raw;
   }
 
-  _startBarPolling() {
-    if (this._barPollTimer || typeof this.exchange.fetchOHLCV !== 'function') return;
-    const interval = Math.max(1000, this.barPollIntervalMs);
-    this._barPollTimer = setInterval(() => {
-      this._pollBarsOnce().catch(() => {});
-    }, interval);
-    this._pollBarsOnce().catch(() => {});
+  _supportsWatchOHLCV() {
+    return !!(this.exchange?.has?.watchOHLCV && typeof this.exchange.watchOHLCV === 'function');
   }
 
-  async _pollBarsOnce() {
-    if (this._barSubscriptions.size === 0) return;
+  _startBarPolling() {
+    for (const key of this._barSubscriptions.keys()) {
+      this._ensureBarTask(key);
+    }
+    for (const key of this._barTasks.keys()) {
+      if (!this._barSubscriptions.has(key)) {
+        this._stopBarTask(key);
+      }
+    }
+  }
+
+  _ensureBarTask(key) {
+    if (this._barTasks.has(key)) return;
+    const task = {
+      mode: this._supportsWatchOHLCV() ? 'watch' : 'poll',
+      failures: 0,
+      timer: null,
+      active: true,
+      stop: () => {
+        task.active = false;
+        if (task.timer) clearInterval(task.timer);
+        task.timer = null;
+      }
+    };
+    this._barTasks.set(key, task);
+    if (task.mode === 'watch') {
+      this._startBarWatchLoop(key, task);
+    } else {
+      this._startBarPollLoop(key, task);
+    }
+  }
+
+  _stopBarTask(key) {
+    const task = this._barTasks.get(key);
+    if (!task) return;
+    try { task.stop?.(); } catch {}
+    this._barTasks.delete(key);
+    this._barLastTs.delete(key);
+  }
+
+  async _startBarWatchLoop(key, task) {
+    const backoffMs = 500;
+    while (task.active) {
+      const sub = this._barSubscriptions.get(key);
+      if (!sub) break;
+      try {
+        await this.ensureReady();
+      } catch {
+        task.failures += 1;
+        if (task.failures >= this.barWatchFailuresLimit) break;
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      const refreshedSymbol = this.mapSymbol(sub.originalSymbol);
+      if (!refreshedSymbol) {
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      if (refreshedSymbol !== sub.mappedSymbol) {
+        this._barSubscriptions.set(key, { ...sub, mappedSymbol: refreshedSymbol });
+      }
+      const normalizedTimeframe = this._normalizeTimeframe(sub.timeframe);
+      if (!normalizedTimeframe) {
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      try {
+        const bars = await this.exchange.watchOHLCV(refreshedSymbol, normalizedTimeframe);
+        task.failures = 0;
+        const last = Array.isArray(bars) ? bars[bars.length - 1] : null;
+        if (last) this._emitBarFromCandle(key, sub, last);
+      } catch {
+        task.failures += 1;
+        if (task.failures >= this.barWatchFailuresLimit) break;
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+    }
+
+    if (task.active) {
+      task.mode = 'poll';
+      task.failures = 0;
+      if (typeof this.exchange.fetchOHLCV === 'function') {
+        this._startBarPollLoop(key, task);
+      }
+    }
+  }
+
+  _startBarPollLoop(key, task) {
+    if (!task.active) return;
+    const interval = Math.max(1000, this.barPollIntervalMs);
+    const pollOnce = () => {
+      this._pollBarsOnce(key).catch(() => {});
+    };
+    task.timer = setInterval(pollOnce, interval);
+    pollOnce();
+  }
+
+  async _pollBarsOnce(key) {
+    if (!key) return;
+    const sub = this._barSubscriptions.get(key);
+    if (!sub) return;
     try {
       await this.ensureReady();
     } catch {
       return;
     }
-    for (const [key, sub] of this._barSubscriptions.entries()) {
-      const { originalSymbol, mappedSymbol, timeframe } = sub;
-      const refreshedSymbol = this.mapSymbol(originalSymbol);
-      if (!refreshedSymbol || !timeframe) continue;
-      if (refreshedSymbol !== mappedSymbol) {
-        this._barSubscriptions.set(key, { ...sub, mappedSymbol: refreshedSymbol });
-      }
-      const normalizedTimeframe = this._normalizeTimeframe(timeframe);
-      if (!normalizedTimeframe) continue;
-      let bars;
-      try {
-        bars = await this.exchange.fetchOHLCV(refreshedSymbol, normalizedTimeframe);
-      } catch {
-        continue;
-      }
-      if (!Array.isArray(bars) || bars.length === 0) continue;
-      const last = bars[bars.length - 1];
-      if (!Array.isArray(last) || last.length < 5) continue;
-      const time = Number(last[0]);
-      if (!Number.isFinite(time)) continue;
-      const lastTs = this._barLastTs.get(key);
-      if (Number.isFinite(lastTs) && time <= lastTs) continue;
-      this._barLastTs.set(key, time);
-      const open = Number(last[1]);
-      const high = Number(last[2]);
-      const low = Number(last[3]);
-      const close = Number(last[4]);
-      const vol = Number(last[5]);
-      try {
-        events.emit('bar', {
-          provider: this.provider,
-          symbol: originalSymbol,
-          tf: timeframe,
-          time,
-          open,
-          high,
-          low,
-          close,
-          vol
-        });
-      } catch {}
+    const { originalSymbol, mappedSymbol, timeframe } = sub;
+    const refreshedSymbol = this.mapSymbol(originalSymbol);
+    if (!refreshedSymbol || !timeframe) return;
+    if (refreshedSymbol !== mappedSymbol) {
+      this._barSubscriptions.set(key, { ...sub, mappedSymbol: refreshedSymbol });
     }
+    const normalizedTimeframe = this._normalizeTimeframe(timeframe);
+    if (!normalizedTimeframe) return;
+    let bars;
+    try {
+      bars = await this.exchange.fetchOHLCV(refreshedSymbol, normalizedTimeframe);
+    } catch {
+      return;
+    }
+    if (!Array.isArray(bars) || bars.length === 0) return;
+    const last = bars[bars.length - 1];
+    if (last) this._emitBarFromCandle(key, sub, last);
+  }
+
+  _emitBarFromCandle(key, sub, candle) {
+    if (!Array.isArray(candle) || candle.length < 5) return;
+    const time = Number(candle[0]);
+    if (!Number.isFinite(time)) return;
+    const lastTs = this._barLastTs.get(key);
+    //skip bars from the past but do not skip updatesK
+    if (Number.isFinite(lastTs) && time < lastTs) return;
+    this._barLastTs.set(key, time);
+    const open = Number(candle[1]);
+    const high = Number(candle[2]);
+    const low = Number(candle[3]);
+    const close = Number(candle[4]);
+    const vol = Number(candle[5]);
+    try {
+      events.emit('bar', {
+        provider: this.provider,
+        symbol: sub.originalSymbol,
+        tf: sub.timeframe,
+        time,
+        open,
+        high,
+        low,
+        close,
+        vol
+      });
+    } catch {}
+  }
+
+  async shutdown() {
+    for (const key of this._barTasks.keys()) {
+      this._stopBarTask(key);
+    }
+    if (this._watchTimer) {
+      clearInterval(this._watchTimer);
+      this._watchTimer = null;
+    }
+    try {
+      if (typeof this.exchange?.close === 'function') {
+        await this.exchange.close();
+      }
+    } catch {}
   }
 
   _getTickSizeFromMarket(mappedSymbol) {
