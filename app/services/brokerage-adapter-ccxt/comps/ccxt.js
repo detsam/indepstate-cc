@@ -321,7 +321,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     const time = Number(candle[0]);
     if (!Number.isFinite(time)) return;
     const lastTs = this._barLastTs.get(key);
-    if (Number.isFinite(lastTs) && time <= lastTs) return;
+    //skip bars from the past but do not skip updatesK
+    if (Number.isFinite(lastTs) && time < lastTs) return;
     this._barLastTs.set(key, time);
     const open = Number(candle[1]);
     const high = Number(candle[2]);
