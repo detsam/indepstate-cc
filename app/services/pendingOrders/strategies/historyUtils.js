@@ -46,9 +46,36 @@ function mergeBars(existing, incoming, maxBars) {
   return sorted;
 }
 
+async function loadAndMergeHistory({
+  historyLoader,
+  historyTimeframe,
+  historyLimit,
+  price,
+  side,
+  symbol,
+  existingBars,
+  normalizeBar: normalize,
+  mergeBars: merge,
+  maxBars
+} = {}) {
+  if (typeof historyLoader !== 'function') return Array.isArray(existingBars) ? existingBars : [];
+  const fetched = await historyLoader({
+    limit: historyLimit,
+    timeframe: historyTimeframe,
+    price,
+    side,
+    symbol
+  });
+  if (!Array.isArray(fetched)) return Array.isArray(existingBars) ? existingBars : [];
+  const normalized = fetched.map(normalize).filter(Boolean);
+  if (!normalized.length) return Array.isArray(existingBars) ? existingBars : [];
+  return merge(existingBars, normalized, maxBars);
+}
+
 module.exports = {
   normalizeBar,
   dedupeBars,
   sortBarsAsc,
-  mergeBars
+  mergeBars,
+  loadAndMergeHistory
 };
