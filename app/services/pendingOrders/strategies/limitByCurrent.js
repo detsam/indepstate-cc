@@ -1,4 +1,5 @@
 const { B1_TAIL } = require('./consolidation');
+const { loadAndMergeHistory } = require('./historyLoaderHelper');
 
 function normalizeBar(bar) {
   if (!bar || typeof bar !== 'object') return null;
@@ -34,6 +35,18 @@ function sortBarsAsc(bars) {
     const tb = b.time == null ? -Infinity : b.time;
     return ta - tb;
   });
+}
+
+function mergeBars(existing, incoming, maxBars) {
+  const base = Array.isArray(existing) ? existing : [];
+  const additions = Array.isArray(incoming) ? incoming : (incoming ? [incoming] : []);
+  if (!base.length && !additions.length) return [];
+  const merged = dedupeBars([...base, ...additions]);
+  const sorted = sortBarsAsc(merged);
+  if (Number.isFinite(maxBars) && maxBars > 0 && sorted.length > maxBars) {
+    return sorted.slice(-maxBars);
+  }
+  return sorted;
 }
 
 function firstFinite(values) {
@@ -131,23 +144,20 @@ class LimitByCurrentStrategy {
     if (this.historyLoadPromise) return this.historyLoadPromise;
     this.historyLoadPromise = (async () => {
       try {
-        const fetched = await this.historyLoader({
-          limit: this.historyBars,
-          timeframe: this.historyTimeframe,
+        const merged = await loadAndMergeHistory({
+          historyLoader: this.historyLoader,
+          historyTimeframe: this.historyTimeframe,
+          historyLimit: this.historyBars,
           price: this.price,
           side: this.side,
-          symbol: this.symbol
+          symbol: this.symbol,
+          existingBars: this.initialBars,
+          normalizeBar,
+          mergeBars,
+          maxBars: this.historyBars * 2
         });
-        if (Array.isArray(fetched)) {
-          const normalized = fetched.map(normalizeBar).filter(Boolean);
-          if (normalized.length) {
-            const existing = Array.isArray(this.initialBars) ? this.initialBars : [];
-            const merged = dedupeBars([...existing, ...normalized]);
-            this.initialBars = sortBarsAsc(merged);
-            if (this.initialBars.length > this.historyBars * 2) {
-              this.initialBars = this.initialBars.slice(-this.historyBars * 2);
-            }
-          }
+        if (Array.isArray(merged) && merged.length) {
+          this.initialBars = merged;
         }
       } catch (err) {
         console.error('limitByCurrent: historyLoader failed', err);
