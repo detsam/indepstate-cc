@@ -73,6 +73,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       unsubscribe_symbols_bar_data: this.unsubscribe_symbols_bar_data.bind(this)
     };
 
+    // Кеш котирувань: per-symbol watchTicker/fetchTicker
+    this.tickerPollIntervalMs = Number.isFinite(cfg.tickerPollIntervalMs) ? cfg.tickerPollIntervalMs : 5000;
+    this.tickerWatchFailuresLimit = Number.isFinite(cfg.tickerWatchFailuresLimit) ? cfg.tickerWatchFailuresLimit : 3;
+    this._tickerCache = new Map(); // mappedSymbol -> { bid, ask, price, tickSize }
+    this._tickerWatchTasks = new Map(); // mappedSymbol -> { stop, mode, failures, timer }
+
     // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
     this._desiredProtectionByTicket = new Map(); // ticket -> { symbol, side, amount, slPts, tpPts, tickSize }
 
@@ -191,6 +197,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     return !!(this.exchange?.has?.watchOHLCV && typeof this.exchange.watchOHLCV === 'function');
   }
 
+  _supportsWatchTicker() {
+    return !!(this.exchange?.has?.watchTicker && typeof this.exchange.watchTicker === 'function');
+  }
+
   _startBarPolling() {
     for (const key of this._barSubscriptions.keys()) {
       this._ensureBarTask(key);
@@ -200,6 +210,97 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         this._stopBarTask(key);
       }
     }
+  }
+
+  _ensureTickerTask(mappedSymbol) {
+    if (!mappedSymbol || this._tickerWatchTasks.has(mappedSymbol)) return;
+    const task = {
+      mode: this._supportsWatchTicker() ? 'watch' : 'poll',
+      failures: 0,
+      timer: null,
+      active: true,
+      stop: () => {
+        task.active = false;
+        if (task.timer) clearInterval(task.timer);
+        task.timer = null;
+      }
+    };
+    this._tickerWatchTasks.set(mappedSymbol, task);
+    if (task.mode === 'watch') {
+      this._startTickerWatchLoop(mappedSymbol, task);
+    } else {
+      this._startTickerPollLoop(mappedSymbol, task);
+    }
+  }
+
+  _stopTickerTask(mappedSymbol) {
+    const task = this._tickerWatchTasks.get(mappedSymbol);
+    if (!task) return;
+    try { task.stop?.(); } catch {}
+    this._tickerWatchTasks.delete(mappedSymbol);
+  }
+
+  async _startTickerWatchLoop(mappedSymbol, task) {
+    const backoffMs = 500;
+    while (task.active) {
+      try {
+        await this.ensureReady();
+      } catch {
+        task.failures += 1;
+        if (task.failures >= this.tickerWatchFailuresLimit) break;
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      try {
+        const t = await this.exchange.watchTicker(mappedSymbol);
+        task.failures = 0;
+        if (!this._isTickerTaskActive(mappedSymbol, task)) continue;
+        await this._updateTickerCache(mappedSymbol, t, true);
+      } catch {
+        task.failures += 1;
+        if (task.failures >= this.tickerWatchFailuresLimit) break;
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+    }
+
+    if (task.active) {
+      task.mode = 'poll';
+      task.failures = 0;
+      if (typeof this.exchange.fetchTicker === 'function') {
+        this._startTickerPollLoop(mappedSymbol, task);
+      }
+    }
+  }
+
+  _startTickerPollLoop(mappedSymbol, task) {
+    if (!task.active) return;
+    const interval = Math.max(1000, this.tickerPollIntervalMs);
+    const pollOnce = () => {
+      this._pollTickerOnce(mappedSymbol, task).catch(() => {});
+    };
+    task.timer = setInterval(pollOnce, interval);
+    pollOnce();
+  }
+
+  _isTickerTaskActive(mappedSymbol, task) {
+    return task?.active && this._tickerWatchTasks.get(mappedSymbol) === task;
+  }
+
+  async _pollTickerOnce(mappedSymbol, task) {
+    if (!mappedSymbol || typeof this.exchange.fetchTicker !== 'function') return;
+    try {
+      await this.ensureReady();
+    } catch {
+      return;
+    }
+    let t;
+    try {
+      t = await this.exchange.fetchTicker(mappedSymbol);
+    } catch {
+      return;
+    }
+    if (!this._isTickerTaskActive(mappedSymbol, task)) return;
+    await this._updateTickerCache(mappedSymbol, t, true);
   }
 
   _ensureBarTask(key) {
@@ -348,6 +449,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     for (const key of this._barTasks.keys()) {
       this._stopBarTask(key);
     }
+    for (const mappedSymbol of this._tickerWatchTasks.keys()) {
+      this._stopTickerTask(mappedSymbol);
+    }
+    this._tickerCache.clear();
     if (this._watchTimer) {
       clearInterval(this._watchTimer);
       this._watchTimer = null;
@@ -413,6 +518,51 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   mapSymbol(symbol) {
     if (!symbol) return symbol;
     return this.symbolMap[symbol] || this.symbolMap[String(symbol).toUpperCase()] || symbol;
+  }
+
+  async _updateTickerCache(mappedSymbol, ticker, allowOrderBookFallback) {
+    if (!mappedSymbol || !ticker) return;
+    const quote = await this._parseQuoteFromTicker(mappedSymbol, ticker, allowOrderBookFallback);
+    if (!quote) return;
+    this._tickerCache.set(mappedSymbol, quote);
+  }
+
+  async _parseQuoteFromTicker(mappedSymbol, t, allowOrderBookFallback = true) {
+    if (!t) return null;
+    // Надійне діставання bid/ask: спочатку з уніфікованих полів, далі з info, і як fallback — orderbook
+    let bid = Number.isFinite(t.bid) ? Number(t.bid)
+      : (t.info && Number.isFinite(Number(t.info.bidPrice)) ? Number(t.info.bidPrice)
+        : (t.info && Number.isFinite(Number(t.info.bestBid)) ? Number(t.info.bestBid)
+          : (t.info && Number.isFinite(Number(t.info.b)) ? Number(t.info.b) : undefined)));
+
+    let ask = Number.isFinite(t.ask) ? Number(t.ask)
+      : (t.info && Number.isFinite(Number(t.info.askPrice)) ? Number(t.info.askPrice)
+        : (t.info && Number.isFinite(Number(t.info.bestAsk)) ? Number(t.info.bestAsk)
+          : (t.info && Number.isFinite(Number(t.info.a)) ? Number(t.info.a) : undefined)));
+
+    if (allowOrderBookFallback && (!Number.isFinite(bid) || !Number.isFinite(ask)) && typeof this.exchange.fetchOrderBook === 'function') {
+      try {
+        const ob = await this.exchange.fetchOrderBook(mappedSymbol, 5);
+        if (!Number.isFinite(bid) && Array.isArray(ob?.bids) && ob.bids.length) {
+          const v = Number(ob.bids[0][0]);
+          if (Number.isFinite(v)) bid = v;
+        }
+        if (!Number.isFinite(ask) && Array.isArray(ob?.asks) && ob.asks.length) {
+          const v = Number(ob.asks[0][0]);
+          if (Number.isFinite(v)) ask = v;
+        }
+      } catch {
+        // ігноруємо помилку фолу до ордербука
+      }
+    }
+
+    let price = Number.isFinite(t.last) ? Number(t.last)
+      : (Number.isFinite(bid) && Number.isFinite(ask)) ? (bid + ask) / 2
+        : (Number.isFinite(Number(t.close)) ? Number(t.close)
+          : (Number.isFinite(Number(t.info?.lastPrice)) ? Number(t.info.lastPrice) : undefined));
+
+    const tickSize = this._getTickSizeFromMarket(mappedSymbol);
+    return { bid, ask, price, tickSize };
   }
 
   // Витягнути найбільш надійний ідентифікатор ордера з відповіді біржі
@@ -1049,46 +1199,30 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       await this.ensureReady();
       const mapped = this.mapSymbol(symbol);
       if (!mapped) return null;
-      const t = await this.exchange.fetchTicker(mapped);
-      if (!t) return null;
+      const cached = this._tickerCache.get(mapped);
+      if (cached) return cached;
 
-      // Надійне діставання bid/ask: спочатку з уніфікованих полів, далі з info, і як fallback — orderbook
-      let bid = Number.isFinite(t.bid) ? Number(t.bid)
-        : (t.info && Number.isFinite(Number(t.info.bidPrice)) ? Number(t.info.bidPrice)
-          : (t.info && Number.isFinite(Number(t.info.bestBid)) ? Number(t.info.bestBid)
-            : (t.info && Number.isFinite(Number(t.info.b)) ? Number(t.info.b) : undefined)));
-
-      let ask = Number.isFinite(t.ask) ? Number(t.ask)
-        : (t.info && Number.isFinite(Number(t.info.askPrice)) ? Number(t.info.askPrice)
-          : (t.info && Number.isFinite(Number(t.info.bestAsk)) ? Number(t.info.bestAsk)
-            : (t.info && Number.isFinite(Number(t.info.a)) ? Number(t.info.a) : undefined)));
-
-      if ((!Number.isFinite(bid) || !Number.isFinite(ask)) && typeof this.exchange.fetchOrderBook === 'function') {
-        try {
-          const ob = await this.exchange.fetchOrderBook(mapped, 5);
-          if (!Number.isFinite(bid) && Array.isArray(ob?.bids) && ob.bids.length) {
-            const v = Number(ob.bids[0][0]);
-            if (Number.isFinite(v)) bid = v;
-          }
-          if (!Number.isFinite(ask) && Array.isArray(ob?.asks) && ob.asks.length) {
-            const v = Number(ob.asks[0][0]);
-            if (Number.isFinite(v)) ask = v;
-          }
-        } catch {
-          // ігноруємо помилку фолу до ордербука
-        }
+      if (this._supportsWatchTicker() || typeof this.exchange.fetchTicker === 'function') {
+        this._ensureTickerTask(mapped);
       }
 
-      let price = Number.isFinite(t.last) ? Number(t.last)
-        : (Number.isFinite(bid) && Number.isFinite(ask)) ? (bid + ask) / 2
-          : (Number.isFinite(Number(t.close)) ? Number(t.close)
-            : (Number.isFinite(Number(t.info?.lastPrice)) ? Number(t.info.lastPrice) : undefined));
-
-      const tickSize = this._getTickSizeFromMarket(mapped);
-      return { bid, ask, price, tickSize };
+      if (typeof this.exchange.fetchTicker !== 'function') return null;
+      const t = await this.exchange.fetchTicker(mapped);
+      if (!t) return null;
+      const quote = await this._parseQuoteFromTicker(mapped, t, true);
+      if (!quote) return null;
+      this._tickerCache.set(mapped, quote);
+      return quote;
     } catch {
       return null;
     }
+  }
+
+  async forgetQuote(symbol) {
+    const mapped = this.mapSymbol(symbol);
+    if (!mapped) return;
+    this._tickerCache.delete(mapped);
+    this._stopTickerTask(mapped);
   }
 
   async getHistoricBars({ symbol, timeframe = 'M1', limit = 50 } = {}) {
