@@ -92,7 +92,6 @@ class ConsolidationStrategy {
     this.historyLoader = typeof historyLoader === 'function' ? historyLoader : null;
     this.historyPreload = Boolean(historyPreload);
     this.symbol = symbol;
-    this.initialBars = [];
     this.bars = [];
     this.done = false;
     this.historyLoadPromise = null;
@@ -132,15 +131,15 @@ class ConsolidationStrategy {
   }
 
   _getAvailableCount() {
-    return this.initialBars.length + this.bars.length;
+    return this.bars.length;
   }
 
   _getSequence() {
-    let merged = dedupeBars([...this.initialBars, ...this.bars]);
+    const merged = dedupeBars(this.bars);
     if (!merged.length) return null;
-    merged = sortBarsAsc(merged);
-    if (merged.length < this.barCount) return null;
-    return merged.slice(-this.barCount);
+    const sorted = sortBarsAsc(merged);
+    if (sorted.length < this.barCount) return null;
+    return sorted.slice(-this.barCount);
   }
 
   async _loadHistoryOnce() {
@@ -158,10 +157,10 @@ class ConsolidationStrategy {
         if (Array.isArray(fetched)) {
           const normalized = fetched.map(normalizeBar).filter(Boolean);
           if (normalized.length) {
-            const merged = dedupeBars([...this.initialBars, ...normalized]);
-            this.initialBars = sortBarsAsc(merged);
-            if (this.initialBars.length > this.barCount * 2) {
-              this.initialBars = this.initialBars.slice(-this.barCount * 2);
+            const merged = dedupeBars([...this.bars, ...normalized]);
+            this.bars = sortBarsAsc(merged);
+            if (this.bars.length > this.barCount * 2) {
+              this.bars = this.bars.slice(-this.barCount * 2);
             }
           }
         }
