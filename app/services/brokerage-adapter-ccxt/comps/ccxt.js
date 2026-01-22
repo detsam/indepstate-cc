@@ -242,12 +242,24 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
 
   async _startTickerWatchLoop(mappedSymbol, task) {
     const backoffMs = 500;
+    const notifyFailures = () => {
+      try {
+        events.emit('ticker:watch_failed', {
+          provider: this.provider,
+          symbol: mappedSymbol,
+          failures: task.failures
+        });
+      } catch {}
+    };
     while (task.active) {
       try {
         await this.ensureReady();
       } catch {
         task.failures += 1;
-        if (task.failures >= this.tickerWatchFailuresLimit) break;
+        if (task.failures >= this.tickerWatchFailuresLimit) {
+          notifyFailures();
+          task.failures = 0;
+        }
         await new Promise(resolve => setTimeout(resolve, backoffMs));
         continue;
       }
@@ -258,16 +270,11 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         await this._updateTickerCache(mappedSymbol, t, true);
       } catch {
         task.failures += 1;
-        if (task.failures >= this.tickerWatchFailuresLimit) break;
+        if (task.failures >= this.tickerWatchFailuresLimit) {
+          notifyFailures();
+          task.failures = 0;
+        }
         await new Promise(resolve => setTimeout(resolve, backoffMs));
-      }
-    }
-
-    if (task.active) {
-      task.mode = 'poll';
-      task.failures = 0;
-      if (typeof this.exchange.fetchTicker === 'function') {
-        this._startTickerPollLoop(mappedSymbol, task);
       }
     }
   }
@@ -334,6 +341,16 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
 
   async _startBarWatchLoop(key, task) {
     const backoffMs = 500;
+    const notifyFailures = (sub) => {
+      try {
+        events.emit('bar:watch_failed', {
+          provider: this.provider,
+          symbol: sub?.originalSymbol,
+          timeframe: sub?.timeframe,
+          failures: task.failures
+        });
+      } catch {}
+    };
     while (task.active) {
       const sub = this._barSubscriptions.get(key);
       if (!sub) break;
@@ -341,7 +358,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         await this.ensureReady();
       } catch {
         task.failures += 1;
-        if (task.failures >= this.barWatchFailuresLimit) break;
+        if (task.failures >= this.barWatchFailuresLimit) {
+          notifyFailures(sub);
+          task.failures = 0;
+        }
         await new Promise(resolve => setTimeout(resolve, backoffMs));
         continue;
       }
@@ -365,16 +385,11 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         if (last) this._emitBarFromCandle(key, sub, last);
       } catch {
         task.failures += 1;
-        if (task.failures >= this.barWatchFailuresLimit) break;
+        if (task.failures >= this.barWatchFailuresLimit) {
+          notifyFailures(sub);
+          task.failures = 0;
+        }
         await new Promise(resolve => setTimeout(resolve, backoffMs));
-      }
-    }
-
-    if (task.active) {
-      task.mode = 'poll';
-      task.failures = 0;
-      if (typeof this.exchange.fetchOHLCV === 'function') {
-        this._startBarPollLoop(key, task);
       }
     }
   }
