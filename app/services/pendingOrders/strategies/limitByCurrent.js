@@ -71,6 +71,7 @@ class LimitByCurrentStrategy {
       ? bars.map(normalizeBar).filter(Boolean)
       : null;
     this.latestBar = null;
+    this.historyLoadPromise = null;
   }
 
   async onBar(bar) {
@@ -125,10 +126,10 @@ class LimitByCurrentStrategy {
     }
   }
 
-  async _getSequence() {
-    if (this.cachedSeq) return this.cachedSeq;
-    let bars = Array.isArray(this.initialBars) ? [...this.initialBars] : [];
-    if ((!bars || bars.length === 0) && this.historyLoader) {
+  async _loadHistoryOnce() {
+    if (!this.historyLoader) return;
+    if (this.historyLoadPromise) return this.historyLoadPromise;
+    this.historyLoadPromise = (async () => {
       try {
         const fetched = await this.historyLoader({
           limit: this.historyBars,
@@ -138,12 +139,31 @@ class LimitByCurrentStrategy {
           symbol: this.symbol
         });
         if (Array.isArray(fetched)) {
-          bars = fetched.map(normalizeBar).filter(Boolean);
+          const normalized = fetched.map(normalizeBar).filter(Boolean);
+          if (normalized.length) {
+            const existing = Array.isArray(this.initialBars) ? this.initialBars : [];
+            const merged = dedupeBars([...existing, ...normalized]);
+            this.initialBars = sortBarsAsc(merged);
+            if (this.initialBars.length > this.historyBars * 2) {
+              this.initialBars = this.initialBars.slice(-this.historyBars * 2);
+            }
+          }
         }
       } catch (err) {
         console.error('limitByCurrent: historyLoader failed', err);
+        this.historyLoadPromise = null;
       }
+    })();
+    return this.historyLoadPromise;
+  }
+
+  async _getSequence() {
+    if (this.cachedSeq) return this.cachedSeq;
+    const initialCount = Array.isArray(this.initialBars) ? this.initialBars.length : 0;
+    if (this.historyLoader && initialCount < this.historyBars) {
+      await this._loadHistoryOnce();
     }
+    let bars = Array.isArray(this.initialBars) ? [...this.initialBars] : [];
     if (this.latestBar) bars.push(this.latestBar);
     if (!bars.length) return null;
     bars = dedupeBars(bars);
@@ -210,4 +230,3 @@ class LimitByCurrentStrategy {
 }
 
 module.exports = { LimitByCurrentStrategy };
-
