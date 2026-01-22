@@ -2,7 +2,9 @@ const { B1_TAIL } = require('./consolidation');
 const {
   normalizeBar,
   dedupeBars,
-  sortBarsAsc
+  sortBarsAsc,
+  mergeBars,
+  loadAndMergeHistory
 } = require('./historyUtils');
 
 function firstFinite(values) {
@@ -100,24 +102,18 @@ class LimitByCurrentStrategy {
     if (this.historyLoadPromise) return this.historyLoadPromise;
     this.historyLoadPromise = (async () => {
       try {
-        const fetched = await this.historyLoader({
-          limit: this.historyBars,
-          timeframe: this.historyTimeframe,
+        this.initialBars = await loadAndMergeHistory({
+          historyLoader: this.historyLoader,
+          historyTimeframe: this.historyTimeframe,
+          historyLimit: this.historyBars,
           price: this.price,
           side: this.side,
-          symbol: this.symbol
+          symbol: this.symbol,
+          existingBars: this.initialBars,
+          normalizeBar,
+          mergeBars,
+          maxBars: this.historyBars * 2
         });
-        if (Array.isArray(fetched)) {
-          const normalized = fetched.map(normalizeBar).filter(Boolean);
-          if (normalized.length) {
-            const existing = Array.isArray(this.initialBars) ? this.initialBars : [];
-            const merged = dedupeBars([...existing, ...normalized]);
-            this.initialBars = sortBarsAsc(merged);
-            if (this.initialBars.length > this.historyBars * 2) {
-              this.initialBars = this.initialBars.slice(-this.historyBars * 2);
-            }
-          }
-        }
       } catch (err) {
         console.error('limitByCurrent: historyLoader failed', err);
         this.historyLoadPromise = null;

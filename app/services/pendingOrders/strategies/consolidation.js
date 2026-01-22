@@ -1,4 +1,4 @@
-const { normalizeBar, mergeBars } = require('./historyUtils');
+const { normalizeBar, mergeBars, loadAndMergeHistory } = require('./historyUtils');
 
 const ALWAYS_TRUE = () => true;
 
@@ -108,19 +108,18 @@ class ConsolidationStrategy {
     if (this.historyLoadPromise) return this.historyLoadPromise;
     this.historyLoadPromise = (async () => {
       try {
-        const fetched = await this.historyLoader({
-          limit: this.barCount,
-          timeframe: this.historyTimeframe,
+        this.initialBars = await loadAndMergeHistory({
+          historyLoader: this.historyLoader,
+          historyTimeframe: this.historyTimeframe,
+          historyLimit: this.barCount,
           price: this.price,
           side: this.side,
-          symbol: this.symbol
+          symbol: this.symbol,
+          existingBars: this.initialBars,
+          normalizeBar,
+          mergeBars,
+          maxBars: this.barCount * 2
         });
-        if (Array.isArray(fetched)) {
-          const normalized = fetched.map(normalizeBar).filter(Boolean);
-          if (normalized.length) {
-            this.initialBars = mergeBars(this.initialBars, normalized, this.barCount * 2);
-          }
-        }
       } catch (err) {
         console.error('consolidation: historyLoader failed', err);
         this.historyLoadPromise = null;
