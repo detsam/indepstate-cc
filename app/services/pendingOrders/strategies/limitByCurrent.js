@@ -151,6 +151,7 @@ class LimitByCurrentStrategy {
         }
       } catch (err) {
         console.error('limitByCurrent: historyLoader failed', err);
+        this.historyLoadPromise = null;
       }
     })();
     return this.historyLoadPromise;
