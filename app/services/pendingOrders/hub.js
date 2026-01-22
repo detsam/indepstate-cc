@@ -98,10 +98,11 @@ class PendingOrderHub {
     this.mainWindow = mainWindow;
     this.getAdapter = getAdapter || servicesApi.brokerage?.getAdapter;
 
-    events.on('bar', ({ provider, symbol, tf, open, high, low, close }) => {
+    events.on('bar', ({ provider, symbol, tf, open, high, low, close, time, timestamp }) => {
       if (tf !== 'M1') return;
       const svc = this.services.get(`${provider}:${symbol}`);
-      if (svc) svc.onBar({ open, high, low, close });
+      const barTime = time ?? timestamp;
+      if (svc) svc.onBar({ open, high, low, close, time: barTime });
     });
 
     if (ipcMain) {
