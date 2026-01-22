@@ -78,7 +78,6 @@ class ConsolidationStrategy {
     dealPriceRule = KNOWN_EXTREMUM,
     stoppLossRule = B1_TAIL,
     historyLoader,
-    historyBars,
     historyTimeframe = 'M1',
     historyPreload = false,
     symbol
@@ -89,7 +88,6 @@ class ConsolidationStrategy {
     this.rangeRule = rangeRule;
     this.dealPriceRule = dealPriceRule;
     this.stoppLossRule = stoppLossRule;
-    this.historyBars = Math.max(1, Number(historyBars) || this.barCount);
     this.historyTimeframe = typeof historyTimeframe === 'string' && historyTimeframe ? historyTimeframe : 'M1';
     this.historyLoader = typeof historyLoader === 'function' ? historyLoader : null;
     this.historyPreload = Boolean(historyPreload);
@@ -108,8 +106,8 @@ class ConsolidationStrategy {
     const normalized = normalizeBar(bar);
     if (normalized) {
       this.bars.push(normalized);
-      if (this.bars.length > this.historyBars * 2) {
-        this.bars = this.bars.slice(-this.historyBars * 2);
+      if (this.bars.length > this.barCount * 2) {
+        this.bars = this.bars.slice(-this.barCount * 2);
       }
     }
     if (this.historyPreload && this.historyLoader && this._getAvailableCount() < this.barCount) {
@@ -151,7 +149,7 @@ class ConsolidationStrategy {
     this.historyLoadPromise = (async () => {
       try {
         const fetched = await this.historyLoader({
-          limit: this.historyBars,
+          limit: this.barCount,
           timeframe: this.historyTimeframe,
           price: this.price,
           side: this.side,
@@ -162,8 +160,8 @@ class ConsolidationStrategy {
           if (normalized.length) {
             const merged = dedupeBars([...this.initialBars, ...normalized]);
             this.initialBars = sortBarsAsc(merged);
-            if (this.initialBars.length > this.historyBars * 2) {
-              this.initialBars = this.initialBars.slice(-this.historyBars * 2);
+            if (this.initialBars.length > this.barCount * 2) {
+              this.initialBars = this.initialBars.slice(-this.barCount * 2);
             }
           }
         }
