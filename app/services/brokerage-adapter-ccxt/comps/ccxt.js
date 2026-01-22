@@ -254,6 +254,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       try {
         const t = await this.exchange.watchTicker(mappedSymbol);
         task.failures = 0;
+        if (!this._isTickerTaskActive(mappedSymbol, task)) continue;
         await this._updateTickerCache(mappedSymbol, t, true);
       } catch {
         task.failures += 1;
@@ -275,13 +276,17 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     if (!task.active) return;
     const interval = Math.max(1000, this.tickerPollIntervalMs);
     const pollOnce = () => {
-      this._pollTickerOnce(mappedSymbol).catch(() => {});
+      this._pollTickerOnce(mappedSymbol, task).catch(() => {});
     };
     task.timer = setInterval(pollOnce, interval);
     pollOnce();
   }
 
-  async _pollTickerOnce(mappedSymbol) {
+  _isTickerTaskActive(mappedSymbol, task) {
+    return task?.active && this._tickerWatchTasks.get(mappedSymbol) === task;
+  }
+
+  async _pollTickerOnce(mappedSymbol, task) {
     if (!mappedSymbol || typeof this.exchange.fetchTicker !== 'function') return;
     try {
       await this.ensureReady();
@@ -294,6 +299,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     } catch {
       return;
     }
+    if (!this._isTickerTaskActive(mappedSymbol, task)) return;
     await this._updateTickerCache(mappedSymbol, t, true);
   }
 
