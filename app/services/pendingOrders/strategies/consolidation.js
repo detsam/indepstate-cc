@@ -1,5 +1,53 @@
 const ALWAYS_TRUE = () => true;
 
+function normalizeBar(bar) {
+  if (!bar || typeof bar !== 'object') return null;
+  const open = Number(bar.open);
+  const high = Number(bar.high);
+  const low = Number(bar.low);
+  const close = Number(bar.close);
+  const timeRaw = bar.time != null ? Number(bar.time) : (bar.timestamp != null ? Number(bar.timestamp) : undefined);
+  if (!Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+    return null;
+  }
+  const normalized = { open: Number.isFinite(open) ? open : undefined, high, low, close };
+  if (Number.isFinite(timeRaw)) normalized.time = timeRaw;
+  return normalized;
+}
+
+function dedupeBars(bars) {
+  const byTime = new Map();
+  for (const bar of bars) {
+    if (!bar) continue;
+    if (bar.time == null) {
+      byTime.set(Symbol('no-time'), bar);
+      continue;
+    }
+    byTime.set(bar.time, bar);
+  }
+  return Array.from(byTime.values());
+}
+
+function sortBarsAsc(bars) {
+  return bars.slice().sort((a, b) => {
+    const ta = a.time == null ? -Infinity : a.time;
+    const tb = b.time == null ? -Infinity : b.time;
+    return ta - tb;
+  });
+}
+
+function mergeBars(existing, incoming, maxBars) {
+  const base = Array.isArray(existing) ? existing : [];
+  const additions = Array.isArray(incoming) ? incoming : (incoming ? [incoming] : []);
+  if (!base.length && !additions.length) return [];
+  const merged = dedupeBars([...base, ...additions]);
+  const sorted = sortBarsAsc(merged);
+  if (Number.isFinite(maxBars) && maxBars > 0 && sorted.length > maxBars) {
+    return sorted.slice(-maxBars);
+  }
+  return sorted;
+}
+
 // KNOWN_EXTREMUM selects the most favorable extreme from the bar sequence
 // (highest high for longs, lowest low for shorts) as the target price.
 function KNOWN_EXTREMUM(bars, side, _price) {
@@ -34,22 +82,47 @@ function B1_RANGE_CONSOLIDATION(price, side, bars) {
 }
 
 class ConsolidationStrategy {
-  constructor({ price, side, bars = 3, rangeRule = ALWAYS_TRUE, dealPriceRule = KNOWN_EXTREMUM, stoppLossRule = B1_TAIL } = {}) {
+  constructor({
+    price,
+    side,
+    bars = 3,
+    rangeRule = ALWAYS_TRUE,
+    dealPriceRule = KNOWN_EXTREMUM,
+    stoppLossRule = B1_TAIL,
+    historyLoader,
+    historyTimeframe = 'M1',
+    historyPreload = false,
+    symbol
+  } = {}) {
     this.price = Number(price);
     this.side = side;
     this.barCount = Math.max(1, Number(bars) || 3);
     this.rangeRule = rangeRule;
     this.dealPriceRule = dealPriceRule;
     this.stoppLossRule = stoppLossRule;
-    this.bars = [];
+    this.historyTimeframe = typeof historyTimeframe === 'string' && historyTimeframe ? historyTimeframe : 'M1';
+    this.historyLoader = typeof historyLoader === 'function' ? historyLoader : null;
+    this.historyPreload = Boolean(historyPreload);
+    this.symbol = symbol;
+    this.initialBars = [];
     this.done = false;
+    this.historyLoadPromise = null;
+    if (this.historyPreload && this.historyLoader) {
+      this._loadHistoryOnce();
+    }
   }
 
-  onBar(bar) {
+  async onBar(bar) {
     if (this.done) return null;
-    this.bars.push(bar);
-    if (this.bars.length < this.barCount) return null;
-    const seq = this.bars.slice(-this.barCount);
+    const normalized = normalizeBar(bar);
+    if (normalized) {
+      this.initialBars = mergeBars(this.initialBars, normalized, this.barCount * 2);
+    }
+    if (this.historyPreload && this.historyLoader && this._getAvailableCount() < this.barCount) {
+      await this._loadHistoryOnce();
+    }
+    const seq = this._getSequence();
+    if (!seq) return null;
     const b1 = seq[0];
     const p = this.price;
     let ok = false;
@@ -64,6 +137,42 @@ class ConsolidationStrategy {
     const limitPrice = this.dealPriceRule(seq, this.side, p);
     const stopLoss = this.stoppLossRule(seq, this.side, p);
     return { limitPrice, stopLoss };
+  }
+
+  _getAvailableCount() {
+    return this.initialBars.length;
+  }
+
+  _getSequence() {
+    if (!this.initialBars.length) return null;
+    if (this.initialBars.length < this.barCount) return null;
+    return this.initialBars.slice(-this.barCount);
+  }
+
+  async _loadHistoryOnce() {
+    if (!this.historyLoader) return;
+    if (this.historyLoadPromise) return this.historyLoadPromise;
+    this.historyLoadPromise = (async () => {
+      try {
+        const fetched = await this.historyLoader({
+          limit: this.barCount,
+          timeframe: this.historyTimeframe,
+          price: this.price,
+          side: this.side,
+          symbol: this.symbol
+        });
+        if (Array.isArray(fetched)) {
+          const normalized = fetched.map(normalizeBar).filter(Boolean);
+          if (normalized.length) {
+            this.initialBars = mergeBars(this.initialBars, normalized, this.barCount * 2);
+          }
+        }
+      } catch (err) {
+        console.error('consolidation: historyLoader failed', err);
+        this.historyLoadPromise = null;
+      }
+    })();
+    return this.historyLoadPromise;
   }
 }
 
