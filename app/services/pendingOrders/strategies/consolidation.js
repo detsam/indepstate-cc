@@ -92,7 +92,7 @@ class ConsolidationStrategy {
     this.historyLoader = typeof historyLoader === 'function' ? historyLoader : null;
     this.historyPreload = Boolean(historyPreload);
     this.symbol = symbol;
-    this.bars = [];
+    this.initialBars = [];
     this.done = false;
     this.historyLoadPromise = null;
     if (this.historyPreload && this.historyLoader) {
@@ -104,9 +104,9 @@ class ConsolidationStrategy {
     if (this.done) return null;
     const normalized = normalizeBar(bar);
     if (normalized) {
-      this.bars.push(normalized);
-      if (this.bars.length > this.barCount * 2) {
-        this.bars = this.bars.slice(-this.barCount * 2);
+      this.initialBars.push(normalized);
+      if (this.initialBars.length > this.barCount * 2) {
+        this.initialBars = this.initialBars.slice(-this.barCount * 2);
       }
     }
     if (this.historyPreload && this.historyLoader && this._getAvailableCount() < this.barCount) {
@@ -131,11 +131,11 @@ class ConsolidationStrategy {
   }
 
   _getAvailableCount() {
-    return this.bars.length;
+    return this.initialBars.length;
   }
 
   _getSequence() {
-    const merged = dedupeBars(this.bars);
+    const merged = dedupeBars(this.initialBars);
     if (!merged.length) return null;
     const sorted = sortBarsAsc(merged);
     if (sorted.length < this.barCount) return null;
@@ -157,10 +157,10 @@ class ConsolidationStrategy {
         if (Array.isArray(fetched)) {
           const normalized = fetched.map(normalizeBar).filter(Boolean);
           if (normalized.length) {
-            const merged = dedupeBars([...this.bars, ...normalized]);
-            this.bars = sortBarsAsc(merged);
-            if (this.bars.length > this.barCount * 2) {
-              this.bars = this.bars.slice(-this.barCount * 2);
+            const merged = dedupeBars([...this.initialBars, ...normalized]);
+            this.initialBars = sortBarsAsc(merged);
+            if (this.initialBars.length > this.barCount * 2) {
+              this.initialBars = this.initialBars.slice(-this.barCount * 2);
             }
           }
         }
