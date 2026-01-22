@@ -36,6 +36,18 @@ function sortBarsAsc(bars) {
   });
 }
 
+function mergeBars(existing, incoming, maxBars) {
+  const base = Array.isArray(existing) ? existing : [];
+  const additions = Array.isArray(incoming) ? incoming : (incoming ? [incoming] : []);
+  if (!base.length && !additions.length) return [];
+  const merged = dedupeBars([...base, ...additions]);
+  const sorted = sortBarsAsc(merged);
+  if (Number.isFinite(maxBars) && maxBars > 0 && sorted.length > maxBars) {
+    return sorted.slice(-maxBars);
+  }
+  return sorted;
+}
+
 // KNOWN_EXTREMUM selects the most favorable extreme from the bar sequence
 // (highest high for longs, lowest low for shorts) as the target price.
 function KNOWN_EXTREMUM(bars, side, _price) {
@@ -104,10 +116,7 @@ class ConsolidationStrategy {
     if (this.done) return null;
     const normalized = normalizeBar(bar);
     if (normalized) {
-      this.initialBars.push(normalized);
-      if (this.initialBars.length > this.barCount * 2) {
-        this.initialBars = this.initialBars.slice(-this.barCount * 2);
-      }
+      this.initialBars = mergeBars(this.initialBars, normalized, this.barCount * 2);
     }
     if (this.historyPreload && this.historyLoader && this._getAvailableCount() < this.barCount) {
       await this._loadHistoryOnce();
@@ -135,11 +144,9 @@ class ConsolidationStrategy {
   }
 
   _getSequence() {
-    const merged = dedupeBars(this.initialBars);
-    if (!merged.length) return null;
-    const sorted = sortBarsAsc(merged);
-    if (sorted.length < this.barCount) return null;
-    return sorted.slice(-this.barCount);
+    if (!this.initialBars.length) return null;
+    if (this.initialBars.length < this.barCount) return null;
+    return this.initialBars.slice(-this.barCount);
   }
 
   async _loadHistoryOnce() {
@@ -157,11 +164,7 @@ class ConsolidationStrategy {
         if (Array.isArray(fetched)) {
           const normalized = fetched.map(normalizeBar).filter(Boolean);
           if (normalized.length) {
-            const merged = dedupeBars([...this.initialBars, ...normalized]);
-            this.initialBars = sortBarsAsc(merged);
-            if (this.initialBars.length > this.barCount * 2) {
-              this.initialBars = this.initialBars.slice(-this.barCount * 2);
-            }
+            this.initialBars = mergeBars(this.initialBars, normalized, this.barCount * 2);
           }
         }
       } catch (err) {
