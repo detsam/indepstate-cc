@@ -308,7 +308,8 @@ function showSection(name) {
         ...Object.keys(descObj || {})
       ]);
       for (const key of keys) {
-        if (key === 'description' || key === 'type') continue;
+        if (key === 'description') continue;
+        if (key === 'type' && descObj && typeof descObj.type === 'string') continue;
         const hasValue = cfgObj && hasOwn.call(cfgObj, key);
         const val = hasValue ? cfgObj[key] : undefined;
         const d = descObj ? descObj[key] : undefined;
@@ -2164,4 +2165,3 @@ if (typeof module !== 'undefined') {
     pendingExecLabels
   };
 }
-
