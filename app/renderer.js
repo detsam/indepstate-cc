@@ -28,6 +28,7 @@ const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
   : Number(orderCardsCfg?.instrumentRefreshMs) || 1000;
 
 const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ignore';
+const BUTTON_ROWS = Number(orderCardsCfg?.buttonRows) || 1;
 
 const DEFAULT_CARD_BUTTONS = [
   {label: 'BL', action: 'BL', style: 'bl'},
@@ -924,7 +925,8 @@ function createCard(row, index) {
     b.setAttribute('data-kind', kind);
     return b;
   };
-  btns.style.gridTemplateColumns = `repeat(${CARD_BUTTONS.length},1fr)`;
+  const cols = Math.ceil(CARD_BUTTONS.length / BUTTON_ROWS);
+  btns.style.gridTemplateColumns = `repeat(${cols},1fr)`;
   for (const {label, action, style} of CARD_BUTTONS) {
     btns.appendChild(mk(label, (style || action).toLowerCase(), action));
   }

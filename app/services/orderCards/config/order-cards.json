@@ -8,6 +8,7 @@
   "closedCardEventStrategy": "ignore",
   "showBidAsk": false,
   "showSpread": false,
+  "buttonRows": 1,
   "buttons": [
     { "label": "BL",  "action": "BL",  "style": "bl" },
     { "label": "BC",  "action": "BC",  "style": "bc" },
