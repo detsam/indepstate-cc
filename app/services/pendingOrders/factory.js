@@ -3,6 +3,7 @@ const {
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
   KNOWN_EXTREMUM,
+  OPPOSITE_EXTREMUM,
   B1_TAIL,
   B1_10p_GAP
 } = require('./strategies/consolidation');
@@ -14,6 +15,7 @@ function createStrategyFactory(strategyConfig, extraStrategies = {}, extraHelper
   const helpers = {
     B1_RANGE_CONSOLIDATION,
     KNOWN_EXTREMUM,
+    OPPOSITE_EXTREMUM,
     B1_TAIL,
     B1_10p_GAP,
     ...extraHelpers

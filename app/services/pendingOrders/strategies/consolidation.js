@@ -10,6 +10,14 @@ function KNOWN_EXTREMUM(bars, side, _price) {
     : Math.min(...bars.map(b => b.low));
 }
 
+// OPPOSITE_EXTREMUM selects the most favorable extreme from the bar sequence
+// (highest high for shorts, lowest low for longs) as the stop price.
+function OPPOSITE_EXTREMUM(bars, side, _price) {
+  return side === 'short'
+    ? Math.max(...bars.map(b => b.high))
+    : Math.min(...bars.map(b => b.low));
+}
+
 // B1_TAIL uses the opposite-side tail of the breakout bar as the stop price.
 function B1_TAIL(bars, side, _price) {
   const b1 = bars[0];
@@ -133,6 +141,7 @@ module.exports = {
   ConsolidationStrategy,
   B1_RANGE_CONSOLIDATION,
   KNOWN_EXTREMUM,
+  OPPOSITE_EXTREMUM,
   B1_TAIL,
   B1_10p_GAP
 };
