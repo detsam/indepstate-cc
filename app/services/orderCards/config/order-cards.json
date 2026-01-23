@@ -9,10 +9,10 @@
   "showBidAsk": false,
   "showSpread": false,
   "buttons": [
-    { "label": "BP",  "action": "BP",  "style": "bc" },
+    { "label": "BL",  "action": "BL",  "style": "bl" },
     { "label": "BC",  "action": "BC",  "style": "bc" },
     { "label": "BFB", "action": "BFB", "style": "bc" },
-    { "label": "SP",  "action": "SP",  "style": "sc" },
+    { "label": "SL",  "action": "SL",  "style": "sl" },
     { "label": "SC",  "action": "SC",  "style": "sc" },
     { "label": "SFB", "action": "SFB", "style": "sc" }
   ]
