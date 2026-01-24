@@ -13,8 +13,9 @@ const { createOrderCardService } = require('./services/orderCards');
 const { detectInstrumentType } = require('./services/instruments');
 const events = require('./services/events');
 const { createPendingOrderHub } = require('./services/pendingOrders');
-const tradeRules = require('./services/tradeRules');
+const tradeRules = servicesApi.tradeRules || require('./services/tradeRules');
 const loadConfig = require('./config/load');
+const orderCalc = servicesApi.orderCalculator || require('./services/orderCalculator');
 const execCfg = loadConfig('../services/brokerage/config/execution.json');
 const orderCardsCfg = loadConfig('../services/orderCards/config/order-cards.json');
 

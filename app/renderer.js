@@ -2,12 +2,12 @@
 const {ipcRenderer} = require('electron');
 const path = require('path');
 const loadConfig = require('./config/load');
-const tradeRules = require('./services/tradeRules');
+const servicesApi = require('./services/servicesApi');
+const tradeRules = servicesApi.tradeRules || require('./services/tradeRules');
 const {detectInstrumentType} = require("./services/instruments");
 const {findTickSizeFromConfig} = require('./services/points');
-const {OrderCalculator} = require('./services/orderCalculator');
+const orderCalc = servicesApi.orderCalculator || require('./services/orderCalculator');
 const orderCardsCfg = loadConfig('../services/orderCards/config/order-cards.json');
-const orderCalc = new OrderCalculator();
 const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
 const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop

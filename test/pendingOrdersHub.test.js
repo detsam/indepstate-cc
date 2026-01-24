@@ -28,7 +28,7 @@ async function run() {
     side: 'long',
     instrumentType: 'EQ',
     tickSize: 1,
-    meta: { qty: 100, riskUsd: 10 }
+    meta: { qty: 3, riskUsd: 0 }
   });
 
   const bars = [
@@ -43,7 +43,7 @@ async function run() {
   assert.strictEqual(placed.side, 'buy');
   assert.strictEqual(placed.type, 'limit');
   assert.strictEqual(placed.price, 101);
-  assert.strictEqual(placed.qty, 1);
+  assert.strictEqual(placed.qty, 3);
   assert.strictEqual(placed.sl, 6);
   assert.strictEqual(placed.meta.stopPts, 6);
   assert.strictEqual(placed.tp, 18);
