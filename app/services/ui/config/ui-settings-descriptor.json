@@ -1,6 +1,14 @@
 {
   "properties": {},
   "options": {
+    "width": {
+      "type": "number",
+      "description": "Default window width"
+    },
+    "height": {
+      "type": "number",
+      "description": "Default window height"
+    },
     "autoscroll": {
       "type": "boolean",
       "description": "Scroll to newest orders automatically"

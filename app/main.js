@@ -18,6 +18,7 @@ const loadConfig = require('./config/load');
 const orderCalc = servicesApi.orderCalculator || require('./services/orderCalculator');
 const execCfg = loadConfig('../services/brokerage/config/execution.json');
 const orderCardsCfg = loadConfig('../services/orderCards/config/order-cards.json');
+const uiCfg = loadConfig('../services/ui/config/ui.json');
 
 function loadServices(servicesApi = {}) {
   let dirs = [];
@@ -244,8 +245,8 @@ let orderCardService;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 900,
+    width: uiCfg?.width || 1280,
+    height: uiCfg?.height || 900,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
