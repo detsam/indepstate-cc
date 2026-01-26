@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@ngrok/ngrok": "^1.5.2",
-    "ccxt": "^4.0.0",
+    "ccxt": "^4.5.34",
     "chokidar": "^3.6.0",
     "dotenv": "^16.4.5",
     "electron-updater": "^6.1.1",

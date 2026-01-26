@@ -57,9 +57,16 @@ function buildAdapter(providerName, cfg){
   if (typeof factory !== 'function') {
     throw new Error(`[adapterRegistry] unknown adapter "${adapterName}" for provider "${providerName}"`);
   }
-  const inst = factory(adapterCfg, providerName, adapterName);
-  inst.provider = providerName;
-  return inst;
+
+  try {
+    const inst = factory(adapterCfg, providerName, adapterName);
+    inst.provider = providerName;
+    return inst;
+  } catch (e) {
+    console.error('[adapterRegistry] failed to build adapter:', e);
+    throw e;
+  }
+
 }
 
 function getAdapter(name){

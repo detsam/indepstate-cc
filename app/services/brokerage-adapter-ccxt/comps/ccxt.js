@@ -37,8 +37,14 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       options: cfg.options || {},
     });
 
-    if (cfg.sandbox && typeof this.exchange.setSandboxMode === 'function') {
-      this.exchange.setSandboxMode(true);
+    if (cfg.sandbox) {
+      if (typeof this.exchange.enableDemoTrading === 'function') {
+        this.exchange.enableDemoTrading(true)
+      } else if (typeof this.exchange.setSandboxMode === 'function') {
+        this.exchange.setSandboxMode(true);
+      } else {
+        throw new Error(`CCXT: unable to set demo/sandbox mode for exchange: ${cfg.exchangeId || '(empty)'}, please consult with documentation`);
+      }
     }
 
     this.defaultParams = cfg.params || {};
@@ -535,6 +541,24 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     return this.symbolMap[symbol] || this.symbolMap[String(symbol).toUpperCase()] || symbol;
   }
 
+  /**
+   * Get the native exchange symbol (e.g., 'ETHUSDT' for Binance) from a CCXT mapped symbol ('ETH/USDT:USDT').
+   * @param {string} mappedSymbol
+   * @returns {string}
+   */
+  getNativeSymbol(mappedSymbol) {
+    try {
+      if (!mappedSymbol) return mappedSymbol;
+      if (this.exchange.markets && this.exchange.markets[mappedSymbol]) {
+        return this.exchange.markets[mappedSymbol].id || mappedSymbol;
+      }
+      const market = this.exchange.market(mappedSymbol);
+      return market?.id || mappedSymbol;
+    } catch {
+      return mappedSymbol;
+    }
+  }
+
   async _updateTickerCache(mappedSymbol, ticker, allowOrderBookFallback) {
     if (!mappedSymbol || !ticker) return;
     const quote = await this._parseQuoteFromTicker(mappedSymbol, ticker, allowOrderBookFallback);
@@ -800,8 +824,19 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     const link = this._childOrdersByParent.get(parentId);
     if (!link) return;
     const { symbol: mappedSymbol, children } = link;
+    await this.ensureReady();
     for (const cid of children || []) {
       try {
+        if (this.exchangeId === 'binance' && String(cid).length > 20) {
+           // Ймовірно algoId для Binance Futures
+           try {
+             const nativeSymbol = this.getNativeSymbol(mappedSymbol);
+             await this.exchange.fapiPrivateDeleteAlgoOrders({ symbol: nativeSymbol, algoId: cid });
+             continue;
+           } catch (e) {
+             // якщо не вдалося через fapi - спробуємо звичайним cancelOrder
+           }
+        }
         await this.exchange.cancelOrder(cid, mappedSymbol);
       } catch {
         // Спроба відміни по clientOrderId/origClientOrderId (актуально для умовних ордерів на деяких біржах)
@@ -818,7 +853,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   // Класифікація ордеру як SL або TP за його типом
   _classifyOrderAsSLorTP(ord) {
     try {
-      const t = String(ord?.type || ord?.info?.orderType || ord?.info?.type || '').toLowerCase();
+      const t = String(ord?.type || ord?.orderType || ord?.info?.orderType || ord?.info?.type || '').toLowerCase();
       if (!t) return null;
       if (t.includes('take')) return 'TP';
       if (t.includes('stop') && !t.includes('take')) return 'SL';
@@ -829,9 +864,68 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     }
   }
 
-  // Забезпечити наявність SL/TP після фактичного відкриття позиції
+  async _openOrdersSym(sym) {
+    try {
+      await this.ensureReady();
+      let simpleOrders = await this.exchange.fetchOpenOrders(sym);
+
+      let conditionalOrders = await this.exchange.fetchOpenOrders(sym, params => ({
+        ...params,
+        stop: true,
+        trigger: true,
+        conditional: true
+      }));
+
+      let algoOrders = [];
+      if (this.exchangeId === 'binance') {
+        const nativeSymbol = this.getNativeSymbol(sym);
+        algoOrders = await this.exchange.fapiPrivateGetOpenAlgoOrders({"symbol": nativeSymbol, "stop": true});
+      }
+
+    //  console.log("Open orders sym", simpleOrders, conditionalOrders, algoOrders );
+      return [
+        ...simpleOrders,
+        ...conditionalOrders,
+        ...algoOrders
+      ];
+    } catch (e) {
+      console.error(`[${this.provider}] Failed to fetch open orders for symbol ${sym}`, e);
+      return [];
+    }
+  }
+
+  async _openOrders() {
+    try {
+      await this.ensureReady();
+      let simpleOrders = await this.exchange.fetchOpenOrders();
+      let conditionalOrders = await this.exchange.fetchOpenOrders(params => ({
+        ...params,
+        stop: true,
+        trigger: true,
+        conditional: true
+      }));
+
+      let algoOrders = [];
+      if (this.exchangeId === 'binance') {
+        algoOrders = await this.exchange.fapiPrivateGetOpenAlgoOrders();
+      }
+
+
+      return [
+        ...simpleOrders,
+        ...conditionalOrders,
+        ...algoOrders
+      ];
+    } catch (e) {
+      console.error(`[${this.provider}] Failed to fetch open orders`, e);
+      return [];
+    }
+  }
+
+
   async _ensureProtectiveOrdersForTicket(ticket) {
     try {
+      await this.ensureReady();
       const mappedSymbol = this._ticketToSymbol.get(ticket);
       if (!mappedSymbol) return;
 
@@ -879,8 +973,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         : this._getTickSizeFromMarket(mappedSymbol);
 
       // Перевіримо існування SL/TP у відкритих ордерах
-      let openOrders = [];
-      try { openOrders = await this.exchange.fetchOpenOrders(mappedSymbol); } catch { openOrders = []; }
+      let openOrders = await this._openOrdersSym(mappedSymbol);
 
       const opposite = side === 'buy' ? 'sell' : 'buy';
       const hasReduce = (o) => !!(o?.reduceOnly || o?.info?.reduce_only || o?.info?.reduceOnly);
@@ -929,6 +1022,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   // Скасувати всі захисні ордери (SL/TP) після виходу з позиції
   async _cancelAllProtectionForTicket(ticket) {
     try {
+      await this.ensureReady();
       const mappedSymbol = this._ticketToSymbol.get(ticket);
       if (!mappedSymbol) return;
 
@@ -936,8 +1030,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       try { await this._cancelChildOrders(ticket); } catch {}
 
       // 2) Підчистимо можливі інші reduce-only SL/TP для цього символу
-      let openOrders = [];
-      try { openOrders = await this.exchange.fetchOpenOrders(mappedSymbol); } catch { openOrders = []; }
+      let openOrders = await this._openOrdersSym(mappedSymbol);
+
 
       const cfg = this._desiredProtectionByTicket.get(ticket) || {};
       const side = String(cfg?.side || '').toLowerCase();
@@ -950,7 +1044,18 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         const kind = this._classifyOrderAsSLorTP(o);
         if (!kind) continue;
         try {
-          await this.exchange.cancelOrder(o?.id, mappedSymbol);
+          const oid = o?.id || o?.algoId;
+          if (this.exchangeId === 'binance' && o?.algoId) {
+            try {
+              const nativeSymbol = this.getNativeSymbol(mappedSymbol);
+              await this.exchange.fapiPrivateDeleteAlgoOpenOrders({ symbol: nativeSymbol, algoId: o.algoId });
+              continue;
+            } catch (e) {
+              // console.log('Failed to cancel algo order via fapi, falling back to standard cancel', e);
+               // fallback to standard cancel
+            }
+          }
+          await this.exchange.cancelOrder(oid);
         } catch {
           try {
             const cid = o?.clientOrderId || o?.info?.origClientOrderId || o?.info?.clientOrderId;
@@ -1143,7 +1248,6 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       };
     }
   }
-
   async cancelOrder(orderId, symbol) {
     try {
       await this.ensureReady();
@@ -1153,7 +1257,18 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       }
       const mappedSymbol = symbol ? this.mapSymbol(symbol) : undefined;
       try {
-        await this.exchange.cancelOrder(ticket, mappedSymbol);
+        if (this.exchangeId === 'binance' && (String(ticket).length > 20 || String(ticket).match(/^\d+$/))) {
+          // Для Binance Futures algoId зазвичай довгий або числовий.
+          // Спробуємо видалити як algo order, якщо не вийде - звичайним cancelOrder.
+          try {
+            const nativeSymbol = mappedSymbol ? this.getNativeSymbol(mappedSymbol) : undefined;
+            await this.exchange.fapiPrivateDeleteAlgoOrders({ symbol: nativeSymbol, algoId: ticket });
+          } catch (e) {
+            await this.exchange.cancelOrder(ticket, mappedSymbol);
+          }
+        } else {
+          await this.exchange.cancelOrder(ticket, mappedSymbol);
+        }
       } catch (err) {
         if (mappedSymbol) {
           try {
@@ -1184,7 +1299,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   /** @returns {Promise<any[]>} список відкритих ордерів */
   async listOpenOrders() {
     try {
-      const orders = await this.exchange.fetchOpenOrders();
+      const orders = await this._openOrders();
       return orders || [];
     } catch {
       return [];
