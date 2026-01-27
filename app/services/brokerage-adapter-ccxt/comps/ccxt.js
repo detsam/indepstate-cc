@@ -831,7 +831,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
            // Ймовірно algoId для Binance Futures
            try {
              const nativeSymbol = this.getNativeSymbol(mappedSymbol);
-             await this.exchange.fapiPrivateDeleteAlgoOrders({ symbol: nativeSymbol, algoId: cid });
+             await this.exchange.fapiPrivateDeleteAlgoOpenOrders({ symbol: nativeSymbol, algoId: cid });
              continue;
            } catch (e) {
              // якщо не вдалося через fapi - спробуємо звичайним cancelOrder
@@ -882,7 +882,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         algoOrders = await this.exchange.fapiPrivateGetOpenAlgoOrders({"symbol": nativeSymbol, "stop": true});
       }
 
-    //  console.log("Open orders sym", simpleOrders, conditionalOrders, algoOrders );
+      console.log("Open orders sym", this.exchangeId,  simpleOrders, conditionalOrders, algoOrders );
       return [
         ...simpleOrders,
         ...conditionalOrders,
@@ -909,13 +909,14 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       if (this.exchangeId === 'binance') {
         algoOrders = await this.exchange.fapiPrivateGetOpenAlgoOrders();
       }
-
+      console.log("Open orders", this.exchangeId, simpleOrders, conditionalOrders, algoOrders );
 
       return [
         ...simpleOrders,
         ...conditionalOrders,
         ...algoOrders
       ];
+
     } catch (e) {
       console.error(`[${this.provider}] Failed to fetch open orders`, e);
       return [];
@@ -1248,6 +1249,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       };
     }
   }
+
   async cancelOrder(orderId, symbol) {
     try {
       await this.ensureReady();
@@ -1262,7 +1264,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           // Спробуємо видалити як algo order, якщо не вийде - звичайним cancelOrder.
           try {
             const nativeSymbol = mappedSymbol ? this.getNativeSymbol(mappedSymbol) : undefined;
-            await this.exchange.fapiPrivateDeleteAlgoOrders({ symbol: nativeSymbol, algoId: ticket });
+            await this.exchange.fapiPrivateDeleteAlgoOpenOrders({ symbol: nativeSymbol, algoId: ticket });
           } catch (e) {
             await this.exchange.cancelOrder(ticket, mappedSymbol);
           }

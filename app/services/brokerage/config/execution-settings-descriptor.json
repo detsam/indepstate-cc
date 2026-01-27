@@ -40,7 +40,7 @@
         "exchangeId": { "type": "string", "description": "Exchange ID" },
         "apiKey": { "type": "string", "description": "API key" },
         "secret": { "type": "string", "description": "API secret" },
-        "sandbox": { "type": "string", "description": "Use sandbox" },
+        "sandbox": { "type": "boolean", "description": "Use sandbox" },
         "enableRateLimit": { "type": "boolean", "description": "Enable rate limiting" },
         "options": {
           "description": "Exchange options",
