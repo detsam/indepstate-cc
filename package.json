@@ -1,6 +1,6 @@
 {
   "name": "ISCC",
-  "version": "0.7.0-beta.4",
+  "version": "0.7.1-ccxt",
   "private": true,
   "description": "Electron app to make your trades",
   "main": "app/main.js",

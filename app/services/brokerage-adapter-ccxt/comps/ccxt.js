@@ -1265,6 +1265,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           try {
             const nativeSymbol = mappedSymbol ? this.getNativeSymbol(mappedSymbol) : undefined;
             await this.exchange.fapiPrivateDeleteAlgoOpenOrders({ symbol: nativeSymbol, algoId: ticket });
+            //також пробуємо видалити звичайний ордер
+            await this.exchange.cancelOrder(ticket, mappedSymbol);
           } catch (e) {
             await this.exchange.cancelOrder(ticket, mappedSymbol);
           }
