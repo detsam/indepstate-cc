@@ -741,15 +741,31 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       if (posSide === 'LONG' || posSide === 'SHORT') req.positionSide = posSide;
 
       const fns = [
-        this.exchange.fapiPrivatePostAlgoOrder,
-        this.exchange.fapiPrivate_post_algoorder,
-        this.exchange.fapiPrivatePostAlgoOrders,
-        this.exchange.fapiPrivate_post_algoorders,
-      ].filter(fn => typeof fn === 'function');
-      for (const fn of fns) {
+        ['fapiPrivatePostAlgoOrder', this.exchange.fapiPrivatePostAlgoOrder],
+        ['fapiPrivate_post_algoorder', this.exchange.fapiPrivate_post_algoorder],
+        ['fapiPrivatePostAlgoOrders', this.exchange.fapiPrivatePostAlgoOrders],
+        ['fapiPrivate_post_algoorders', this.exchange.fapiPrivate_post_algoorders],
+      ].filter(([, fn]) => typeof fn === 'function');
+      if (!fns.length) {
+        console.warn(`[${this.provider}] Binance algo method not found in ccxt instance; fallback to createOrder for ${kind}`, {
+          mappedSymbol,
+          nativeSymbol,
+          availableAlgoKeys: Object.keys(this.exchange || {}).filter(k => k.toLowerCase().includes('algo')).slice(0, 50)
+        });
+        return null;
+      }
+      console.log(`[${this.provider}] Trying Binance algo ${kind}`, {
+        methodCandidates: fns.map(([name]) => name),
+        request: req
+      });
+      for (const [name, fn] of fns) {
         const res = await fn.call(this.exchange, req);
         const algoId = String(res?.algoId || res?.orderId || res?.clientOrderId || '').trim();
-        if (algoId) return { id: algoId, raw: res };
+        if (algoId) {
+          console.log(`[${this.provider}] Binance algo ${kind} placed`, { method: name, algoId, response: res });
+          return { id: algoId, raw: res };
+        }
+        console.warn(`[${this.provider}] Binance algo ${kind} no id in response`, { method: name, response: res });
       }
       return null;
     };
@@ -765,7 +781,9 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
             childIds.push(algoSL.id);
             slParams._algoPlaced = true;
           }
-        } catch {}
+        } catch (algoErr) {
+          console.warn(`[${this.provider}] Binance algo SL failed, fallback to createOrder`, algoErr?.message || String(algoErr));
+        }
 
         if (slParams._algoPlaced) {
           delete slParams._algoPlaced;
@@ -808,7 +826,9 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           childIds.push(tpId);
           placed = true;
         }
-      } catch (_) {}
+      } catch (algoErr) {
+        console.warn(`[${this.provider}] Binance algo TP failed, fallback to createOrder`, algoErr?.message || String(algoErr));
+      }
 
       // 1) TP market on trigger
       if (!placed) {
