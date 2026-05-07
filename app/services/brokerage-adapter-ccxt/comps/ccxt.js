@@ -742,7 +742,9 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
 
       const fns = [
         this.exchange.fapiPrivatePostAlgoOrder,
+        this.exchange.fapiPrivate_post_algoorder,
         this.exchange.fapiPrivatePostAlgoOrders,
+        this.exchange.fapiPrivate_post_algoorders,
       ].filter(fn => typeof fn === 'function');
       for (const fn of fns) {
         const res = await fn.call(this.exchange, req);
@@ -944,7 +946,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       let algoOrders = [];
       if (this.exchangeId === 'binance') {
         const nativeSymbol = this.getNativeSymbol(sym);
-        algoOrders = await this.exchange.fapiPrivateGetOpenAlgoOrders({"symbol": nativeSymbol, "stop": true});
+        const getOpenAlgo =
+          this.exchange.fapiPrivateGetOpenAlgoOrders
+          || this.exchange.fapiPrivate_get_openalgoorders;
+        if (typeof getOpenAlgo === 'function') {
+          algoOrders = await getOpenAlgo.call(this.exchange, { symbol: nativeSymbol, stop: true });
+        }
       }
 
       console.log("Open orders sym", this.exchangeId,  simpleOrders, conditionalOrders, algoOrders );
@@ -972,7 +979,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
 
       let algoOrders = [];
       if (this.exchangeId === 'binance') {
-        algoOrders = await this.exchange.fapiPrivateGetOpenAlgoOrders();
+        const getOpenAlgo =
+          this.exchange.fapiPrivateGetOpenAlgoOrders
+          || this.exchange.fapiPrivate_get_openalgoorders;
+        if (typeof getOpenAlgo === 'function') {
+          algoOrders = await getOpenAlgo.call(this.exchange);
+        }
       }
       console.log("Open orders", this.exchangeId, simpleOrders, conditionalOrders, algoOrders );
 
