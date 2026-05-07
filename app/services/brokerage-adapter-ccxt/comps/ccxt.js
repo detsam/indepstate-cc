@@ -112,6 +112,34 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     return this._readyPromise;
   }
 
+  async _binanceSignedRequest(method, path, params = {}) {
+    const apiKey = this.exchange?.apiKey;
+    const secret = this.exchange?.secret;
+    if (!apiKey || !secret) throw new Error('Binance API key/secret are required');
+    const baseUrl = 'https://fapi.binance.com';
+    const payload = { ...params, recvWindow: 5000, timestamp: Date.now() };
+    const query = Object.entries(payload)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('&');
+    const signature = crypto.createHmac('sha256', secret).update(query).digest('hex');
+    const total = `${query}&signature=${signature}`;
+    const url = `${baseUrl}${path}${method === 'GET' || method === 'DELETE' ? `?${total}` : ''}`;
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'X-MBX-APIKEY': apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: method === 'GET' || method === 'DELETE' ? undefined : total
+    });
+    const txt = await res.text();
+    let json;
+    try { json = JSON.parse(txt); } catch { json = { raw: txt }; }
+    if (!res.ok) throw new Error(`binance ${JSON.stringify(json)}`);
+    return json;
+  }
+
   _buildSymbolMapFromMarkets(markets) {
     try {
       const list = Array.isArray(markets) ? markets : Object.values(markets || {});
@@ -747,20 +775,29 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         ['fapiPrivate_post_algoorders', this.exchange.fapiPrivate_post_algoorders],
       ].filter(([, fn]) => typeof fn === 'function');
       if (!fns.length) {
-        console.warn(`[${this.provider}] Binance algo method not found in ccxt instance; trying raw fapi endpoint for ${kind}`, {
+        console.warn(`[${this.provider}] Binance algo method not found in ccxt instance; trying signed /fapi/v1/algoOrder for ${kind}`, {
           mappedSymbol,
           nativeSymbol,
           availableAlgoKeys: Object.keys(this.exchange || {}).filter(k => k.toLowerCase().includes('algo')).slice(0, 50)
         });
-        if (typeof this.exchange.request === 'function') {
-          const res = await this.exchange.request('algo/order', 'fapiPrivate', 'POST', req);
-          const algoId = String(res?.algoId || res?.orderId || res?.clientOrderId || '').trim();
-          if (algoId) {
-            console.log(`[${this.provider}] Binance algo ${kind} placed via raw request`, { algoId, response: res });
-            return { id: algoId, raw: res };
-          }
-          console.warn(`[${this.provider}] Binance raw algo ${kind} response has no id`, { response: res });
+        const algoReq = {
+          algoType: 'CONDITIONAL',
+          symbol: nativeSymbol,
+          side: String(opposite || '').toUpperCase(),
+          type: req.type,
+          quantity: req.quantity,
+          triggerPrice: req.stopPrice,
+          workingType: 'MARK_PRICE',
+          clientAlgoId: `${kind.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+        };
+        if (String(baseParams?.positionSide || '').toUpperCase() === 'LONG' || String(baseParams?.positionSide || '').toUpperCase() === 'SHORT') {
+          algoReq.positionSide = String(baseParams.positionSide).toUpperCase();
+        } else {
+          algoReq.reduceOnly = 'true';
         }
+        const res = await this._binanceSignedRequest('POST', '/fapi/v1/algoOrder', algoReq);
+        const algoId = String(res?.algoId || res?.clientAlgoId || '').trim();
+        if (algoId) return { id: algoId, raw: res };
         return null;
       }
       console.log(`[${this.provider}] Trying Binance algo ${kind}`, {
@@ -1006,9 +1043,9 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           || this.exchange.fapiPrivate_get_openalgoorders;
         if (typeof getOpenAlgo === 'function') {
           algoOrders = await getOpenAlgo.call(this.exchange, { symbol: nativeSymbol, stop: true });
-        } else if (typeof this.exchange.request === 'function') {
+        } else {
           try {
-            algoOrders = await this.exchange.request('openAlgoOrders', 'fapiPrivate', 'GET', { symbol: nativeSymbol, stop: true });
+            algoOrders = await this._binanceSignedRequest('GET', '/fapi/v1/openAlgoOrders', { symbol: nativeSymbol });
           } catch (e) {
             console.warn(`[${this.provider}] raw openAlgoOrders failed for ${sym}:`, e?.message || String(e));
           }
