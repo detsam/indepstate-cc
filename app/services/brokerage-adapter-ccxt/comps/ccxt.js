@@ -783,15 +783,41 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     if (hasSL && Number.isFinite(slPrice) && slPrice > 0) {
       const slParams = { ...reduceParams, stopPrice: slPrice };
       try {
+        // 0) Для Binance USDⓈ-M часто працює саме closePosition STOP_MARKET через createOrder.
+        // Це не OCO/брекет, але коректно закриває відкриту позицію по тригеру.
+        if (this.exchangeId === 'binance') {
+          try {
+            const p = {
+              ...slParams,
+              closePosition: true,
+              workingType: slParams.workingType || 'CONTRACT_PRICE',
+              priceProtect: slParams.priceProtect ?? 'TRUE',
+            };
+            const slClosePos = await this.exchange.createOrder(mappedSymbol, 'stop_market', opposite, undefined, undefined, p);
+            const slCloseId = this._resolveOrderId(slClosePos);
+            if (slCloseId) {
+              childIds.push(slCloseId);
+              slParams._algoPlaced = true;
+            }
+          } catch (closeErr) {
+            console.warn(`[${this.provider}] Binance closePosition STOP_MARKET SL failed, trying algo/createOrder fallback`, closeErr?.message || String(closeErr));
+          }
+        }
+
         // 0) Binance Algo API
         try {
+          if (slParams._algoPlaced) throw new Error('SL_ALREADY_PLACED');
           const algoSL = await tryBinanceAlgoOrder({ kind: 'SL', triggerPrice: slPrice });
           if (algoSL?.id) {
             childIds.push(algoSL.id);
             slParams._algoPlaced = true;
           }
         } catch (algoErr) {
+          if (String(algoErr?.message || '') === 'SL_ALREADY_PLACED') {
+            // skip algo attempt
+          } else {
           console.warn(`[${this.provider}] Binance algo SL failed, fallback to createOrder`, algoErr?.message || String(algoErr));
+          }
         }
 
         if (slParams._algoPlaced) {
