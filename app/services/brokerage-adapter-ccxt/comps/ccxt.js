@@ -747,11 +747,20 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         ['fapiPrivate_post_algoorders', this.exchange.fapiPrivate_post_algoorders],
       ].filter(([, fn]) => typeof fn === 'function');
       if (!fns.length) {
-        console.warn(`[${this.provider}] Binance algo method not found in ccxt instance; fallback to createOrder for ${kind}`, {
+        console.warn(`[${this.provider}] Binance algo method not found in ccxt instance; trying raw fapi endpoint for ${kind}`, {
           mappedSymbol,
           nativeSymbol,
           availableAlgoKeys: Object.keys(this.exchange || {}).filter(k => k.toLowerCase().includes('algo')).slice(0, 50)
         });
+        if (typeof this.exchange.request === 'function') {
+          const res = await this.exchange.request('algo/order', 'fapiPrivate', 'POST', req);
+          const algoId = String(res?.algoId || res?.orderId || res?.clientOrderId || '').trim();
+          if (algoId) {
+            console.log(`[${this.provider}] Binance algo ${kind} placed via raw request`, { algoId, response: res });
+            return { id: algoId, raw: res };
+          }
+          console.warn(`[${this.provider}] Binance raw algo ${kind} response has no id`, { response: res });
+        }
         return null;
       }
       console.log(`[${this.provider}] Trying Binance algo ${kind}`, {
@@ -971,6 +980,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           || this.exchange.fapiPrivate_get_openalgoorders;
         if (typeof getOpenAlgo === 'function') {
           algoOrders = await getOpenAlgo.call(this.exchange, { symbol: nativeSymbol, stop: true });
+        } else if (typeof this.exchange.request === 'function') {
+          try {
+            algoOrders = await this.exchange.request('openAlgoOrders', 'fapiPrivate', 'GET', { symbol: nativeSymbol, stop: true });
+          } catch (e) {
+            console.warn(`[${this.provider}] raw openAlgoOrders failed for ${sym}:`, e?.message || String(e));
+          }
         }
       }
 
@@ -1004,6 +1019,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           || this.exchange.fapiPrivate_get_openalgoorders;
         if (typeof getOpenAlgo === 'function') {
           algoOrders = await getOpenAlgo.call(this.exchange);
+        } else if (typeof this.exchange.request === 'function') {
+          try {
+            algoOrders = await this.exchange.request('openAlgoOrders', 'fapiPrivate', 'GET', {});
+          } catch (e) {
+            console.warn(`[${this.provider}] raw openAlgoOrders failed:`, e?.message || String(e));
+          }
         }
       }
       console.log("Open orders", this.exchangeId, simpleOrders, conditionalOrders, algoOrders );
