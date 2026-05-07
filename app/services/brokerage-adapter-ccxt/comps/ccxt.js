@@ -713,10 +713,62 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       ? (side === 'buy' ? (entryPrice + Number(tpPts) * tick) : (entryPrice - Number(tpPts) * tick))
       : undefined;
 
+    // Binance Futures: частина умовних ордерів тепер вимагає Algo API endpoint.
+    // Намагаємось ставити SL/TP через algo endpoint, а createOrder залишаємо як fallback.
+    const tryBinanceAlgoOrder = async ({ kind, triggerPrice, limitPrice }) => {
+      if (this.exchangeId !== 'binance') return null;
+      const nativeSymbol = this.getNativeSymbol(mappedSymbol);
+      if (!nativeSymbol) return null;
+
+      const orderType = kind === 'SL' ? 'STOP_MARKET' : 'TAKE_PROFIT_MARKET';
+      const req = {
+        symbol: nativeSymbol,
+        side: String(opposite || '').toUpperCase(),
+        quantity: this.exchange.amountToPrecision(mappedSymbol, amount),
+        reduceOnly: 'true',
+        stopPrice: this.exchange.priceToPrecision(mappedSymbol, triggerPrice),
+        workingType: 'CONTRACT_PRICE',
+        priceProtect: 'TRUE',
+        timeInForce: 'GTC',
+        type: orderType,
+      };
+      if (Number.isFinite(limitPrice) && limitPrice > 0) {
+        req.type = kind === 'SL' ? 'STOP' : 'TAKE_PROFIT';
+        req.price = this.exchange.priceToPrecision(mappedSymbol, limitPrice);
+      }
+
+      const posSide = String(baseParams.positionSide || '').toUpperCase();
+      if (posSide === 'LONG' || posSide === 'SHORT') req.positionSide = posSide;
+
+      const fns = [
+        this.exchange.fapiPrivatePostAlgoOrder,
+        this.exchange.fapiPrivatePostAlgoOrders,
+      ].filter(fn => typeof fn === 'function');
+      for (const fn of fns) {
+        const res = await fn.call(this.exchange, req);
+        const algoId = String(res?.algoId || res?.orderId || res?.clientOrderId || '').trim();
+        if (algoId) return { id: algoId, raw: res };
+      }
+      return null;
+    };
+
     // SL: спершу намагаємось чистий stop-market (без price), фолбек — stop-limit
     if (hasSL && Number.isFinite(slPrice) && slPrice > 0) {
       const slParams = { ...reduceParams, stopPrice: slPrice };
       try {
+        // 0) Binance Algo API
+        try {
+          const algoSL = await tryBinanceAlgoOrder({ kind: 'SL', triggerPrice: slPrice });
+          if (algoSL?.id) {
+            childIds.push(algoSL.id);
+            slParams._algoPlaced = true;
+          }
+        } catch {}
+
+        if (slParams._algoPlaced) {
+          delete slParams._algoPlaced;
+          // already placed via algo endpoint
+        } else {
         // 1) Спроба створити чистий stop-market (без price)
         // Binance: деривативи — STOP_MARKET, spot — STOP_LOSS
         let slOrder;
@@ -734,6 +786,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         }
         const slId = this._resolveOrderId(slOrder);
         if (slId) childIds.push(slId);
+        }
       } catch (e) {
         console.error(`[${this.provider}] Failed to place SL order:`, e?.message || String(e));
       }
@@ -745,16 +798,28 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     // 3) fallback: звичайний limit (може бути відхилений на деяких біржах)
     if (hasTP && Number.isFinite(tpPrice) && tpPrice > 0) {
       let placed = false;
-      // 1) TP market on trigger
+      // 0) Binance Algo API
       try {
-        const p = { ...reduceParams, stopPrice: tpPrice };
-        const tpOrder = await this.exchange.createOrder(mappedSymbol, 'take_profit_market', opposite, amount, undefined, p);
-        const tpId = this._resolveOrderId(tpOrder);
+        const algoTP = await tryBinanceAlgoOrder({ kind: 'TP', triggerPrice: tpPrice });
+        const tpId = algoTP?.id;
         if (tpId) {
           childIds.push(tpId);
           placed = true;
         }
       } catch (_) {}
+
+      // 1) TP market on trigger
+      if (!placed) {
+        try {
+          const p = { ...reduceParams, stopPrice: tpPrice };
+          const tpOrder = await this.exchange.createOrder(mappedSymbol, 'take_profit_market', opposite, amount, undefined, p);
+          const tpId = this._resolveOrderId(tpOrder);
+          if (tpId) {
+            childIds.push(tpId);
+            placed = true;
+          }
+        } catch (_) {}
+      }
 
       // 2) TP limit on trigger
       if (!placed) {
