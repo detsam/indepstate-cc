@@ -91,7 +91,7 @@ function initService(servicesApi = {}) {
     }
     run(args) {
       if (!lastActivity) return { ok: false, error: 'No last activity' };
-      const [tpStr, riskStr] = args;
+      const [slStr, tpStr, riskStr] = args;
       const { symbol, price, lineId } = lastActivity;
       const ticker = typeof symbol === 'string' && symbol.includes(':') ? symbol.split(':')[1] : symbol;
       const hasLine = typeof lineId === 'string' && lineId !== '';
@@ -104,7 +104,7 @@ function initService(servicesApi = {}) {
         };
       }
       try {
-        return super.run([ticker, price, 6, tpStr, riskStr]);
+        return super.run([ticker, price, slStr, tpStr, riskStr]);
       } finally {
         this.onAdd = prevOnAdd;
       }

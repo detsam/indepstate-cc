@@ -1,40 +1,11 @@
 const { B1_TAIL } = require('./consolidation');
-
-function normalizeBar(bar) {
-  if (!bar || typeof bar !== 'object') return null;
-  const open = Number(bar.open);
-  const high = Number(bar.high);
-  const low = Number(bar.low);
-  const close = Number(bar.close);
-  const timeRaw = bar.time != null ? Number(bar.time) : (bar.timestamp != null ? Number(bar.timestamp) : undefined);
-  if (!Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
-    return null;
-  }
-  const normalized = { open: Number.isFinite(open) ? open : undefined, high, low, close };
-  if (Number.isFinite(timeRaw)) normalized.time = timeRaw;
-  return normalized;
-}
-
-function dedupeBars(bars) {
-  const byTime = new Map();
-  for (const bar of bars) {
-    if (!bar) continue;
-    if (bar.time == null) {
-      byTime.set(Symbol('no-time'), bar);
-      continue;
-    }
-    byTime.set(bar.time, bar);
-  }
-  return Array.from(byTime.values());
-}
-
-function sortBarsAsc(bars) {
-  return bars.slice().sort((a, b) => {
-    const ta = a.time == null ? -Infinity : a.time;
-    const tb = b.time == null ? -Infinity : b.time;
-    return ta - tb;
-  });
-}
+const {
+  normalizeBar,
+  dedupeBars,
+  sortBarsAsc,
+  mergeBars,
+  loadAndMergeHistory
+} = require('./historyUtils');
 
 function firstFinite(values) {
   for (const v of values) {
@@ -71,6 +42,7 @@ class LimitByCurrentStrategy {
       ? bars.map(normalizeBar).filter(Boolean)
       : null;
     this.latestBar = null;
+    this.historyLoadPromise = null;
   }
 
   async onBar(bar) {
@@ -125,25 +97,38 @@ class LimitByCurrentStrategy {
     }
   }
 
-  async _getSequence() {
-    if (this.cachedSeq) return this.cachedSeq;
-    let bars = Array.isArray(this.initialBars) ? [...this.initialBars] : [];
-    if ((!bars || bars.length === 0) && this.historyLoader) {
+  async _loadHistoryOnce() {
+    if (!this.historyLoader) return;
+    if (this.historyLoadPromise) return this.historyLoadPromise;
+    this.historyLoadPromise = (async () => {
       try {
-        const fetched = await this.historyLoader({
-          limit: this.historyBars,
-          timeframe: this.historyTimeframe,
+        this.initialBars = await loadAndMergeHistory({
+          historyLoader: this.historyLoader,
+          historyTimeframe: this.historyTimeframe,
+          historyLimit: this.historyBars,
           price: this.price,
           side: this.side,
-          symbol: this.symbol
+          symbol: this.symbol,
+          existingBars: this.initialBars,
+          normalizeBar,
+          mergeBars,
+          maxBars: this.historyBars * 2
         });
-        if (Array.isArray(fetched)) {
-          bars = fetched.map(normalizeBar).filter(Boolean);
-        }
       } catch (err) {
         console.error('limitByCurrent: historyLoader failed', err);
+        this.historyLoadPromise = null;
       }
+    })();
+    return this.historyLoadPromise;
+  }
+
+  async _getSequence() {
+    if (this.cachedSeq) return this.cachedSeq;
+    const initialCount = Array.isArray(this.initialBars) ? this.initialBars.length : 0;
+    if (this.historyLoader && initialCount < this.historyBars) {
+      await this._loadHistoryOnce();
     }
+    let bars = Array.isArray(this.initialBars) ? [...this.initialBars] : [];
     if (this.latestBar) bars.push(this.latestBar);
     if (!bars.length) return null;
     bars = dedupeBars(bars);
@@ -210,4 +195,3 @@ class LimitByCurrentStrategy {
 }
 
 module.exports = { LimitByCurrentStrategy };
-

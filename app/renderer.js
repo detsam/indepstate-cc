@@ -2,20 +2,24 @@
 const {ipcRenderer} = require('electron');
 const path = require('path');
 const loadConfig = require('./config/load');
-const tradeRules = require('./services/tradeRules');
+const servicesApi = require('./services/servicesApi');
+const tradeRules = servicesApi.tradeRules || require('./services/tradeRules');
 const {detectInstrumentType} = require("./services/instruments");
-const { findTickSizeFromConfig } = require('./services/points');
-const { OrderCalculator } = require('./services/orderCalculator');
+const {findTickSizeFromConfig} = require('./services/points');
+const orderCalc = servicesApi.orderCalculator || require('./services/orderCalculator');
 const orderCardsCfg = loadConfig('../services/orderCards/config/order-cards.json');
-const orderCalc = new OrderCalculator();
 const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
 const EQUITY_DEFAULT_STOP_USD = Number.isFinite(envEquityStop)
   ? envEquityStop
   : Number(orderCardsCfg?.defaultEquityStopUsd) || 0;
 
+const envCxStop = Number(process.env.DEFAULT_CX_STOP_USD);
+const CX_DEFAULT_STOP_USD = Number.isFinite(envCxStop)
+  ? envCxStop
+  : Number(orderCardsCfg?.defaultCxStopUsd) || 0;
+
 const SHOW_BID_ASK = !!(orderCardsCfg && orderCardsCfg.showBidAsk);
 const SHOW_SPREAD = !!(orderCardsCfg && orderCardsCfg.showSpread);
-
 
 
 const envInstrRefresh = Number(process.env.INSTRUMENT_REFRESH_MS);
@@ -24,26 +28,28 @@ const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
   : Number(orderCardsCfg?.instrumentRefreshMs) || 1000;
 
 const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ignore';
+const BUTTON_ROWS = Number(orderCardsCfg?.buttonRows) || 1;
 
 const DEFAULT_CARD_BUTTONS = [
-  { label: 'BL',  action: 'BL',  style: 'bl' },
-  { label: 'BC',  action: 'BC',  style: 'bc' },
-  { label: 'BFB', action: 'BFB', style: 'bc' },
-  { label: 'SL',  action: 'SL',  style: 'sl' },
-  { label: 'SC',  action: 'SC',  style: 'sc' },
-  { label: 'SFB', action: 'SFB', style: 'sc' }
+  {label: 'BL', action: 'BL', style: 'bl'},
+  {label: 'BC', action: 'BC', style: 'bc'},
+  {label: 'BFB', action: 'BFB', style: 'bc'},
+  {label: 'SL', action: 'SL', style: 'sl'},
+  {label: 'SC', action: 'SC', style: 'sc'},
+  {label: 'SFB', action: 'SFB', style: 'sc'}
 ];
 const CARD_BUTTONS = Array.isArray(orderCardsCfg?.buttons) && orderCardsCfg.buttons.length
-  ? orderCardsCfg.buttons.map((b) => Array.isArray(b) ? { label: b[0], action: b[1], style: b[2] } : b)
-      .filter((b) => b && b.label && b.action)
+  ? orderCardsCfg.buttons.map((b) => Array.isArray(b) ? {label: b[0], action: b[1], style: b[2]} : b)
+    .filter((b) => b && b.label && b.action)
   : DEFAULT_CARD_BUTTONS;
 
 const closedCardStrategies = {
-  ignore: () => {},
-  revive: ({ row, idx, oldRow, oldKey }) => {
+  ignore: () => {
+  },
+  revive: ({row, idx, oldRow, oldKey}) => {
     userTouchedByTicker.delete(row.ticker);
     setCardState(oldKey, null);
-    const newRow = { ...oldRow, ...row };
+    const newRow = {...oldRow, ...row};
     const newKey = rowKey(newRow);
     state.rows[idx] = newRow;
     migrateKey(oldKey, newKey, {
@@ -75,7 +81,8 @@ ipcRenderer.invoke('settings:get', 'ui').then((res) => {
   } else if (res?.config && typeof res.config.autoscroll === 'boolean') {
     state.autoscroll = res.config.autoscroll;
   }
-}).catch(() => {});
+}).catch(() => {
+});
 
 // Per-card UI state (persist across renders)
 // Crypto:    { qty, price, sl, tp, tpTouched }
@@ -157,7 +164,8 @@ function loadSettingsSections() {
       $settingsSections.appendChild(div);
     });
     if (sections[0]) showSection(sections[0].key);
-  }).catch(() => {});
+  }).catch(() => {
+  });
 }
 
 function showSection(name) {
@@ -244,8 +252,12 @@ function showSection(name) {
               input.value = initial ?? '';
             }
             input.dataset.field = path;
-            input.addEventListener('input', () => { form.dataset.dirty = '1'; });
-            input.addEventListener('change', () => { form.dataset.dirty = '1'; });
+            input.addEventListener('input', () => {
+              form.dataset.dirty = '1';
+            });
+            input.addEventListener('change', () => {
+              form.dataset.dirty = '1';
+            });
             label.appendChild(input);
             const rm = document.createElement('button');
             rm.type = 'button';
@@ -296,7 +308,8 @@ function showSection(name) {
         ...Object.keys(descObj || {})
       ]);
       for (const key of keys) {
-        if (key === 'description' || key === 'type') continue;
+        if (key === 'description') continue;
+        if (key === 'type' && descObj && typeof descObj.type === 'string') continue;
         const hasValue = cfgObj && hasOwn.call(cfgObj, key);
         const val = hasValue ? cfgObj[key] : undefined;
         const d = descObj ? descObj[key] : undefined;
@@ -340,8 +353,12 @@ function showSection(name) {
           }
           const path = prefix ? `${prefix}.${key}` : key;
           input.dataset.field = path;
-          input.addEventListener('input', () => { form.dataset.dirty = '1'; });
-          input.addEventListener('change', () => { form.dataset.dirty = '1'; });
+          input.addEventListener('input', () => {
+            form.dataset.dirty = '1';
+          });
+          input.addEventListener('change', () => {
+            form.dataset.dirty = '1';
+          });
           label.appendChild(input);
           parent.appendChild(label);
         }
@@ -351,7 +368,8 @@ function showSection(name) {
     settingsForms.set(name, form);
     $settingsFields.innerHTML = '';
     $settingsFields.appendChild(form);
-  }).catch(() => {});
+  }).catch(() => {
+  });
 }
 
 // ======= Utils =======
@@ -518,7 +536,8 @@ function setCardState(key, state) {
             provider: orderInfo.provider,
             ticket: orderInfo.ticket,
             symbol: orderInfo.symbol
-          }).catch(() => {});
+          }).catch(() => {
+          });
         }
         placedOrderByKey.delete(key);
         for (const [ticket, k] of ticketToKey.entries()) {
@@ -533,7 +552,8 @@ function setCardState(key, state) {
       status.onclick = () => {
         const reqId = card.dataset.reqId;
         const pendingId = card.dataset.pendingId || (reqId ? pendingIdByReqId.get(reqId) : null);
-        if (pendingId) ipcRenderer.invoke('pending:cancel', pendingId).catch(() => {});
+        if (pendingId) ipcRenderer.invoke('pending:cancel', pendingId).catch(() => {
+        });
         if (reqId) {
           pendingByReqId.delete(reqId);
           pendingIdByReqId.delete(reqId);
@@ -649,7 +669,7 @@ function ensureInstrument(ticker, provider) {
   if (instrumentInfo.has(ticker)) return; // already have data
   if (pendingInstruments.has(ticker)) return; // request in-flight
   pendingInstruments.add(ticker);
-  ipcRenderer.invoke('instrument:get', { symbol: ticker, provider }).then(info => {
+  ipcRenderer.invoke('instrument:get', {symbol: ticker, provider}).then(info => {
     if (info) {
       pendingInstruments.delete(ticker);
       instrumentInfo.set(ticker, info);
@@ -674,7 +694,8 @@ function forgetInstrument(ticker, provider) {
   if (state.rows.some(r => r.ticker === ticker && r.provider === provider)) return;
   instrumentInfo.delete(ticker);
   pendingInstruments.delete(ticker);
-  ipcRenderer.invoke('instrument:forget', { symbol: ticker, provider }).catch(() => {});
+  ipcRenderer.invoke('instrument:forget', {symbol: ticker, provider}).catch(() => {
+  });
 }
 
 // Періодичне оновлення інструментної інформації для всіх видимих карток
@@ -696,7 +717,7 @@ function forgetInstrument(ticker, provider) {
 
         pendingInstruments.add(t);
         try {
-          const info = await ipcRenderer.invoke('instrument:get', { symbol: t, provider });
+          const info = await ipcRenderer.invoke('instrument:get', {symbol: t, provider});
           if (info) {
             const prev = instrumentInfo.get(t);
             instrumentInfo.set(t, info);
@@ -905,8 +926,9 @@ function createCard(row, index) {
     b.setAttribute('data-kind', kind);
     return b;
   };
-  btns.style.gridTemplateColumns = `repeat(${CARD_BUTTONS.length},1fr)`;
-  for (const { label, action, style } of CARD_BUTTONS) {
+  const cols = Math.ceil(CARD_BUTTONS.length / BUTTON_ROWS);
+  btns.style.gridTemplateColumns = `repeat(${cols},1fr)`;
+  for (const {label, action, style} of CARD_BUTTONS) {
     btns.appendChild(mk(label, (style || action).toLowerCase(), action));
   }
 
@@ -936,7 +958,7 @@ function createCryptoBody(row, key) {
     price: row.price != null ? String(row.price) : '',
     sl: row.sl != null ? String(row.sl) : '',
     tp: row.tp != null ? String(row.tp) : '',
-    risk: EQUITY_DEFAULT_STOP_USD ? String(EQUITY_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига, // як у FX: Risk $, використовується для автоперерахунку qty
+    risk: CX_DEFAULT_STOP_USD ? String(CX_DEFAULT_STOP_USD) : '', // дефолтный риск из конфига, // як у FX: Risk $, використовується для автоперерахунку qty
     tpTouched: row.tp != null, // если TP пришёл с хуком — не перезатираем авто-логикой
   };
   let tpTouched = !!saved.tpTouched;
@@ -968,7 +990,14 @@ function createCryptoBody(row, key) {
   line.appendChild($risk);
 
   const persist = () => {
-    uiState.set(key, {qty: $qty.value, price: $price.value, sl: $sl.value, tp: $tp.value, risk: $risk.value, tpTouched});
+    uiState.set(key, {
+      qty: $qty.value,
+      price: $price.value,
+      sl: $sl.value,
+      tp: $tp.value,
+      risk: $risk.value,
+      tpTouched
+    });
   };
   const recomputeTP = () => {
     if (!tpTouched) {
@@ -986,7 +1015,7 @@ function createCryptoBody(row, key) {
     const tick = tickSize(row) || 1; //safe tick 1
 
     if (isPos(r) && isSL(sl)) {
-      const q = orderCalc.qty({ riskUsd: r, stopPts: sl, tickSize: tick, lot, instrumentType: 'CX' });
+      const q = orderCalc.qty({riskUsd: r, stopPts: sl, tickSize: tick, lot, instrumentType: 'CX'});
       $qty.value = String(q);
     }
     persist();
@@ -1001,31 +1030,38 @@ function createCryptoBody(row, key) {
     setNote($note) {
       this._note = $note;
     },
-      validate(commit = false) {
-        const qty = _normNum($qty.value);
-        const pr = _normNum($price.value);
-        const sl = priceToPoints($sl, pr, row, commit);
-        const tpVal = priceToPoints($tp, pr, row, commit);
-        const info = instrumentInfo.get(row.ticker);
-        const instrumentType = row.instrumentType || detectInstrumentType(row.ticker);
-        const qtyOk = isPos(qty);
-        const priceOk = isPos(pr);
-        const slOk = isSL(sl);
-        const {ok: rulesOk, reason: ruleReason = ''} = tradeRules.validate({price: pr, side: row.side, sl, instrumentType, qty}, info);
-        const valid = qtyOk && priceOk && slOk && rulesOk;
+    validate(commit = false) {
+      const qty = _normNum($qty.value);
+      const pr = _normNum($price.value);
+      const risk = _normNum($risk.value);
+      const sl = priceToPoints($sl, pr, row, commit);
+      const tpVal = priceToPoints($tp, pr, row, commit);
+      const info = instrumentInfo.get(row.ticker);
+      const instrumentType = row.instrumentType || detectInstrumentType(row.ticker);
+      const qtyOk = isPos(qty);
+      const priceOk = isPos(pr);
+      const slOk = isSL(sl);
+      const {ok: rulesOk, reason: ruleReason = ''} = tradeRules.validate({
+        price: pr,
+        side: row.side,
+        sl,
+        instrumentType,
+        qty
+      }, info);
+      const valid = qtyOk && priceOk && slOk && rulesOk;
 
       line.classList.toggle('card--invalid', !valid);
 
       const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
       setErr($qty, !qtyOk || (!rulesOk && ruleReason.toLowerCase().includes('qty')));
-        setErr($price, !priceOk || (!rulesOk && !ruleReason.toLowerCase().includes('sl')));
-        setErr($sl, !slOk || (!rulesOk && ruleReason.toLowerCase().includes('sl')));
+      setErr($price, !priceOk || (!rulesOk && !ruleReason.toLowerCase().includes('sl')));
+      setErr($sl, !slOk || (!rulesOk && ruleReason.toLowerCase().includes('sl')));
 
-        const reason = !qtyOk ? 'Qty > 0'
-          : !priceOk ? 'Price > 0'
-            : !slOk ? 'SL > 0'
-              : !rulesOk ? ruleReason
-                : '';
+      const reason = !qtyOk ? 'Qty > 0'
+        : !priceOk ? 'Price > 0'
+          : !slOk ? 'SL > 0'
+            : !rulesOk ? ruleReason
+              : '';
       if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
@@ -1039,8 +1075,7 @@ function createCryptoBody(row, key) {
           this._note.style.display = 'none';
         }
       }
-
-      return {valid, type: 'crypto', qty, pr, sl, tp: tpVal};
+      return {valid, type: 'crypto', qty, pr, sl, tp: tpVal, risk};
     }
   };
 
@@ -1148,17 +1183,17 @@ function createFxBody(row, key) {
       tpTouched
     });
   };
-    const recomputeQtyFromRisk = () => {
-      const r = _normNum($risk.value);
-      const sl = priceToPoints($sl, _normNum($price.value), row);
-      if (isPos(r) && isSL(sl)) {
-        const tick = tickSize(row);
-        const lot = row.lot || 100000;
-        const q = orderCalc.qty({ riskUsd: r, stopPts: sl, tickSize: tick, lot, instrumentType: 'FX' });
-        $qty.value = String(q);
-      }
-      persist();
-    };
+  const recomputeQtyFromRisk = () => {
+    const r = _normNum($risk.value);
+    const sl = priceToPoints($sl, _normNum($price.value), row);
+    if (isPos(r) && isSL(sl)) {
+      const tick = tickSize(row);
+      const lot = row.lot || 100000;
+      const q = orderCalc.qty({riskUsd: r, stopPts: sl, tickSize: tick, lot, instrumentType: 'FX'});
+      $qty.value = String(q);
+    }
+    persist();
+  };
   const recomputeTP = () => {
     if (!tpTouched) {
       const slv = priceToPoints($sl, _normNum($price.value), row);
@@ -1175,44 +1210,50 @@ function createFxBody(row, key) {
     setButtons($btns) {
       this._btns = $btns;
     },
-      validate(commit = false) {
-        const qtyRaw = _normNum($qty.value);
-        const pr = _normNum($price.value);
-        const sl = priceToPoints($sl, pr, row, commit);
-        const tpVal = priceToPoints($tp, pr, row, commit);
-        const risk = _normNum($risk.value);
-        const info = instrumentInfo.get(row.ticker);
-        const instrumentType = row.instrumentType || 'FX';
+    validate(commit = false) {
+      const qtyRaw = _normNum($qty.value);
+      const pr = _normNum($price.value);
+      const sl = priceToPoints($sl, pr, row, commit);
+      const tpVal = priceToPoints($tp, pr, row, commit);
+      const risk = _normNum($risk.value);
+      const info = instrumentInfo.get(row.ticker);
+      const instrumentType = row.instrumentType || 'FX';
 
-        const qtyOk = Number.isFinite(qtyRaw) && qtyRaw > 0;
-        const { ok: rulesOk, reason: ruleReason = '' } = tradeRules.validate({ price: pr, side: row.side, sl, instrumentType, qty: qtyRaw }, info);
-        const valid = isPos(risk) && isSL(sl) && isPos(pr) && qtyOk && rulesOk;
+      const qtyOk = Number.isFinite(qtyRaw) && qtyRaw > 0;
+      const {ok: rulesOk, reason: ruleReason = ''} = tradeRules.validate({
+        price: pr,
+        side: row.side,
+        sl,
+        instrumentType,
+        qty: qtyRaw
+      }, info);
+      const valid = isPos(risk) && isSL(sl) && isPos(pr) && qtyOk && rulesOk;
 
-        line.classList.toggle('card--invalid', !valid);
+      line.classList.toggle('card--invalid', !valid);
 
-        const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
-        setErr($risk, !isPos(risk));
-        setErr($sl, !isSL(sl) || (!rulesOk && ruleReason.toLowerCase().includes('sl')));
-        setErr($price, !isPos(pr) || (!rulesOk && !ruleReason.toLowerCase().includes('sl')));
-        setErr($qty, !qtyOk || (!rulesOk && ruleReason.toLowerCase().includes('qty')));
+      const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
+      setErr($risk, !isPos(risk));
+      setErr($sl, !isSL(sl) || (!rulesOk && ruleReason.toLowerCase().includes('sl')));
+      setErr($price, !isPos(pr) || (!rulesOk && !ruleReason.toLowerCase().includes('sl')));
+      setErr($qty, !qtyOk || (!rulesOk && ruleReason.toLowerCase().includes('qty')));
 
-        const reason = !isPos(risk) ? 'Risk $ > 0'
-          : !isSL(sl) ? 'SL > 0'
-            : !isPos(pr) ? 'Price > 0'
-              : !qtyOk ? 'Qty > 0'
-                : !rulesOk ? ruleReason
-                  : '';
-        if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
-          b.disabled = !valid;
-          if (!valid) b.title = reason; else b.removeAttribute('title');
-        });
+      const reason = !isPos(risk) ? 'Risk $ > 0'
+        : !isSL(sl) ? 'SL > 0'
+          : !isPos(pr) ? 'Price > 0'
+            : !qtyOk ? 'Qty > 0'
+              : !rulesOk ? ruleReason
+                : '';
+      if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
+        b.disabled = !valid;
+        if (!valid) b.title = reason; else b.removeAttribute('title');
+      });
 
-        return {
-          valid, type: 'fx',
-          qty: qtyRaw, pr, sl, risk, tp: tpVal //todo normalize to min qty
-        };
-      }
-    };
+      return {
+        valid, type: 'fx',
+        qty: qtyRaw, pr, sl, risk, tp: tpVal //todo normalize to min qty
+      };
+    }
+  };
 
   // wiring
   $risk.addEventListener('input', () => {
@@ -1331,7 +1372,7 @@ function createEquitiesBody(row, key) {
     const sl = priceToPoints($sl, _normNum($price.value), row);
     if (isPos(r) && isSL(sl)) {
       const tick = tickSize(row);
-      const q = orderCalc.qty({ riskUsd: r, stopPts: sl, tickSize: tick, instrumentType: 'EQ' });
+      const q = orderCalc.qty({riskUsd: r, stopPts: sl, tickSize: tick, instrumentType: 'EQ'});
       $qty.value = String(q);
     }
     persist();
@@ -1355,37 +1396,43 @@ function createEquitiesBody(row, key) {
     setNote($note) {
       this._note = $note;
     },
-      validate(commit = false) {
-        const qtyRaw = _normNum($qty.value);
-        const pr = _normNum($price.value);
-        const sl = priceToPoints($sl, pr, row, commit);
-        const tpVal = priceToPoints($tp, pr, row, commit);
-        const risk = _normNum($risk.value);
-        const info = instrumentInfo.get(row.ticker);
-        const instrumentType = row.instrumentType || detectInstrumentType(row.ticker);
+    validate(commit = false) {
+      const qtyRaw = _normNum($qty.value);
+      const pr = _normNum($price.value);
+      const sl = priceToPoints($sl, pr, row, commit);
+      const tpVal = priceToPoints($tp, pr, row, commit);
+      const risk = _normNum($risk.value);
+      const info = instrumentInfo.get(row.ticker);
+      const instrumentType = row.instrumentType || detectInstrumentType(row.ticker);
 
-        const qtyOk = Number.isFinite(qtyRaw) && qtyRaw >= 1 && Math.floor(qtyRaw) === qtyRaw;
-        const priceOk = isPos(pr);
-        const slOk = isSL(sl);
-        const riskOk = isPos(risk);
-        const {ok: rulesOk, reason: ruleReason = ''} = tradeRules.validate({price: pr, side: row.side, sl, instrumentType, qty: qtyRaw}, info);
+      const qtyOk = Number.isFinite(qtyRaw) && qtyRaw >= 1 && Math.floor(qtyRaw) === qtyRaw;
+      const priceOk = isPos(pr);
+      const slOk = isSL(sl);
+      const riskOk = isPos(risk);
+      const {ok: rulesOk, reason: ruleReason = ''} = tradeRules.validate({
+        price: pr,
+        side: row.side,
+        sl,
+        instrumentType,
+        qty: qtyRaw
+      }, info);
 
-        const valid = riskOk && slOk && priceOk && qtyOk && rulesOk;
+      const valid = riskOk && slOk && priceOk && qtyOk && rulesOk;
 
       line.classList.toggle('card--invalid', !valid);
 
       const setErr = (inp, bad) => inp.classList.toggle('input--error', !!bad);
       setErr($risk, !riskOk);
-        setErr($sl, !slOk || (!rulesOk && ruleReason.toLowerCase().includes('sl')));
-        setErr($price, !priceOk || (!rulesOk && !ruleReason.toLowerCase().includes('sl')));
+      setErr($sl, !slOk || (!rulesOk && ruleReason.toLowerCase().includes('sl')));
+      setErr($price, !priceOk || (!rulesOk && !ruleReason.toLowerCase().includes('sl')));
       setErr($qty, !qtyOk || (!rulesOk && ruleReason.toLowerCase().includes('qty')));
 
-        const reason = !riskOk ? 'Risk $ > 0'
-          : !slOk ? 'SL > 0'
-            : !priceOk ? 'Price > 0'
-              : !qtyOk ? 'Qty ≥ 1 (int)'
-                : !rulesOk ? ruleReason
-                  : '';
+      const reason = !riskOk ? 'Risk $ > 0'
+        : !slOk ? 'SL > 0'
+          : !priceOk ? 'Price > 0'
+            : !qtyOk ? 'Qty ≥ 1 (int)'
+              : !rulesOk ? ruleReason
+                : '';
       if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
         b.disabled = !valid;
         if (!valid) b.title = reason; else b.removeAttribute('title');
@@ -1417,9 +1464,9 @@ function createEquitiesBody(row, key) {
   $sl.addEventListener('input', () => {
     markTouched(row.ticker);
     if (String($sl.value).includes('.')) tpTouched = false;
-   recomputeQtyFromRisk();
-   recomputeTP();
-   body.validate();
+    recomputeQtyFromRisk();
+    recomputeTP();
+    body.validate();
   });
   $sl.addEventListener('blur', () => {
     const raw = $sl.value;
@@ -1606,19 +1653,20 @@ function revalidateCardsForTicker(ticker) {
     if (typeof card._validate === 'function') {
       try {
         card._validate(false);
-      } catch (_) {}
+      } catch (_) {
+      }
     }
   });
 }
 
 // ======= Order placement (shared) =======
 const PENDING_ACTIONS = {
-  BC: { strategy: 'consolidation', side: 'long' },
-  SC: { strategy: 'consolidation', side: 'short' },
-  BFB: { strategy: 'falseBreak', side: 'long' },
-  SFB: { strategy: 'falseBreak', side: 'short' },
-  BP: { strategy: 'limitByCurrent', side: 'long' },
-  SP: { strategy: 'limitByCurrent', side: 'short' }
+  BC: {strategy: 'consolidation', side: 'long'},
+  SC: {strategy: 'consolidation', side: 'short'},
+  BFB: {strategy: 'falseBreak', side: 'long'},
+  SFB: {strategy: 'falseBreak', side: 'short'},
+  BP: {strategy: 'limitByCurrent', side: 'long'},
+  SP: {strategy: 'limitByCurrent', side: 'short'}
 };
 
 async function place(kind, row, v, instrumentType, btnLabel) {
@@ -1648,6 +1696,7 @@ async function place(kind, row, v, instrumentType, btnLabel) {
     slVal = v.sl;
     takeVal = v.tp ?? null;
     tick = tickSize(row);  //do not fallback for crypro to keep fail order if tick size is unknown
+    extra.riskUsd = v.risk;
   } else if (v.type === 'equities') {
     qtyVal = v.qtyInt;
     priceVal = v.pr;
@@ -1856,7 +1905,7 @@ ipcRenderer.on('execution:retry-stopped', (_evt, rec) => {
 
 ipcRenderer.on('orders:remove', (_evt, filter) => {
   if (!filter || typeof filter !== 'object') return;
-  const { producingLineId } = filter;
+  const {producingLineId} = filter;
   if (producingLineId == null) return;
   const targetId = String(producingLineId);
   if (!targetId) return;
@@ -1868,14 +1917,14 @@ ipcRenderer.on('orders:remove', (_evt, filter) => {
   for (const row of state.rows) {
     const key = rowKey(row);
     if (keysToRemove.has(key)) {
-      removed.push({ row, key });
+      removed.push({row, key});
     } else {
       nextRows.push(row);
     }
   }
   if (removed.length === 0) return;
   state.rows = nextRows;
-  removed.forEach(({ row, key }) => {
+  removed.forEach(({row, key}) => {
     uiState.delete(key);
     cardStates.delete(key);
     clearPendingByKey(key);
@@ -1902,7 +1951,7 @@ ipcRenderer.on('orders:new', (_evt, row) => {
   const oldKey = rowKey(oldRow);
   const st = cardStates.get(oldKey);
   if (st === 'profit' || st === 'loss') {
-    handleClosedCard({ row, idx, oldRow, oldKey });
+    handleClosedCard({row, idx, oldRow, oldKey});
     return;
   }
 
@@ -1917,7 +1966,7 @@ ipcRenderer.on('orders:new', (_evt, row) => {
   }
 
   // пользователь не менял: обновляем данными последнего ивента + переносим наверх
-  const newRow = { ...oldRow, ...row };
+  const newRow = {...oldRow, ...row};
   const newKey = rowKey(newRow);
 
   // подменяем строку
@@ -2068,7 +2117,8 @@ $settingsClose.addEventListener('click', () => {
         else val = inp.value;
         setNested(data, k, val);
       }
-      ipcRenderer.invoke('settings:set', name, data).catch(() => {});
+      ipcRenderer.invoke('settings:set', name, data).catch(() => {
+      });
       if (name === 'ui') state.autoscroll = !!data.autoscroll;
     }
   }
@@ -2115,4 +2165,3 @@ if (typeof module !== 'undefined') {
     pendingExecLabels
   };
 }
-

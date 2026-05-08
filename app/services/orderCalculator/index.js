@@ -1,15 +1,26 @@
+const loadConfig = require('../../config/load');
+
 class OrderCalculator {
-  constructor({ tradeRules } = {}) {
+  constructor({ config, tradeRules } = {}) {
+    this.config = config || this._loadDefaultConfig();
     this.tradeRules = tradeRules;
+  }
+
+  _loadDefaultConfig() {
+    try {
+      return loadConfig('../services/orderCalculator/config/order-calculator.json');
+    } catch (e) {
+      return { profitRate: 3 };
+    }
   }
 
   // Calculate stop loss points from entry and stop prices
   stopPts({ tickSize, symbol, entryPrice, stopPrice, instrumentType }) {
-    const { toPoints } = require('./points');
+    const { toPoints } = require('../points');
     let pts = toPoints(tickSize, symbol, Math.abs(entryPrice - stopPrice), entryPrice);
 
     const tr = this.tradeRules;
-    const minRule = tr?.rules?.find(r => r instanceof tr.MinStopPointsRule);
+    const minRule = tr?.rules?.find(r => r.constructor.name === 'MinStopPointsRule');
     if (minRule) {
       const minPts = minRule._min({ instrumentType });
       if (Number.isFinite(minPts) && Number.isFinite(pts) && pts < minPts) {
@@ -19,9 +30,10 @@ class OrderCalculator {
     return pts;
   }
 
-  // Default take profit is triple the stop points
+  // Default take profit is triple the stop points or based on config profit rate
   takePts(stopPts) {
-    return Number.isFinite(stopPts) ? stopPts * 3 : undefined;
+    const rate = this.config?.profitRate ?? 3;
+    return Number.isFinite(stopPts) ? stopPts * rate : undefined;
   }
 
   // Calculate position size from risk in USD
@@ -45,4 +57,17 @@ class OrderCalculator {
   }
 }
 
-module.exports = { OrderCalculator };
+function buildOrderCalculator(cfg = {}, servicesApi = require('../servicesApi')) {
+  return new OrderCalculator({
+    config: cfg,
+    get tradeRules() { return servicesApi.tradeRules; }
+  });
+}
+
+let cfg = {};
+try { cfg = loadConfig('../services/orderCalculator/config/order-calculator.json'); }
+catch { cfg = {}; }
+
+module.exports = buildOrderCalculator(cfg);
+module.exports.OrderCalculator = OrderCalculator;
+module.exports.buildOrderCalculator = buildOrderCalculator;

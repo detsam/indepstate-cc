@@ -5,7 +5,7 @@ const { PendingOrderService } = require('./service');
 const { createStrategyFactory } = require('./factory');
 const servicesApi = require('../servicesApi');
 const tradeRules = require('../tradeRules');
-const { OrderCalculator } = require('../orderCalculator');
+const orderCalc = servicesApi.orderCalculator || require('../orderCalculator');
 const loadConfig = require('../../config/load');
 
 const execCfg = loadConfig('../services/brokerage/config/execution.json');
@@ -24,7 +24,6 @@ function pickProviderName(instrumentType) {
   return execCfg.byInstrumentType?.[instrumentType] || execCfg.default || 'simulated';
 }
 
-const orderCalc = new OrderCalculator({ tradeRules });
 
 const TF_SECONDS = {
   M1: 60,
@@ -98,10 +97,11 @@ class PendingOrderHub {
     this.mainWindow = mainWindow;
     this.getAdapter = getAdapter || servicesApi.brokerage?.getAdapter;
 
-    events.on('bar', ({ provider, symbol, tf, open, high, low, close }) => {
+    events.on('bar', ({ provider, symbol, tf, open, high, low, close, time, timestamp }) => {
       if (tf !== 'M1') return;
       const svc = this.services.get(`${provider}:${symbol}`);
-      if (svc) svc.onBar({ open, high, low, close });
+      const barTime = time ?? timestamp;
+      if (svc) svc.onBar({ open, high, low, close, time: barTime });
     });
 
     if (ipcMain) {

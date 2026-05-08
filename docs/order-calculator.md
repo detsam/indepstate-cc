@@ -6,6 +6,7 @@ Centralizes order mathematics such as stop-loss points, take-profit targets and 
 
 ```javascript
 const { OrderCalculator } = require('../app/services/orderCalculator');
+const tradeRules = require('../app/services/tradeRules');
 const calc = new OrderCalculator({ tradeRules });
 const stopPts = calc.stopPts({ tickSize, symbol, entryPrice, stopPrice, instrumentType });
 const takePts = calc.takePts(stopPts);

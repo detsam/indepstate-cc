@@ -13,6 +13,7 @@
   "services/pendingOrders",
   "services/points",
   "services/tradeRules",
+  "services/orderCalculator",
   "services/ngrok",
   "services/actions-bus",
   "services/tvProxy",

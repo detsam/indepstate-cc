@@ -2,6 +2,7 @@
 const { ExecutionAdapter } = require('../../brokerage/comps/base');
 const ccxt = require('ccxt');
 const crypto = require('crypto');
+const events = require('../../events');
 
 class CCXTExecutionAdapter extends ExecutionAdapter {
   /**
@@ -36,8 +37,14 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       options: cfg.options || {},
     });
 
-    if (cfg.sandbox && typeof this.exchange.setSandboxMode === 'function') {
-      this.exchange.setSandboxMode(true);
+    if (cfg.sandbox) {
+      if (typeof this.exchange.enableDemoTrading === 'function') {
+        this.exchange.enableDemoTrading(true)
+      } else if (typeof this.exchange.setSandboxMode === 'function') {
+        this.exchange.setSandboxMode(true);
+      } else {
+        throw new Error(`CCXT: unable to set demo/sandbox mode for exchange: ${cfg.exchangeId || '(empty)'}, please consult with documentation`);
+      }
     }
 
     this.defaultParams = cfg.params || {};
@@ -60,6 +67,34 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this.watchIntervalMs = Number.isFinite(cfg.watchIntervalMs) ? cfg.watchIntervalMs : 2000;
     this._watchTimer = null;
     this._startWatchLoop();
+
+    // Бар-стріми: спочатку websocket (watchOHLCV), з фолбеком на polling fetchOHLCV.
+    this.barPollIntervalMs = Number.isFinite(cfg.barPollIntervalMs) ? cfg.barPollIntervalMs : 5000;
+    this.barWatchFailuresLimit = Number.isFinite(cfg.barWatchFailuresLimit) ? cfg.barWatchFailuresLimit : 3;
+    this._barSubscriptions = new Map(); // key: originalSymbol::timeframe -> { originalSymbol, mappedSymbol, timeframe }
+    this._barLastTs = new Map(); // key: originalSymbol::timeframe -> last bar timestamp
+    this._barTasks = new Map(); // key -> { stop, mode, failures, timer }
+    this.client = {
+      subscribe_symbols_bar_data: this.subscribe_symbols_bar_data.bind(this),
+      unsubscribe_symbols_bar_data: this.unsubscribe_symbols_bar_data.bind(this)
+    };
+
+    // Кеш котирувань: per-symbol watchTicker/fetchTicker
+    this.tickerPollIntervalMs = Number.isFinite(cfg.tickerPollIntervalMs) ? cfg.tickerPollIntervalMs : 5000;
+    this.tickerWatchFailuresLimit = Number.isFinite(cfg.tickerWatchFailuresLimit) ? cfg.tickerWatchFailuresLimit : 3;
+    this._tickerCache = new Map(); // mappedSymbol -> { bid, ask, price, tickSize }
+    this._tickerWatchTasks = new Map(); // mappedSymbol -> { stop, mode, failures, timer }
+
+    // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
+    this._desiredProtectionByTicket = new Map(); // ticket -> { symbol, side, amount, slPts, tpPts, tickSize }
+
+    // Автоматичне забезпечення/скасування SL/TP по подіях позицій
+    this.on('position:opened', async ({ ticket }) => {
+      try { await this._ensureProtectiveOrdersForTicket(ticket); } catch {}
+    });
+    this.on('position:closed', async ({ ticket }) => {
+      try { await this._cancelAllProtectionForTicket(ticket); } catch {}
+    });
   }
 
   async ensureReady() {
@@ -75,6 +110,34 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       })();
     }
     return this._readyPromise;
+  }
+
+  async _binanceSignedRequest(method, path, params = {}) {
+    const apiKey = this.exchange?.apiKey;
+    const secret = this.exchange?.secret;
+    if (!apiKey || !secret) throw new Error('Binance API key/secret are required');
+    const baseUrl = 'https://fapi.binance.com';
+    const payload = { ...params, recvWindow: 5000, timestamp: Date.now() };
+    const query = Object.entries(payload)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('&');
+    const signature = crypto.createHmac('sha256', secret).update(query).digest('hex');
+    const total = `${query}&signature=${signature}`;
+    const url = `${baseUrl}${path}${method === 'GET' || method === 'DELETE' ? `?${total}` : ''}`;
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'X-MBX-APIKEY': apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: method === 'GET' || method === 'DELETE' ? undefined : total
+    });
+    const txt = await res.text();
+    let json;
+    try { json = JSON.parse(txt); } catch { json = { raw: txt }; }
+    if (!res.ok) throw new Error(`binance ${JSON.stringify(json)}`);
+    return json;
   }
 
   _buildSymbolMapFromMarkets(markets) {
@@ -108,6 +171,344 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         }
         // Додаємо нормалізований id
         if (idKey) add(idKey);
+      }
+    } catch {}
+  }
+
+  subscribe_symbols_bar_data(symbols = []) {
+    if (!Array.isArray(symbols)) return;
+    for (const entry of symbols) {
+      const [symbol, timeframe] = Array.isArray(entry) ? entry : [];
+      if (!symbol || !timeframe) continue;
+      const originalSymbol = String(symbol);
+      const tf = String(timeframe);
+      const mappedSymbol = this.mapSymbol(originalSymbol);
+      const key = `${originalSymbol}::${tf}`;
+      this._barSubscriptions.set(key, { originalSymbol, mappedSymbol, timeframe: tf });
+    }
+    this._startBarPolling();
+  }
+
+  unsubscribe_symbols_bar_data(symbols = []) {
+    if (!Array.isArray(symbols)) return;
+    for (const entry of symbols) {
+      const [symbol, timeframe] = Array.isArray(entry) ? entry : [];
+      if (!symbol || !timeframe) continue;
+      const originalSymbol = String(symbol);
+      const tf = String(timeframe);
+      const key = `${originalSymbol}::${tf}`;
+      this._barSubscriptions.delete(key);
+      this._stopBarTask(key);
+    }
+  }
+
+  _normalizeTimeframe(timeframe) {
+    const raw = String(timeframe || '').trim();
+    if (!raw) return '';
+    if (this.exchange?.timeframes) {
+      if (this.exchange.timeframes[raw]) return raw;
+      const lower = raw.toLowerCase();
+      if (this.exchange.timeframes[lower]) return lower;
+      const upper = raw.toUpperCase();
+      if (this.exchange.timeframes[upper]) return upper;
+    }
+    const upper = raw.toUpperCase();
+    const mapping = {
+      M1: '1m',
+      M5: '5m',
+      M15: '15m',
+      M30: '30m',
+      H1: '1h',
+      H4: '4h',
+      D1: '1d',
+      W1: '1w'
+    };
+    if (mapping[upper]) return mapping[upper];
+    return raw;
+  }
+
+  _supportsWatchOHLCV() {
+    return !!(this.exchange?.has?.watchOHLCV && typeof this.exchange.watchOHLCV === 'function');
+  }
+
+  _supportsWatchTicker() {
+    return !!(this.exchange?.has?.watchTicker && typeof this.exchange.watchTicker === 'function');
+  }
+
+  _startBarPolling() {
+    for (const key of this._barSubscriptions.keys()) {
+      this._ensureBarTask(key);
+    }
+    for (const key of this._barTasks.keys()) {
+      if (!this._barSubscriptions.has(key)) {
+        this._stopBarTask(key);
+      }
+    }
+  }
+
+  _ensureTickerTask(mappedSymbol) {
+    if (!mappedSymbol || this._tickerWatchTasks.has(mappedSymbol)) return;
+    const task = {
+      mode: this._supportsWatchTicker() ? 'watch' : 'poll',
+      failures: 0,
+      timer: null,
+      active: true,
+      stop: () => {
+        task.active = false;
+        if (task.timer) clearInterval(task.timer);
+        task.timer = null;
+      }
+    };
+    this._tickerWatchTasks.set(mappedSymbol, task);
+    if (task.mode === 'watch') {
+      this._startTickerWatchLoop(mappedSymbol, task);
+    } else {
+      this._startTickerPollLoop(mappedSymbol, task);
+    }
+  }
+
+  _stopTickerTask(mappedSymbol) {
+    const task = this._tickerWatchTasks.get(mappedSymbol);
+    if (!task) return;
+    try { task.stop?.(); } catch {}
+    this._tickerWatchTasks.delete(mappedSymbol);
+  }
+
+  async _startTickerWatchLoop(mappedSymbol, task) {
+    const backoffMs = 500;
+    const notifyFailures = () => {
+      try {
+        events.emit('ticker:watch_failed', {
+          provider: this.provider,
+          symbol: mappedSymbol,
+          failures: task.failures
+        });
+      } catch {}
+    };
+    while (task.active) {
+      try {
+        await this.ensureReady();
+      } catch {
+        task.failures += 1;
+        if (task.failures >= this.tickerWatchFailuresLimit) {
+          notifyFailures();
+          task.failures = 0;
+        }
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      try {
+        const t = await this.exchange.watchTicker(mappedSymbol);
+        task.failures = 0;
+        if (!this._isTickerTaskActive(mappedSymbol, task)) continue;
+        await this._updateTickerCache(mappedSymbol, t, true);
+      } catch {
+        task.failures += 1;
+        if (task.failures >= this.tickerWatchFailuresLimit) {
+          notifyFailures();
+          task.failures = 0;
+        }
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+    }
+  }
+
+  _startTickerPollLoop(mappedSymbol, task) {
+    if (!task.active) return;
+    const interval = Math.max(1000, this.tickerPollIntervalMs);
+    const pollOnce = () => {
+      this._pollTickerOnce(mappedSymbol, task).catch(() => {});
+    };
+    task.timer = setInterval(pollOnce, interval);
+    pollOnce();
+  }
+
+  _isTickerTaskActive(mappedSymbol, task) {
+    return task?.active && this._tickerWatchTasks.get(mappedSymbol) === task;
+  }
+
+  async _pollTickerOnce(mappedSymbol, task) {
+    if (!mappedSymbol || typeof this.exchange.fetchTicker !== 'function') return;
+    try {
+      await this.ensureReady();
+    } catch {
+      return;
+    }
+    let t;
+    try {
+      t = await this.exchange.fetchTicker(mappedSymbol);
+    } catch {
+      return;
+    }
+    if (!this._isTickerTaskActive(mappedSymbol, task)) return;
+    await this._updateTickerCache(mappedSymbol, t, true);
+  }
+
+  _ensureBarTask(key) {
+    if (this._barTasks.has(key)) return;
+    const task = {
+      mode: this._supportsWatchOHLCV() ? 'watch' : 'poll',
+      failures: 0,
+      timer: null,
+      active: true,
+      stop: () => {
+        task.active = false;
+        if (task.timer) clearInterval(task.timer);
+        task.timer = null;
+      }
+    };
+    this._barTasks.set(key, task);
+    if (task.mode === 'watch') {
+      this._startBarWatchLoop(key, task);
+    } else {
+      this._startBarPollLoop(key, task);
+    }
+  }
+
+  _stopBarTask(key) {
+    const task = this._barTasks.get(key);
+    if (!task) return;
+    try { task.stop?.(); } catch {}
+    this._barTasks.delete(key);
+    this._barLastTs.delete(key);
+  }
+
+  async _startBarWatchLoop(key, task) {
+    const backoffMs = 500;
+    const notifyFailures = (sub) => {
+      try {
+        events.emit('bar:watch_failed', {
+          provider: this.provider,
+          symbol: sub?.originalSymbol,
+          timeframe: sub?.timeframe,
+          failures: task.failures
+        });
+      } catch {}
+    };
+    while (task.active) {
+      const sub = this._barSubscriptions.get(key);
+      if (!sub) break;
+      try {
+        await this.ensureReady();
+      } catch {
+        task.failures += 1;
+        if (task.failures >= this.barWatchFailuresLimit) {
+          notifyFailures(sub);
+          task.failures = 0;
+        }
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      const refreshedSymbol = this.mapSymbol(sub.originalSymbol);
+      if (!refreshedSymbol) {
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      if (refreshedSymbol !== sub.mappedSymbol) {
+        this._barSubscriptions.set(key, { ...sub, mappedSymbol: refreshedSymbol });
+      }
+      const normalizedTimeframe = this._normalizeTimeframe(sub.timeframe);
+      if (!normalizedTimeframe) {
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      try {
+        const bars = await this.exchange.watchOHLCV(refreshedSymbol, normalizedTimeframe);
+        task.failures = 0;
+        const last = Array.isArray(bars) ? bars[bars.length - 1] : null;
+        if (last) this._emitBarFromCandle(key, sub, last);
+      } catch {
+        task.failures += 1;
+        if (task.failures >= this.barWatchFailuresLimit) {
+          notifyFailures(sub);
+          task.failures = 0;
+        }
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+    }
+  }
+
+  _startBarPollLoop(key, task) {
+    if (!task.active) return;
+    const interval = Math.max(1000, this.barPollIntervalMs);
+    const pollOnce = () => {
+      this._pollBarsOnce(key).catch(() => {});
+    };
+    task.timer = setInterval(pollOnce, interval);
+    pollOnce();
+  }
+
+  async _pollBarsOnce(key) {
+    if (!key) return;
+    const sub = this._barSubscriptions.get(key);
+    if (!sub) return;
+    try {
+      await this.ensureReady();
+    } catch {
+      return;
+    }
+    const { originalSymbol, mappedSymbol, timeframe } = sub;
+    const refreshedSymbol = this.mapSymbol(originalSymbol);
+    if (!refreshedSymbol || !timeframe) return;
+    if (refreshedSymbol !== mappedSymbol) {
+      this._barSubscriptions.set(key, { ...sub, mappedSymbol: refreshedSymbol });
+    }
+    const normalizedTimeframe = this._normalizeTimeframe(timeframe);
+    if (!normalizedTimeframe) return;
+    let bars;
+    try {
+      bars = await this.exchange.fetchOHLCV(refreshedSymbol, normalizedTimeframe);
+    } catch {
+      return;
+    }
+    if (!Array.isArray(bars) || bars.length === 0) return;
+    const last = bars[bars.length - 1];
+    if (last) this._emitBarFromCandle(key, sub, last);
+  }
+
+  _emitBarFromCandle(key, sub, candle) {
+    if (!Array.isArray(candle) || candle.length < 5) return;
+    const time = Number(candle[0]);
+    if (!Number.isFinite(time)) return;
+    const lastTs = this._barLastTs.get(key);
+    //skip bars from the past but do not skip updatesK
+    if (Number.isFinite(lastTs) && time < lastTs) return;
+    this._barLastTs.set(key, time);
+    const open = Number(candle[1]);
+    const high = Number(candle[2]);
+    const low = Number(candle[3]);
+    const close = Number(candle[4]);
+    const vol = Number(candle[5]);
+    try {
+      events.emit('bar', {
+        provider: this.provider,
+        symbol: sub.originalSymbol,
+        tf: sub.timeframe,
+        time,
+        open,
+        high,
+        low,
+        close,
+        vol
+      });
+    } catch {}
+  }
+
+  async shutdown() {
+    for (const key of this._barTasks.keys()) {
+      this._stopBarTask(key);
+    }
+    for (const mappedSymbol of this._tickerWatchTasks.keys()) {
+      this._stopTickerTask(mappedSymbol);
+    }
+    this._tickerCache.clear();
+    if (this._watchTimer) {
+      clearInterval(this._watchTimer);
+      this._watchTimer = null;
+    }
+    try {
+      if (typeof this.exchange?.close === 'function') {
+        await this.exchange.close();
       }
     } catch {}
   }
@@ -166,6 +567,69 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   mapSymbol(symbol) {
     if (!symbol) return symbol;
     return this.symbolMap[symbol] || this.symbolMap[String(symbol).toUpperCase()] || symbol;
+  }
+
+  /**
+   * Get the native exchange symbol (e.g., 'ETHUSDT' for Binance) from a CCXT mapped symbol ('ETH/USDT:USDT').
+   * @param {string} mappedSymbol
+   * @returns {string}
+   */
+  getNativeSymbol(mappedSymbol) {
+    try {
+      if (!mappedSymbol) return mappedSymbol;
+      if (this.exchange.markets && this.exchange.markets[mappedSymbol]) {
+        return this.exchange.markets[mappedSymbol].id || mappedSymbol;
+      }
+      const market = this.exchange.market(mappedSymbol);
+      return market?.id || mappedSymbol;
+    } catch {
+      return mappedSymbol;
+    }
+  }
+
+  async _updateTickerCache(mappedSymbol, ticker, allowOrderBookFallback) {
+    if (!mappedSymbol || !ticker) return;
+    const quote = await this._parseQuoteFromTicker(mappedSymbol, ticker, allowOrderBookFallback);
+    if (!quote) return;
+    this._tickerCache.set(mappedSymbol, quote);
+  }
+
+  async _parseQuoteFromTicker(mappedSymbol, t, allowOrderBookFallback = true) {
+    if (!t) return null;
+    // Надійне діставання bid/ask: спочатку з уніфікованих полів, далі з info, і як fallback — orderbook
+    let bid = Number.isFinite(t.bid) ? Number(t.bid)
+      : (t.info && Number.isFinite(Number(t.info.bidPrice)) ? Number(t.info.bidPrice)
+        : (t.info && Number.isFinite(Number(t.info.bestBid)) ? Number(t.info.bestBid)
+          : (t.info && Number.isFinite(Number(t.info.b)) ? Number(t.info.b) : undefined)));
+
+    let ask = Number.isFinite(t.ask) ? Number(t.ask)
+      : (t.info && Number.isFinite(Number(t.info.askPrice)) ? Number(t.info.askPrice)
+        : (t.info && Number.isFinite(Number(t.info.bestAsk)) ? Number(t.info.bestAsk)
+          : (t.info && Number.isFinite(Number(t.info.a)) ? Number(t.info.a) : undefined)));
+
+    if (allowOrderBookFallback && (!Number.isFinite(bid) || !Number.isFinite(ask)) && typeof this.exchange.fetchOrderBook === 'function') {
+      try {
+        const ob = await this.exchange.fetchOrderBook(mappedSymbol, 5);
+        if (!Number.isFinite(bid) && Array.isArray(ob?.bids) && ob.bids.length) {
+          const v = Number(ob.bids[0][0]);
+          if (Number.isFinite(v)) bid = v;
+        }
+        if (!Number.isFinite(ask) && Array.isArray(ob?.asks) && ob.asks.length) {
+          const v = Number(ob.asks[0][0]);
+          if (Number.isFinite(v)) ask = v;
+        }
+      } catch {
+        // ігноруємо помилку фолу до ордербука
+      }
+    }
+
+    let price = Number.isFinite(t.last) ? Number(t.last)
+      : (Number.isFinite(bid) && Number.isFinite(ask)) ? (bid + ask) / 2
+        : (Number.isFinite(Number(t.close)) ? Number(t.close)
+          : (Number.isFinite(Number(t.info?.lastPrice)) ? Number(t.info.lastPrice) : undefined));
+
+    const tickSize = this._getTickSizeFromMarket(mappedSymbol);
+    return { bid, ask, price, tickSize };
   }
 
   // Витягнути найбільш надійний ідентифікатор ордера з відповіді біржі
@@ -277,14 +741,144 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       ? (side === 'buy' ? (entryPrice + Number(tpPts) * tick) : (entryPrice - Number(tpPts) * tick))
       : undefined;
 
-    // SL: stop-limit (для сумісності з біржами, які вимагають price у 'stop', напр. Binance)
+    // Binance Futures: частина умовних ордерів тепер вимагає Algo API endpoint.
+    // Намагаємось ставити SL/TP через algo endpoint, а createOrder залишаємо як fallback.
+    const tryBinanceAlgoOrder = async ({ kind, triggerPrice, limitPrice }) => {
+      if (this.exchangeId !== 'binance') return null;
+      const nativeSymbol = this.getNativeSymbol(mappedSymbol);
+      if (!nativeSymbol) return null;
+
+      const orderType = kind === 'SL' ? 'STOP_MARKET' : 'TAKE_PROFIT_MARKET';
+      const req = {
+        symbol: nativeSymbol,
+        side: String(opposite || '').toUpperCase(),
+        quantity: this.exchange.amountToPrecision(mappedSymbol, amount),
+        reduceOnly: 'true',
+        stopPrice: this.exchange.priceToPrecision(mappedSymbol, triggerPrice),
+        workingType: 'CONTRACT_PRICE',
+        priceProtect: 'TRUE',
+        timeInForce: 'GTC',
+        type: orderType,
+      };
+      if (Number.isFinite(limitPrice) && limitPrice > 0) {
+        req.type = kind === 'SL' ? 'STOP' : 'TAKE_PROFIT';
+        req.price = this.exchange.priceToPrecision(mappedSymbol, limitPrice);
+      }
+
+      const posSide = String(baseParams.positionSide || '').toUpperCase();
+      if (posSide === 'LONG' || posSide === 'SHORT') req.positionSide = posSide;
+
+      const fns = [
+        ['fapiPrivatePostAlgoOrder', this.exchange.fapiPrivatePostAlgoOrder],
+        ['fapiPrivate_post_algoorder', this.exchange.fapiPrivate_post_algoorder],
+        ['fapiPrivatePostAlgoOrders', this.exchange.fapiPrivatePostAlgoOrders],
+        ['fapiPrivate_post_algoorders', this.exchange.fapiPrivate_post_algoorders],
+      ].filter(([, fn]) => typeof fn === 'function');
+      if (!fns.length) {
+        console.warn(`[${this.provider}] Binance algo method not found in ccxt instance; trying signed /fapi/v1/algoOrder for ${kind}`, {
+          mappedSymbol,
+          nativeSymbol,
+          availableAlgoKeys: Object.keys(this.exchange || {}).filter(k => k.toLowerCase().includes('algo')).slice(0, 50)
+        });
+        const algoReq = {
+          algoType: 'CONDITIONAL',
+          symbol: nativeSymbol,
+          side: String(opposite || '').toUpperCase(),
+          type: req.type,
+          quantity: req.quantity,
+          triggerPrice: req.stopPrice,
+          workingType: 'MARK_PRICE',
+          clientAlgoId: `${kind.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+        };
+        if (String(baseParams?.positionSide || '').toUpperCase() === 'LONG' || String(baseParams?.positionSide || '').toUpperCase() === 'SHORT') {
+          algoReq.positionSide = String(baseParams.positionSide).toUpperCase();
+        } else {
+          algoReq.reduceOnly = 'true';
+        }
+        const res = await this._binanceSignedRequest('POST', '/fapi/v1/algoOrder', algoReq);
+        const algoId = String(res?.algoId || res?.clientAlgoId || '').trim();
+        if (algoId) return { id: algoId, raw: res };
+        return null;
+      }
+      console.log(`[${this.provider}] Trying Binance algo ${kind}`, {
+        methodCandidates: fns.map(([name]) => name),
+        request: req
+      });
+      for (const [name, fn] of fns) {
+        const res = await fn.call(this.exchange, req);
+        const algoId = String(res?.algoId || res?.orderId || res?.clientOrderId || '').trim();
+        if (algoId) {
+          console.log(`[${this.provider}] Binance algo ${kind} placed`, { method: name, algoId, response: res });
+          return { id: algoId, raw: res };
+        }
+        console.warn(`[${this.provider}] Binance algo ${kind} no id in response`, { method: name, response: res });
+      }
+      return null;
+    };
+
+    // SL: спершу намагаємось чистий stop-market (без price), фолбек — stop-limit
     if (hasSL && Number.isFinite(slPrice) && slPrice > 0) {
       const slParams = { ...reduceParams, stopPrice: slPrice };
       try {
-        // Для ccxt/binance 'stop' потребує і price, і stopPrice (STOP/STOP_LIMIT)
-        const slOrder = await this.exchange.createOrder(mappedSymbol, 'stop', opposite, amount, slPrice, slParams);
+        // 0) Для Binance USDⓈ-M часто працює саме closePosition STOP_MARKET через createOrder.
+        // Це не OCO/брекет, але коректно закриває відкриту позицію по тригеру.
+        if (this.exchangeId === 'binance') {
+          try {
+            const p = {
+              ...slParams,
+              closePosition: true,
+              workingType: slParams.workingType || 'CONTRACT_PRICE',
+              priceProtect: slParams.priceProtect ?? 'TRUE',
+            };
+            const slClosePos = await this.exchange.createOrder(mappedSymbol, 'stop_market', opposite, undefined, undefined, p);
+            const slCloseId = this._resolveOrderId(slClosePos);
+            if (slCloseId) {
+              childIds.push(slCloseId);
+              slParams._algoPlaced = true;
+            }
+          } catch (closeErr) {
+            console.warn(`[${this.provider}] Binance closePosition STOP_MARKET SL failed, trying algo/createOrder fallback`, closeErr?.message || String(closeErr));
+          }
+        }
+
+        // 0) Binance Algo API
+        try {
+          if (slParams._algoPlaced) throw new Error('SL_ALREADY_PLACED');
+          const algoSL = await tryBinanceAlgoOrder({ kind: 'SL', triggerPrice: slPrice });
+          if (algoSL?.id) {
+            childIds.push(algoSL.id);
+            slParams._algoPlaced = true;
+          }
+        } catch (algoErr) {
+          if (String(algoErr?.message || '') === 'SL_ALREADY_PLACED') {
+            // skip algo attempt
+          } else {
+          console.warn(`[${this.provider}] Binance algo SL failed, fallback to createOrder`, algoErr?.message || String(algoErr));
+          }
+        }
+
+        if (slParams._algoPlaced) {
+          delete slParams._algoPlaced;
+          // already placed via algo endpoint
+        } else {
+        // 1) Спроба створити чистий stop-market (без price)
+        // Binance: деривативи — STOP_MARKET, spot — STOP_LOSS
+        let slOrder;
+        try {
+          const mkt = typeof this.exchange.market === 'function' ? this.exchange.market(mappedSymbol) : null;
+          const isDeriv = !!(mkt && (mkt.contract || mkt.swap || mkt.future));
+          const stopType =
+            (this.exchangeId === 'binance')
+              ? (isDeriv ? 'STOP_MARKET' : 'STOP_LOSS')
+              : 'STOP_MARKET';
+          slOrder = await this.exchange.createOrder(mappedSymbol, stopType, opposite, amount, undefined, slParams);
+        } catch (e1) {
+          // 2) Фолбек: stop-limit (деякі біржі вимагають наявність price разом зі stopPrice)
+          slOrder = await this.exchange.createOrder(mappedSymbol, 'stop', opposite, amount, slPrice, slParams);
+        }
         const slId = this._resolveOrderId(slOrder);
         if (slId) childIds.push(slId);
+        }
       } catch (e) {
         console.error(`[${this.provider}] Failed to place SL order:`, e?.message || String(e));
       }
@@ -296,16 +890,30 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     // 3) fallback: звичайний limit (може бути відхилений на деяких біржах)
     if (hasTP && Number.isFinite(tpPrice) && tpPrice > 0) {
       let placed = false;
-      // 1) TP market on trigger
+      // 0) Binance Algo API
       try {
-        const p = { ...reduceParams, stopPrice: tpPrice };
-        const tpOrder = await this.exchange.createOrder(mappedSymbol, 'take_profit_market', opposite, amount, undefined, p);
-        const tpId = this._resolveOrderId(tpOrder);
+        const algoTP = await tryBinanceAlgoOrder({ kind: 'TP', triggerPrice: tpPrice });
+        const tpId = algoTP?.id;
         if (tpId) {
           childIds.push(tpId);
           placed = true;
         }
-      } catch (_) {}
+      } catch (algoErr) {
+        console.warn(`[${this.provider}] Binance algo TP failed, fallback to createOrder`, algoErr?.message || String(algoErr));
+      }
+
+      // 1) TP market on trigger
+      if (!placed) {
+        try {
+          const p = { ...reduceParams, stopPrice: tpPrice };
+          const tpOrder = await this.exchange.createOrder(mappedSymbol, 'take_profit_market', opposite, amount, undefined, p);
+          const tpId = this._resolveOrderId(tpOrder);
+          if (tpId) {
+            childIds.push(tpId);
+            placed = true;
+          }
+        } catch (_) {}
+      }
 
       // 2) TP limit on trigger
       if (!placed) {
@@ -375,8 +983,19 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     const link = this._childOrdersByParent.get(parentId);
     if (!link) return;
     const { symbol: mappedSymbol, children } = link;
+    await this.ensureReady();
     for (const cid of children || []) {
       try {
+        if (this.exchangeId === 'binance' && String(cid).length > 20) {
+           // Ймовірно algoId для Binance Futures
+           try {
+             const nativeSymbol = this.getNativeSymbol(mappedSymbol);
+             await this.exchange.fapiPrivateDeleteAlgoOpenOrders({ symbol: nativeSymbol, algoId: cid });
+             continue;
+           } catch (e) {
+             // якщо не вдалося через fapi - спробуємо звичайним cancelOrder
+           }
+        }
         await this.exchange.cancelOrder(cid, mappedSymbol);
       } catch {
         // Спроба відміни по clientOrderId/origClientOrderId (актуально для умовних ордерів на деяких біржах)
@@ -388,6 +1007,258 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       }
     }
     this._childOrdersByParent.delete(parentId);
+  }
+
+  // Класифікація ордеру як SL або TP за його типом
+  _classifyOrderAsSLorTP(ord) {
+    try {
+      const t = String(ord?.type || ord?.orderType || ord?.info?.orderType || ord?.info?.type || '').toLowerCase();
+      if (!t) return null;
+      if (t.includes('take')) return 'TP';
+      if (t.includes('stop') && !t.includes('take')) return 'SL';
+      if (t.includes('stop_loss') || t.includes('stoploss') || t === 'stop') return 'SL';
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async _openOrdersSym(sym) {
+    try {
+      await this.ensureReady();
+      let simpleOrders = await this.exchange.fetchOpenOrders(sym);
+
+      let conditionalOrders = await this.exchange.fetchOpenOrders(sym, params => ({
+        ...params,
+        stop: true,
+        trigger: true,
+        conditional: true
+      }));
+
+      let algoOrders = [];
+      if (this.exchangeId === 'binance') {
+        const nativeSymbol = this.getNativeSymbol(sym);
+        const getOpenAlgo =
+          this.exchange.fapiPrivateGetOpenAlgoOrders
+          || this.exchange.fapiPrivate_get_openalgoorders;
+        if (typeof getOpenAlgo === 'function') {
+          algoOrders = await getOpenAlgo.call(this.exchange, { symbol: nativeSymbol, stop: true });
+        } else {
+          try {
+            algoOrders = await this._binanceSignedRequest('GET', '/fapi/v1/openAlgoOrders', { symbol: nativeSymbol });
+          } catch (e) {
+            console.warn(`[${this.provider}] raw openAlgoOrders failed for ${sym}:`, e?.message || String(e));
+          }
+        }
+      }
+
+      console.log("Open orders sym", this.exchangeId,  simpleOrders, conditionalOrders, algoOrders );
+      return [
+        ...simpleOrders,
+        ...conditionalOrders,
+        ...algoOrders
+      ];
+    } catch (e) {
+      console.error(`[${this.provider}] Failed to fetch open orders for symbol ${sym}`, e);
+      return [];
+    }
+  }
+
+  async _openOrders() {
+    try {
+      await this.ensureReady();
+      let simpleOrders = await this.exchange.fetchOpenOrders();
+      let conditionalOrders = await this.exchange.fetchOpenOrders(params => ({
+        ...params,
+        stop: true,
+        trigger: true,
+        conditional: true
+      }));
+
+      let algoOrders = [];
+      if (this.exchangeId === 'binance') {
+        const getOpenAlgo =
+          this.exchange.fapiPrivateGetOpenAlgoOrders
+          || this.exchange.fapiPrivate_get_openalgoorders;
+        if (typeof getOpenAlgo === 'function') {
+          algoOrders = await getOpenAlgo.call(this.exchange);
+        } else if (typeof this.exchange.request === 'function') {
+          try {
+            algoOrders = await this.exchange.request('openAlgoOrders', 'fapiPrivate', 'GET', {});
+          } catch (e) {
+            console.warn(`[${this.provider}] raw openAlgoOrders failed:`, e?.message || String(e));
+          }
+        }
+      }
+      console.log("Open orders", this.exchangeId, simpleOrders, conditionalOrders, algoOrders );
+
+      return [
+        ...simpleOrders,
+        ...conditionalOrders,
+        ...algoOrders
+      ];
+
+    } catch (e) {
+      console.error(`[${this.provider}] Failed to fetch open orders`, e);
+      return [];
+    }
+  }
+
+
+  async _ensureProtectiveOrdersForTicket(ticket) {
+    try {
+      await this.ensureReady();
+      const mappedSymbol = this._ticketToSymbol.get(ticket);
+      if (!mappedSymbol) return;
+
+      // Зчитуємо бажану конфіг
+      const cfg = this._desiredProtectionByTicket.get(ticket) || {};
+      let { side, amount, slPts, tpPts, tickSize } = cfg;
+
+      // Отримаємо поточний розмір позиції та середню ціну входу
+      let positions = [];
+      try { positions = await this.exchange.fetchPositions(); } catch { positions = []; }
+      const pos = (positions || []).find(p =>
+        (p?.symbol || p?.info?.symbol || p?.info?.instId) === mappedSymbol
+      );
+
+      const rawSz = Number(
+        pos?.contracts ?? pos?.positionAmt ?? pos?.size ?? pos?.info?.positionAmt ?? pos?.info?.pos ?? 0
+      );
+      const netSize = Number.isFinite(rawSz) ? rawSz : 0;
+
+      // Визначимо сторону й кількість з позиції, якщо не вдалося зберегти раніше
+      if (!side) side = netSize >= 0 ? 'buy' : 'sell';
+      if (!Number.isFinite(amount) || amount <= 0) amount = Math.abs(netSize);
+
+      // Якщо розміру немає — немає що захищати
+      if (!Number.isFinite(amount) || amount <= 0) return;
+
+      // Визначимо entryPrice
+      let entryPrice =
+        Number(pos?.entryPrice) ||
+        Number(pos?.info?.entryPrice) ||
+        Number(pos?.info?.avgPrice) ||
+        Number(pos?.info?.avgPx) ||
+        Number(pos?.info?.avg_entry_price);
+
+      if (!Number.isFinite(entryPrice) || entryPrice <= 0) {
+        // Фолбек — поточний ринок
+        const q = await this.getQuote(mappedSymbol);
+        entryPrice = Number(q?.price);
+      }
+      if (!Number.isFinite(entryPrice) || entryPrice <= 0) return;
+
+      // Визначимо tickSize
+      const tick = Number.isFinite(Number(tickSize)) && Number(tickSize) > 0
+        ? Number(tickSize)
+        : this._getTickSizeFromMarket(mappedSymbol);
+
+      // Перевіримо існування SL/TP у відкритих ордерах
+      let openOrders = await this._openOrdersSym(mappedSymbol);
+
+      const opposite = side === 'buy' ? 'sell' : 'buy';
+      const hasReduce = (o) => !!(o?.reduceOnly || o?.info?.reduce_only || o?.info?.reduceOnly);
+      const isOpposite = (o) => String(o?.side || '').toLowerCase() === opposite;
+
+      let hasSL = false;
+      let hasTP = false;
+      for (const o of openOrders || []) {
+        if (!isOpposite(o) || !hasReduce(o)) continue;
+        const kind = this._classifyOrderAsSLorTP(o);
+        if (kind === 'SL') hasSL = true;
+        if (kind === 'TP') hasTP = true;
+      }
+
+      // Якщо сл/тп не налаштовано користувачем — не створюємо їх відповідно
+      const wantSL = Number.isFinite(Number(slPts)) && Number(slPts) > 0;
+      const wantTP = Number.isFinite(Number(tpPts)) && Number(tpPts) > 0;
+
+      const needSL = wantSL && !hasSL;
+      const needTP = wantTP && !hasTP;
+
+      if (!needSL && !needTP) return;
+
+      // Створимо відсутні (частково)
+      const children = await this._placeProtectiveOrders({
+        mappedSymbol,
+        side,
+        amount,
+        entryPrice,
+        slPts: needSL ? Number(slPts) : undefined,
+        tpPts: needTP ? Number(tpPts) : undefined,
+        tickSize: tick,
+        baseParams: this.defaultParams || {}
+      });
+
+      if (children && children.length) {
+        const exist = this._childOrdersByParent.get(ticket);
+        const merged = exist ? Array.from(new Set([...(exist.children || []), ...children])) : children;
+        this._childOrdersByParent.set(ticket, { symbol: mappedSymbol, children: merged });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Скасувати всі захисні ордери (SL/TP) після виходу з позиції
+  async _cancelAllProtectionForTicket(ticket) {
+    try {
+      await this.ensureReady();
+      const mappedSymbol = this._ticketToSymbol.get(ticket);
+      if (!mappedSymbol) return;
+
+      // 1) Спробуємо відмінити ті, що ми створювали/відстежували
+      try { await this._cancelChildOrders(ticket); } catch {}
+
+      // 2) Підчистимо можливі інші reduce-only SL/TP для цього символу
+      let openOrders = await this._openOrdersSym(mappedSymbol);
+
+
+      const cfg = this._desiredProtectionByTicket.get(ticket) || {};
+      const side = String(cfg?.side || '').toLowerCase();
+      const opposite = side === 'buy' ? 'sell' : (side === 'sell' ? 'buy' : null);
+
+      const hasReduce = (o) => !!(o?.reduceOnly || o?.info?.reduce_only || o?.info?.reduceOnly);
+      for (const o of openOrders || []) {
+        const isOpposite = opposite ? String(o?.side || '').toLowerCase() === opposite : true;
+        if (!hasReduce(o) || !isOpposite) continue;
+        const kind = this._classifyOrderAsSLorTP(o);
+        if (!kind) continue;
+        try {
+          const oid = o?.id || o?.algoId;
+          if (this.exchangeId === 'binance' && o?.algoId) {
+            try {
+              const nativeSymbol = this.getNativeSymbol(mappedSymbol);
+              await this.exchange.fapiPrivateDeleteAlgoOpenOrders({ symbol: nativeSymbol, algoId: o.algoId });
+              continue;
+            } catch (e) {
+              // console.log('Failed to cancel algo order via fapi, falling back to standard cancel', e);
+               // fallback to standard cancel
+            }
+          }
+          await this.exchange.cancelOrder(oid);
+        } catch {
+          try {
+            const cid = o?.clientOrderId || o?.info?.origClientOrderId || o?.info?.clientOrderId;
+            await this.exchange.cancelOrder(undefined, mappedSymbol, { origClientOrderId: cid, clientOrderId: cid });
+          } catch {
+            // ignore last attempt
+          }
+        }
+      }
+
+      // 3) Зупинимо вотчер для батьківського, якщо був
+      const t = this._parentWatchers.get(ticket);
+      if (t) { clearInterval(t); this._parentWatchers.delete(ticket); }
+
+      // 4) Очистимо стани
+      this._childOrdersByParent.delete(ticket);
+      this._desiredProtectionByTicket.delete(ticket);
+      // не видаляємо _ticketToSymbol тут: він ще може бути корисний для історії подій/логів
+    } catch {
+      // ignore
+    }
   }
 
   /**
@@ -482,8 +1353,20 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
                         : undefined;
             const slPts = Number(order.sl);
             const tpPts = Number(order.tp);
-            const tickSize = Number(order.tickSize);
+            const tickSize = Number(order.tickSize) > 0 ? Number(order.tickSize) : this._getTickSizeFromMarket(symbol);
             // console.log('entry', entry, 'slPts', slPts, 'tpPts', tpPts, 'tickSize', tickSize);
+            // Збережемо бажану конфіг, щоб у разі відсутності SL/TP при вході забезпечити їх автоматично
+            if (providerOrderId) {
+              this._desiredProtectionByTicket.set(providerOrderId, {
+                symbol,
+                side,
+                amount,
+                slPts,
+                tpPts,
+                tickSize
+              });
+            }
+
             if (providerOrderId && Number.isFinite(entry)) {
               const children = await this._placeProtectiveOrders({
                 mappedSymbol: symbol,
@@ -557,7 +1440,20 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       }
       const mappedSymbol = symbol ? this.mapSymbol(symbol) : undefined;
       try {
-        await this.exchange.cancelOrder(ticket, mappedSymbol);
+        if (this.exchangeId === 'binance' && (String(ticket).length > 20 || String(ticket).match(/^\d+$/))) {
+          // Для Binance Futures algoId зазвичай довгий або числовий.
+          // Спробуємо видалити як algo order, якщо не вийде - звичайним cancelOrder.
+          try {
+            const nativeSymbol = mappedSymbol ? this.getNativeSymbol(mappedSymbol) : undefined;
+            await this.exchange.fapiPrivateDeleteAlgoOpenOrders({ symbol: nativeSymbol, algoId: ticket });
+            //також пробуємо видалити звичайний ордер
+            await this.exchange.cancelOrder(ticket, mappedSymbol);
+          } catch (e) {
+            await this.exchange.cancelOrder(ticket, mappedSymbol);
+          }
+        } else {
+          await this.exchange.cancelOrder(ticket, mappedSymbol);
+        }
       } catch (err) {
         if (mappedSymbol) {
           try {
@@ -588,7 +1484,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   /** @returns {Promise<any[]>} список відкритих ордерів */
   async listOpenOrders() {
     try {
-      const orders = await this.exchange.fetchOpenOrders();
+      const orders = await this._openOrders();
       return orders || [];
     } catch {
       return [];
@@ -618,45 +1514,55 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       await this.ensureReady();
       const mapped = this.mapSymbol(symbol);
       if (!mapped) return null;
-      const t = await this.exchange.fetchTicker(mapped);
-      if (!t) return null;
+      const cached = this._tickerCache.get(mapped);
+      if (cached) return cached;
 
-      // Надійне діставання bid/ask: спочатку з уніфікованих полів, далі з info, і як fallback — orderbook
-      let bid = Number.isFinite(t.bid) ? Number(t.bid)
-        : (t.info && Number.isFinite(Number(t.info.bidPrice)) ? Number(t.info.bidPrice)
-          : (t.info && Number.isFinite(Number(t.info.bestBid)) ? Number(t.info.bestBid)
-            : (t.info && Number.isFinite(Number(t.info.b)) ? Number(t.info.b) : undefined)));
-
-      let ask = Number.isFinite(t.ask) ? Number(t.ask)
-        : (t.info && Number.isFinite(Number(t.info.askPrice)) ? Number(t.info.askPrice)
-          : (t.info && Number.isFinite(Number(t.info.bestAsk)) ? Number(t.info.bestAsk)
-            : (t.info && Number.isFinite(Number(t.info.a)) ? Number(t.info.a) : undefined)));
-
-      if ((!Number.isFinite(bid) || !Number.isFinite(ask)) && typeof this.exchange.fetchOrderBook === 'function') {
-        try {
-          const ob = await this.exchange.fetchOrderBook(mapped, 5);
-          if (!Number.isFinite(bid) && Array.isArray(ob?.bids) && ob.bids.length) {
-            const v = Number(ob.bids[0][0]);
-            if (Number.isFinite(v)) bid = v;
-          }
-          if (!Number.isFinite(ask) && Array.isArray(ob?.asks) && ob.asks.length) {
-            const v = Number(ob.asks[0][0]);
-            if (Number.isFinite(v)) ask = v;
-          }
-        } catch {
-          // ігноруємо помилку фолу до ордербука
-        }
+      if (this._supportsWatchTicker() || typeof this.exchange.fetchTicker === 'function') {
+        this._ensureTickerTask(mapped);
       }
 
-      let price = Number.isFinite(t.last) ? Number(t.last)
-        : (Number.isFinite(bid) && Number.isFinite(ask)) ? (bid + ask) / 2
-          : (Number.isFinite(Number(t.close)) ? Number(t.close)
-            : (Number.isFinite(Number(t.info?.lastPrice)) ? Number(t.info.lastPrice) : undefined));
-
-      const tickSize = this._getTickSizeFromMarket(mapped);
-      return { bid, ask, price, tickSize };
+      if (typeof this.exchange.fetchTicker !== 'function') return null;
+      const t = await this.exchange.fetchTicker(mapped);
+      if (!t) return null;
+      const quote = await this._parseQuoteFromTicker(mapped, t, true);
+      if (!quote) return null;
+      this._tickerCache.set(mapped, quote);
+      return quote;
     } catch {
       return null;
+    }
+  }
+
+  async forgetQuote(symbol) {
+    const mapped = this.mapSymbol(symbol);
+    if (!mapped) return;
+    this._tickerCache.delete(mapped);
+    this._stopTickerTask(mapped);
+  }
+
+  async getHistoricBars({ symbol, timeframe = 'M1', limit = 50 } = {}) {
+    try {
+      await this.ensureReady();
+      if (!symbol) return [];
+      const mapped = this.mapSymbol(symbol);
+      if (!mapped) return [];
+      const tf = this._normalizeTimeframe(timeframe || 'M1');
+      if (!tf) return [];
+      const lim = Number.isFinite(Number(limit)) ? Number(limit) : 50;
+      const bars = await this.exchange.fetchOHLCV(mapped, tf, undefined, lim);
+      if (!Array.isArray(bars)) return [];
+      return bars
+        .map((b) => ({
+          time: Number(b?.[0]),
+          open: Number(b?.[1]),
+          high: Number(b?.[2]),
+          low: Number(b?.[3]),
+          close: Number(b?.[4]),
+          vol: Number(b?.[5])
+        }))
+        .filter(b => Number.isFinite(b.time));
+    } catch {
+      return [];
     }
   }
 }

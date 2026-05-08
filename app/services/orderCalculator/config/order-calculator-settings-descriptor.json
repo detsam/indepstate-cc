@@ -1,0 +1,6 @@
+{
+  "properties": {},
+  "options": {
+    "profitRate": { "type": "number", "description": "Default profit rate (multiplier for stop loss)" }
+  }
+}

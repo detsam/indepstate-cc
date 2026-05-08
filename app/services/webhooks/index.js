@@ -1,6 +1,7 @@
 // Реестр парсеров вебхуков
 const parsers = [
   require('./parsers/atr'),
+  require('./parsers/json_pine'),
   require('./parsers/json'),
 ];
 

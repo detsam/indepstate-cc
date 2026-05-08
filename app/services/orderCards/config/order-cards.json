@@ -4,9 +4,11 @@
     { "type": "file", "pathEnvVar": "ORDER_CARDS_PATH", "pollMs": 1000 }
   ],
   "defaultEquityStopUsd": 50,
+  "defaultCxStopUsd": 0.2,
   "closedCardEventStrategy": "ignore",
   "showBidAsk": false,
   "showSpread": false,
+  "buttonRows": 1,
   "buttons": [
     { "label": "BL",  "action": "BL",  "style": "bl" },
     { "label": "BC",  "action": "BC",  "style": "bc" },
