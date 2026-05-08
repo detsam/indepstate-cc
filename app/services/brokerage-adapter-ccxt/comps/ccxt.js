@@ -86,6 +86,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this._tickerWatchTasks = new Map(); // mappedSymbol -> { stop, mode, failures, timer }
     this._quoteDebugLastLogAt = new Map(); // mappedSymbol -> timestamp
     this.quoteDebugThrottleMs = Number.isFinite(cfg.quoteDebugThrottleMs) ? cfg.quoteDebugThrottleMs : 30000;
+    this.quoteFetchTimeoutMs = Number.isFinite(cfg.quoteFetchTimeoutMs) ? cfg.quoteFetchTimeoutMs : 10000;
 
     // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
     this._desiredProtectionByTicket = new Map(); // ticket -> { symbol, side, amount, slPts, tpPts, tickSize }
@@ -1574,15 +1575,34 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
    * @returns {Promise<{bid?:number, ask?:number, price?:number}|null>}
    */
   async getQuote(symbol) {
+    const mapped = this.mapSymbol(symbol);
+    const fetchTimeoutMs = Math.max(1000, this.quoteFetchTimeoutMs || 10000);
+    const withTimeout = async (promise, stage) => {
+      let timer = null;
+      try {
+        return await Promise.race([
+          promise,
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${stage}:timeout:${fetchTimeoutMs}ms`)), fetchTimeoutMs);
+          })
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+
     try {
-      await this.ensureReady();
-      const mapped = this.mapSymbol(symbol);
       if (!mapped) return null;
       this._debugQuote('getQuote:start', mapped, { inputSymbol: symbol });
+
+      this._debugQuote('getQuote:ensureReady:start', mapped);
+      await withTimeout(this.ensureReady(), 'ensureReady');
+      this._debugQuote('getQuote:ensureReady:ok', mapped);
+
       const cached = this._tickerCache.get(mapped);
       if (cached) {
         this._debugQuote('getQuote:cache-hit', mapped, cached);
-        return cached;
+        return { ...cached };
       }
 
       if (this._supportsWatchTicker() || typeof this.exchange.fetchTicker === 'function') {
@@ -1590,12 +1610,13 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       }
 
       if (typeof this.exchange.fetchTicker !== 'function') return null;
-      const t = await this.exchange.fetchTicker(mapped);
+      this._debugQuote('getQuote:fetchTicker:start', mapped, { fetchTimeoutMs });
+      const t = await withTimeout(this.exchange.fetchTicker(mapped), 'fetchTicker');
       if (!t) {
         this._debugQuote('getQuote:fetchTicker-empty', mapped);
         return null;
       }
-      this._debugQuote('getQuote:fetchTicker-ok', mapped, {
+      this._debugQuote('getQuote:fetchTicker:ok', mapped, {
         tickerKeys: Object.keys(t || {}),
         infoKeys: Object.keys(t?.info || {})
       });
@@ -1609,8 +1630,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       }
       this._tickerCache.set(mapped, quote);
       this._debugQuote('getQuote:return', mapped, quote);
-      return quote;
-    } catch {
+      return { ...quote };
+    } catch (err) {
+      this._debugQuote('getQuote:error', mapped, {
+        message: err?.message,
+        name: err?.name
+      });
       return null;
     }
   }
