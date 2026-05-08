@@ -1595,40 +1595,16 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     let normalizedSymbol;
     let endpoint = this._binanceQuoteTypeToEndpoint(quoteType);
     let ccxtSymbol;
-    const traceId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    console.log(`[${this.provider}] getQuote:trace:start`, {
-      traceId,
-      exchangeId: this.exchangeId,
-      symbolInput: symbol,
-      quoteType,
-      endpoint,
-      isBinanceUsdmLike: this._isBinanceUsdmLike()
-    });
     try {
       if (this._isBinanceUsdmLike()) {
         normalizedSymbol = await this.normalizeBinanceUsdmSymbol(symbol);
         ccxtSymbol = `${normalizedSymbol.slice(0, -4)}/${normalizedSymbol.slice(-4)}:USDT`;
-
-        console.log(`[${this.provider}] getQuote:trace:normalized`, {
-          traceId,
-          symbolInput: symbol,
-          normalizedSymbol,
-          ccxtSymbol,
-          endpoint
-        });
 
         if (!endpoint) {
           throw new Error(`Unsupported quoteType: ${quoteType}`);
         }
 
         const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
-        console.log(`[${this.provider}] getQuote:trace:public-response`, {
-          traceId,
-          endpoint,
-          symbol: normalizedSymbol,
-          hasTime: response?.time !== undefined,
-          keys: Object.keys(response || {})
-        });
         if (quoteType === 'last') {
           return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'last', price: Number(response?.price), timestamp: response?.time, raw: response };
         }
@@ -1643,19 +1619,15 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, timestamp: response?.time, raw: response };
         }
         const result = { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, timestamp: response?.time, raw: response };
-        console.log(`[${this.provider}] getQuote:trace:done`, { traceId, type: result.type, endpoint, symbol: normalizedSymbol });
         return result;
       }
 
       await this.ensureReady();
       const mapped = this.mapSymbol(symbol);
-      console.log(`[${this.provider}] getQuote:trace:ccxt-path`, { traceId, symbolInput: symbol, mappedSymbol: mapped });
       if (!mapped || typeof this.exchange.fetchTicker !== 'function') return null;
       const t = await this.exchange.fetchTicker(mapped);
-      console.log(`[${this.provider}] getQuote:trace:ccxt-ticker`, { traceId, mappedSymbol: mapped, hasBid: Number.isFinite(t?.bid), hasAsk: Number.isFinite(t?.ask), hasLast: Number.isFinite(t?.last) });
       const quote = await this._parseQuoteFromTicker(mapped, t, true);
       if (quote) this._tickerCache.set(mapped, quote);
-      console.log(`[${this.provider}] getQuote:trace:done`, { traceId, type: 'ccxt', mappedSymbol: mapped, hasQuote: !!quote });
       return quote || null;
     } catch (err) {
       console.error(`[${this.provider}] getQuote:error`, {
@@ -1669,8 +1641,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         hasSignature: false,
         ccxtSymbol,
         message: err?.message || String(err),
-        name: err?.name,
-        traceId
+        name: err?.name
       });
       return null;
     }
