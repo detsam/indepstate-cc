@@ -638,6 +638,14 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     return normalized;
   }
 
+
+  _binanceQuoteTypeToEndpoint(quoteType = 'book') {
+    if (quoteType === 'last') return '/fapi/v2/ticker/price';
+    if (quoteType === 'mark') return '/fapi/v1/premiumIndex';
+    if (quoteType === 'book' || quoteType === 'execution') return '/fapi/v1/ticker/bookTicker';
+    return undefined;
+  }
+
   /**
    * Get the native exchange symbol (e.g., 'ETHUSDT' for Binance) from a CCXT mapped symbol ('ETH/USDT:USDT').
    * @param {string} mappedSymbol
@@ -1580,34 +1588,35 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
    */
   async getQuote(symbol, quoteType = 'book') {
     let normalizedSymbol;
-    let endpoint;
+    let endpoint = this._binanceQuoteTypeToEndpoint(quoteType);
     let ccxtSymbol;
     try {
-      await this.ensureReady();
       if (this.exchangeId === 'binance') {
         normalizedSymbol = await this.normalizeBinanceUsdmSymbol(symbol);
-        ccxtSymbol = this.mapSymbol(`${normalizedSymbol.slice(0, -4)}/${normalizedSymbol.slice(-4)}:USDT`);
+        ccxtSymbol = `${normalizedSymbol.slice(0, -4)}/${normalizedSymbol.slice(-4)}:USDT`;
+
+        if (!endpoint) {
+          throw new Error(`Unsupported quoteType: ${quoteType}`);
+        }
+
+        const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
         if (quoteType === 'last') {
-          endpoint = '/fapi/v2/ticker/price';
-          const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, type: 'last', price: Number(response?.price), timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'last', price: Number(response?.price), timestamp: response?.time, raw: response };
         }
         if (quoteType === 'mark') {
-          endpoint = '/fapi/v1/premiumIndex';
-          const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, type: 'mark', markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'mark', markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, timestamp: response?.time, raw: response };
         }
-        endpoint = '/fapi/v1/ticker/bookTicker';
-        const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
+
         const bid = Number(response?.bidPrice);
         const ask = Number(response?.askPrice);
         const mid = Number.isFinite(bid) && Number.isFinite(ask) ? (bid + ask) / 2 : undefined;
         if (quoteType === 'execution') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, type: 'execution', bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, timestamp: response?.time };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, timestamp: response?.time, raw: response };
         }
-        return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, type: 'book', bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, timestamp: response?.time, raw: response };
+        return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, timestamp: response?.time, raw: response };
       }
 
+      await this.ensureReady();
       const mapped = this.mapSymbol(symbol);
       if (!mapped || typeof this.exchange.fetchTicker !== 'function') return null;
       const t = await this.exchange.fetchTicker(mapped);
