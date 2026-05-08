@@ -819,13 +819,53 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     if (hedgeMode) entryReq.positionSide = positionSide;
     const entryRes = await this._binanceSignedRequest('POST', '/fapi/v1/order', entryReq);
 
-    this._brackets.set(bracketId, { bracketId, symbol: nativeSymbol, positionSide, direction, entryClientOrderId: ids.entryClientOrderId, tpClientAlgoId: null, slClientAlgoId: null, entryOrderId: Number(entryRes?.orderId || 0) || null, status: 'ENTRY_PLACED', expectedQty: String(qtyRounded), actualQty: null, entryPrice: String(priceRounded), takeProfitPrice: tp, stopLossPrice: sl, protectionPriceSource: source, tickSize: String(tickSize), createdAt: now, updatedAt: now });
+    this._brackets.set(bracketId, { bracketId, symbol: nativeSymbol, positionSide, direction, entryClientOrderId: ids.entryClientOrderId, tpClientAlgoId: null, slClientAlgoId: null, entryOrderId: Number(entryRes?.orderId || 0) || null, status: 'ENTRY_PLACED', expectedQty: String(qtyRounded), actualQty: null, entryPrice: String(priceRounded), takeProfitPrice: tp, stopLossPrice: sl, protectionPriceSource: source, tickSize: String(tickSize), pendingId: cid, origOrder: order, uiConfirmed: false, uiRejected: false, createdAt: now, updatedAt: now });
     this._entryClientToBracket.set(ids.entryClientOrderId, bracketId);
     this.pending.set(cid, { order, createdAt: now });
     this._startBracketEntryWatcher(bracketId).catch(() => {});
     return { status: 'ok', provider: this.provider, providerOrderId: `pending:${cid}`, raw: { enqueued: true, bracketId, entry: entryRes } };
   }
 
+
+
+  _confirmBracketPending(bracket, entryOrder = {}) {
+    if (!bracket || bracket.uiConfirmed || bracket.uiRejected) return;
+    const pendingId = bracket.pendingId || bracket.bracketId;
+    const pending = this.pending.get(pendingId);
+    bracket.uiConfirmed = true;
+    bracket.confirmedAt = Date.now();
+    this.pending.delete(pendingId);
+    this.events.emit('order:confirmed', {
+      pendingId,
+      ticket: String(bracket.entryOrderId || entryOrder?.orderId || bracket.entryClientOrderId || ''),
+      mtOrder: {
+        ...entryOrder,
+        bracketId: bracket.bracketId,
+        entryClientOrderId: bracket.entryClientOrderId,
+        tpClientAlgoId: bracket.tpClientAlgoId,
+        slClientAlgoId: bracket.slClientAlgoId,
+        takeProfitPrice: bracket.takeProfitPrice,
+        stopLossPrice: bracket.stopLossPrice,
+        protectionStatus: bracket.status
+      },
+      origOrder: pending?.order || bracket.origOrder
+    });
+  }
+
+  _rejectBracketPending(bracket, reason, raw = undefined) {
+    if (!bracket || bracket.uiConfirmed || bracket.uiRejected) return;
+    const pendingId = bracket.pendingId || bracket.bracketId;
+    const pending = this.pending.get(pendingId);
+    bracket.uiRejected = true;
+    bracket.rejectedAt = Date.now();
+    this.pending.delete(pendingId);
+    this.events.emit('order:rejected', {
+      pendingId,
+      reason: reason || bracket.lastError || 'Binance bracket rejected',
+      msg: raw,
+      origOrder: pending?.order || bracket.origOrder
+    });
+  }
   async _placeBracketProtection(bracket) {
     try {
       const qty = String(bracket.actualQty || bracket.expectedQty);
@@ -900,12 +940,19 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       bracket.status = 'ENTRY_FILLED';
       bracket.actualQty = String(o?.executedQty || o?.cumQty || bracket.expectedQty);
       bracket.updatedAt = Date.now();
-      await this._placeBracketProtection(bracket);
+      try {
+        await this._placeBracketProtection(bracket);
+        this._confirmBracketPending(bracket, o);
+      } catch (error) {
+        bracket.status = 'ERROR';
+        bracket.lastError = error?.message || String(error);
+        this._rejectBracketPending(bracket, `Entry filled but protection failed: ${bracket.lastError}`, error);
+      }
       clearInterval(watcher.timer); this._bracketEntryWatchers.delete(bracketId);
       return;
     }
     if (st === 'PARTIALLY_FILLED') { bracket.status = 'ENTRY_PARTIALLY_FILLED'; bracket.actualQty = String(o?.executedQty || o?.cumQty || ''); bracket.updatedAt = Date.now(); return; }
-    if (['CANCELED','REJECTED','EXPIRED'].includes(st)) { bracket.status = 'CANCELED'; bracket.updatedAt = Date.now(); clearInterval(watcher.timer); this._bracketEntryWatchers.delete(bracketId); }
+    if (['CANCELED','REJECTED','EXPIRED'].includes(st)) { bracket.status = 'CANCELED'; bracket.updatedAt = Date.now(); this._rejectBracketPending(bracket, `Entry order finished with status ${st}`, o); clearInterval(watcher.timer); this._bracketEntryWatchers.delete(bracketId); }
   }
   _startWatchLoop() {
     if (this._watchTimer || typeof this.exchange.fetchPositions !== 'function') return;
@@ -1712,9 +1759,9 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         try {
           const o = await this._binanceSignedRequest('GET', '/fapi/v1/order', { symbol: b.symbol, origClientOrderId: b.entryClientOrderId });
           const st = String(o?.status || '').toUpperCase();
-          if (st === 'FILLED') { b.status = 'ENTRY_FILLED'; b.actualQty = String(o?.executedQty || o?.cumQty || b.expectedQty); await this._placeBracketProtection(b); }
+          if (st === 'FILLED') { b.status = 'ENTRY_FILLED'; b.actualQty = String(o?.executedQty || o?.cumQty || b.expectedQty); try { await this._placeBracketProtection(b); this._confirmBracketPending(b, o); } catch (error) { b.status = 'ERROR'; b.lastError = error?.message || String(error); this._rejectBracketPending(b, `Entry filled but protection failed: ${b.lastError}`, error); } }
           else if (st === 'PARTIALLY_FILLED') { b.status = 'ENTRY_PARTIALLY_FILLED'; b.actualQty = String(o?.executedQty || o?.cumQty || ''); }
-          else if (['CANCELED','REJECTED','EXPIRED'].includes(st)) { b.status = 'CANCELED'; }
+          else if (['CANCELED','REJECTED','EXPIRED'].includes(st)) { b.status = 'CANCELED'; this._rejectBracketPending(b, `Entry order finished with status ${st}`, o); }
           b.updatedAt = Date.now();
         } catch {}
         continue;
@@ -1756,9 +1803,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     const status = String(o?.X || '').toUpperCase();
     if (status === 'FILLED') {
       bracket.status = 'ENTRY_FILLED'; bracket.actualQty = String(o?.z || o?.q || bracket.expectedQty); bracket.updatedAt = Date.now();
-      await this._placeBracketProtection(bracket);
+      try { await this._placeBracketProtection(bracket); this._confirmBracketPending(bracket, o); } catch (error) { bracket.status = 'ERROR'; bracket.lastError = error?.message || String(error); this._rejectBracketPending(bracket, `Entry filled but protection failed: ${bracket.lastError}`, error); }
     } else if (['CANCELED','EXPIRED','REJECTED'].includes(status)) {
       bracket.status = 'CANCELED'; bracket.updatedAt = Date.now();
+      this._rejectBracketPending(bracket, `Entry order finished with status ${status}`, o);
     }
   }
 
