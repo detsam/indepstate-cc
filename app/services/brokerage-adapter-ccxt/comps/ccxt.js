@@ -88,6 +88,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
     this._desiredProtectionByTicket = new Map(); // ticket -> { symbol, side, amount, slPts, tpPts, tickSize }
 
+    // Binance USDⓈ-M REST helpers
+    this._binanceTimeOffsetMs = 0;
+    this._binanceTimeOffsetUpdatedAt = 0;
+    this._binanceExchangeInfoCache = null;
+    this._binanceExchangeInfoLoadedAt = 0;
+
     // Автоматичне забезпечення/скасування SL/TP по подіях позицій
     this.on('position:opened', async ({ ticket }) => {
       try { await this._ensureProtectiveOrdersForTicket(ticket); } catch {}
@@ -104,6 +110,9 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         try {
           const markets = await this.exchange.loadMarkets();
           if (this.autoBuildSymbolMap) this._buildSymbolMapFromMarkets(markets);
+          if (typeof this.exchange.loadTimeDifference === 'function') {
+            try { await this.exchange.loadTimeDifference(); } catch {}
+          }
         } finally {
           this._marketsLoaded = true;
         }
@@ -112,12 +121,40 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     return this._readyPromise;
   }
 
+  async _binancePublicRequest(path, params = {}) {
+    const baseUrl = 'https://fapi.binance.com';
+    const query = Object.entries(params || {})
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('&');
+    const url = `${baseUrl}${path}${query ? `?${query}` : ''}`;
+    const res = await fetch(url, { method: 'GET' });
+    const txt = await res.text();
+    let json;
+    try { json = JSON.parse(txt); } catch { json = { raw: txt }; }
+    if (!res.ok) throw new Error(`binance ${JSON.stringify(json)}`);
+    return json;
+  }
+
+  async _syncBinanceServerTime(force = false) {
+    const now = Date.now();
+    if (!force && now - this._binanceTimeOffsetUpdatedAt < 30000) return this._binanceTimeOffsetMs;
+    const json = await this._binancePublicRequest('/fapi/v1/time');
+    const serverTime = Number(json?.serverTime);
+    if (Number.isFinite(serverTime)) {
+      this._binanceTimeOffsetMs = serverTime - Date.now();
+      this._binanceTimeOffsetUpdatedAt = Date.now();
+    }
+    return this._binanceTimeOffsetMs;
+  }
+
   async _binanceSignedRequest(method, path, params = {}) {
     const apiKey = this.exchange?.apiKey;
     const secret = this.exchange?.secret;
     if (!apiKey || !secret) throw new Error('Binance API key/secret are required');
     const baseUrl = 'https://fapi.binance.com';
-    const payload = { ...params, recvWindow: 5000, timestamp: Date.now() };
+    await this._syncBinanceServerTime();
+    const payload = { ...params, recvWindow: 5000, timestamp: Date.now() + this._binanceTimeOffsetMs };
     const query = Object.entries(payload)
       .filter(([, v]) => v !== undefined && v !== null && v !== '')
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
@@ -567,6 +604,38 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   mapSymbol(symbol) {
     if (!symbol) return symbol;
     return this.symbolMap[symbol] || this.symbolMap[String(symbol).toUpperCase()] || symbol;
+  }
+
+  async _getBinanceExchangeInfo() {
+    const now = Date.now();
+    if (this._binanceExchangeInfoCache && now - this._binanceExchangeInfoLoadedAt < 5 * 60 * 1000) {
+      return this._binanceExchangeInfoCache;
+    }
+    const info = await this._binancePublicRequest('/fapi/v1/exchangeInfo');
+    this._binanceExchangeInfoCache = info;
+    this._binanceExchangeInfoLoadedAt = now;
+    return info;
+  }
+
+  async normalizeBinanceUsdmSymbol(input) {
+    const symbolInput = String(input || '').trim();
+    let normalized = symbolInput.toUpperCase();
+    if (normalized.endsWith('.P')) normalized = normalized.slice(0, -2);
+    if (normalized.includes(':')) {
+      const pair = normalized.split(':')[0];
+      const [base, quote] = pair.split('/');
+      if (base && quote) normalized = `${base}${quote}`;
+    } else if (normalized.includes('/')) {
+      normalized = normalized.replace('/', '');
+    }
+    normalized = normalized.replace(/[^A-Z0-9]/g, '');
+
+    const info = await this._getBinanceExchangeInfo();
+    const exists = Array.isArray(info?.symbols) && info.symbols.some((s) => String(s?.symbol || '').toUpperCase() === normalized);
+    if (!exists) {
+      throw new Error(`Invalid futures symbol: ${symbolInput} normalized to ${normalized} but not found in exchangeInfo`);
+    }
+    return normalized;
   }
 
   /**
@@ -1509,26 +1578,56 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
    * @param {string} symbol - у форматі ccxt або локальний (буде змаплено)
    * @returns {Promise<{bid?:number, ask?:number, price?:number}|null>}
    */
-  async getQuote(symbol) {
+  async getQuote(symbol, quoteType = 'book') {
+    let normalizedSymbol;
+    let endpoint;
+    let ccxtSymbol;
     try {
       await this.ensureReady();
-      const mapped = this.mapSymbol(symbol);
-      if (!mapped) return null;
-      const cached = this._tickerCache.get(mapped);
-      if (cached) return cached;
-
-      if (this._supportsWatchTicker() || typeof this.exchange.fetchTicker === 'function') {
-        this._ensureTickerTask(mapped);
+      if (this.exchangeId === 'binance') {
+        normalizedSymbol = await this.normalizeBinanceUsdmSymbol(symbol);
+        ccxtSymbol = this.mapSymbol(`${normalizedSymbol.slice(0, -4)}/${normalizedSymbol.slice(-4)}:USDT`);
+        if (quoteType === 'last') {
+          endpoint = '/fapi/v2/ticker/price';
+          const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, type: 'last', price: Number(response?.price), timestamp: response?.time, raw: response };
+        }
+        if (quoteType === 'mark') {
+          endpoint = '/fapi/v1/premiumIndex';
+          const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, type: 'mark', markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, timestamp: response?.time, raw: response };
+        }
+        endpoint = '/fapi/v1/ticker/bookTicker';
+        const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
+        const bid = Number(response?.bidPrice);
+        const ask = Number(response?.askPrice);
+        const mid = Number.isFinite(bid) && Number.isFinite(ask) ? (bid + ask) / 2 : undefined;
+        if (quoteType === 'execution') {
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, type: 'execution', bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, timestamp: response?.time };
+        }
+        return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, type: 'book', bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, timestamp: response?.time, raw: response };
       }
 
-      if (typeof this.exchange.fetchTicker !== 'function') return null;
+      const mapped = this.mapSymbol(symbol);
+      if (!mapped || typeof this.exchange.fetchTicker !== 'function') return null;
       const t = await this.exchange.fetchTicker(mapped);
-      if (!t) return null;
       const quote = await this._parseQuoteFromTicker(mapped, t, true);
-      if (!quote) return null;
-      this._tickerCache.set(mapped, quote);
-      return quote;
-    } catch {
+      if (quote) this._tickerCache.set(mapped, quote);
+      return quote || null;
+    } catch (err) {
+      console.error(`[${this.provider}] getQuote:error`, {
+        provider: this.provider,
+        stage: 'getQuote:error',
+        symbolInput: symbol,
+        normalizedSymbol,
+        endpoint,
+        isPublicRequest: true,
+        hasTimestamp: false,
+        hasSignature: false,
+        ccxtSymbol,
+        message: err?.message || String(err),
+        name: err?.name
+      });
       return null;
     }
   }
