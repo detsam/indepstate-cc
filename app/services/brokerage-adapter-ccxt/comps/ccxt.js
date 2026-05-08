@@ -84,6 +84,8 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     this.tickerWatchFailuresLimit = Number.isFinite(cfg.tickerWatchFailuresLimit) ? cfg.tickerWatchFailuresLimit : 3;
     this._tickerCache = new Map(); // mappedSymbol -> { bid, ask, price, tickSize }
     this._tickerWatchTasks = new Map(); // mappedSymbol -> { stop, mode, failures, timer }
+    this._quoteDebugLastLogAt = new Map(); // mappedSymbol -> timestamp
+    this.quoteDebugThrottleMs = Number.isFinite(cfg.quoteDebugThrottleMs) ? cfg.quoteDebugThrottleMs : 30000;
 
     // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
     this._desiredProtectionByTicket = new Map(); // ticket -> { symbol, side, amount, slPts, tpPts, tickSize }
@@ -596,39 +598,87 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
 
   async _parseQuoteFromTicker(mappedSymbol, t, allowOrderBookFallback = true) {
     if (!t) return null;
-    // Надійне діставання bid/ask: спочатку з уніфікованих полів, далі з info, і як fallback — orderbook
-    let bid = Number.isFinite(t.bid) ? Number(t.bid)
-      : (t.info && Number.isFinite(Number(t.info.bidPrice)) ? Number(t.info.bidPrice)
-        : (t.info && Number.isFinite(Number(t.info.bestBid)) ? Number(t.info.bestBid)
-          : (t.info && Number.isFinite(Number(t.info.b)) ? Number(t.info.b) : undefined)));
+    const finiteNumber = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    const resolveFirstFinite = (sources = []) => {
+      for (const src of sources) {
+        const value = finiteNumber(src.value);
+        if (Number.isFinite(value)) return { value, source: src.source };
+      }
+      return { value: undefined, source: 'none' };
+    };
 
-    let ask = Number.isFinite(t.ask) ? Number(t.ask)
-      : (t.info && Number.isFinite(Number(t.info.askPrice)) ? Number(t.info.askPrice)
-        : (t.info && Number.isFinite(Number(t.info.bestAsk)) ? Number(t.info.bestAsk)
-          : (t.info && Number.isFinite(Number(t.info.a)) ? Number(t.info.a) : undefined)));
+    // Надійне діставання bid/ask: спочатку з уніфікованих полів, далі з info, і як fallback — orderbook
+    const bidResolved = resolveFirstFinite([
+      { value: t.bid, source: 'ticker.bid' },
+      { value: t.info?.bidPrice, source: 'ticker.info.bidPrice' },
+      { value: t.info?.bestBid, source: 'ticker.info.bestBid' },
+      { value: t.info?.b, source: 'ticker.info.b' }
+    ]);
+    const askResolved = resolveFirstFinite([
+      { value: t.ask, source: 'ticker.ask' },
+      { value: t.info?.askPrice, source: 'ticker.info.askPrice' },
+      { value: t.info?.bestAsk, source: 'ticker.info.bestAsk' },
+      { value: t.info?.a, source: 'ticker.info.a' }
+    ]);
+    let bid = bidResolved.value;
+    let ask = askResolved.value;
+    let bidSource = bidResolved.source;
+    let askSource = askResolved.source;
 
     if (allowOrderBookFallback && (!Number.isFinite(bid) || !Number.isFinite(ask)) && typeof this.exchange.fetchOrderBook === 'function') {
       try {
         const ob = await this.exchange.fetchOrderBook(mappedSymbol, 5);
         if (!Number.isFinite(bid) && Array.isArray(ob?.bids) && ob.bids.length) {
-          const v = Number(ob.bids[0][0]);
+          const v = finiteNumber(ob.bids[0][0]);
           if (Number.isFinite(v)) bid = v;
+          if (Number.isFinite(v)) bidSource = 'orderbook.bids[0][0]';
         }
         if (!Number.isFinite(ask) && Array.isArray(ob?.asks) && ob.asks.length) {
-          const v = Number(ob.asks[0][0]);
+          const v = finiteNumber(ob.asks[0][0]);
           if (Number.isFinite(v)) ask = v;
+          if (Number.isFinite(v)) askSource = 'orderbook.asks[0][0]';
         }
       } catch {
         // ігноруємо помилку фолу до ордербука
       }
     }
 
-    let price = Number.isFinite(t.last) ? Number(t.last)
-      : (Number.isFinite(bid) && Number.isFinite(ask)) ? (bid + ask) / 2
-        : (Number.isFinite(Number(t.close)) ? Number(t.close)
-          : (Number.isFinite(Number(t.info?.lastPrice)) ? Number(t.info.lastPrice) : undefined));
+    const priceResolved = resolveFirstFinite([
+      { value: t.last, source: 'ticker.last' },
+      { value: t.close, source: 'ticker.close' },
+      { value: t.info?.lastPrice, source: 'ticker.info.lastPrice' }
+    ]);
+    let price = priceResolved.value;
+    let priceSource = priceResolved.source;
+    if (!Number.isFinite(price) && Number.isFinite(bid) && Number.isFinite(ask)) {
+      price = (bid + ask) / 2;
+      priceSource = 'mid(bid,ask)';
+    }
+    if (!Number.isFinite(price)) return null;
 
     const tickSize = this._getTickSizeFromMarket(mappedSymbol);
+    const now = Date.now();
+    const lastLogAt = this._quoteDebugLastLogAt.get(mappedSymbol) || 0;
+    if (now - lastLogAt >= this.quoteDebugThrottleMs) {
+      this._quoteDebugLastLogAt.set(mappedSymbol, now);
+      try {
+        console.debug('[CCXTExecutionAdapter:_parseQuoteFromTicker]', {
+          provider: this.provider,
+          symbol: mappedSymbol,
+          tickerKeys: Object.keys(t || {}),
+          infoKeys: Object.keys(t?.info || {}),
+          bidSource,
+          askSource,
+          priceSource,
+          bid,
+          ask,
+          price
+        });
+      } catch {}
+    }
     return { bid, ask, price, tickSize };
   }
 
