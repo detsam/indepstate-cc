@@ -112,6 +112,34 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     return this._readyPromise;
   }
 
+  async _binanceSignedRequest(method, path, params = {}) {
+    const apiKey = this.exchange?.apiKey;
+    const secret = this.exchange?.secret;
+    if (!apiKey || !secret) throw new Error('Binance API key/secret are required');
+    const baseUrl = 'https://fapi.binance.com';
+    const payload = { ...params, recvWindow: 5000, timestamp: Date.now() };
+    const query = Object.entries(payload)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('&');
+    const signature = crypto.createHmac('sha256', secret).update(query).digest('hex');
+    const total = `${query}&signature=${signature}`;
+    const url = `${baseUrl}${path}${method === 'GET' || method === 'DELETE' ? `?${total}` : ''}`;
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'X-MBX-APIKEY': apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: method === 'GET' || method === 'DELETE' ? undefined : total
+    });
+    const txt = await res.text();
+    let json;
+    try { json = JSON.parse(txt); } catch { json = { raw: txt }; }
+    if (!res.ok) throw new Error(`binance ${JSON.stringify(json)}`);
+    return json;
+  }
+
   _buildSymbolMapFromMarkets(markets) {
     try {
       const list = Array.isArray(markets) ? markets : Object.values(markets || {});
@@ -713,10 +741,126 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       ? (side === 'buy' ? (entryPrice + Number(tpPts) * tick) : (entryPrice - Number(tpPts) * tick))
       : undefined;
 
+    // Binance Futures: частина умовних ордерів тепер вимагає Algo API endpoint.
+    // Намагаємось ставити SL/TP через algo endpoint, а createOrder залишаємо як fallback.
+    const tryBinanceAlgoOrder = async ({ kind, triggerPrice, limitPrice }) => {
+      if (this.exchangeId !== 'binance') return null;
+      const nativeSymbol = this.getNativeSymbol(mappedSymbol);
+      if (!nativeSymbol) return null;
+
+      const orderType = kind === 'SL' ? 'STOP_MARKET' : 'TAKE_PROFIT_MARKET';
+      const req = {
+        symbol: nativeSymbol,
+        side: String(opposite || '').toUpperCase(),
+        quantity: this.exchange.amountToPrecision(mappedSymbol, amount),
+        reduceOnly: 'true',
+        stopPrice: this.exchange.priceToPrecision(mappedSymbol, triggerPrice),
+        workingType: 'CONTRACT_PRICE',
+        priceProtect: 'TRUE',
+        timeInForce: 'GTC',
+        type: orderType,
+      };
+      if (Number.isFinite(limitPrice) && limitPrice > 0) {
+        req.type = kind === 'SL' ? 'STOP' : 'TAKE_PROFIT';
+        req.price = this.exchange.priceToPrecision(mappedSymbol, limitPrice);
+      }
+
+      const posSide = String(baseParams.positionSide || '').toUpperCase();
+      if (posSide === 'LONG' || posSide === 'SHORT') req.positionSide = posSide;
+
+      const fns = [
+        ['fapiPrivatePostAlgoOrder', this.exchange.fapiPrivatePostAlgoOrder],
+        ['fapiPrivate_post_algoorder', this.exchange.fapiPrivate_post_algoorder],
+        ['fapiPrivatePostAlgoOrders', this.exchange.fapiPrivatePostAlgoOrders],
+        ['fapiPrivate_post_algoorders', this.exchange.fapiPrivate_post_algoorders],
+      ].filter(([, fn]) => typeof fn === 'function');
+      if (!fns.length) {
+        console.warn(`[${this.provider}] Binance algo method not found in ccxt instance; trying signed /fapi/v1/algoOrder for ${kind}`, {
+          mappedSymbol,
+          nativeSymbol,
+          availableAlgoKeys: Object.keys(this.exchange || {}).filter(k => k.toLowerCase().includes('algo')).slice(0, 50)
+        });
+        const algoReq = {
+          algoType: 'CONDITIONAL',
+          symbol: nativeSymbol,
+          side: String(opposite || '').toUpperCase(),
+          type: req.type,
+          quantity: req.quantity,
+          triggerPrice: req.stopPrice,
+          workingType: 'MARK_PRICE',
+          clientAlgoId: `${kind.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+        };
+        if (String(baseParams?.positionSide || '').toUpperCase() === 'LONG' || String(baseParams?.positionSide || '').toUpperCase() === 'SHORT') {
+          algoReq.positionSide = String(baseParams.positionSide).toUpperCase();
+        } else {
+          algoReq.reduceOnly = 'true';
+        }
+        const res = await this._binanceSignedRequest('POST', '/fapi/v1/algoOrder', algoReq);
+        const algoId = String(res?.algoId || res?.clientAlgoId || '').trim();
+        if (algoId) return { id: algoId, raw: res };
+        return null;
+      }
+      console.log(`[${this.provider}] Trying Binance algo ${kind}`, {
+        methodCandidates: fns.map(([name]) => name),
+        request: req
+      });
+      for (const [name, fn] of fns) {
+        const res = await fn.call(this.exchange, req);
+        const algoId = String(res?.algoId || res?.orderId || res?.clientOrderId || '').trim();
+        if (algoId) {
+          console.log(`[${this.provider}] Binance algo ${kind} placed`, { method: name, algoId, response: res });
+          return { id: algoId, raw: res };
+        }
+        console.warn(`[${this.provider}] Binance algo ${kind} no id in response`, { method: name, response: res });
+      }
+      return null;
+    };
+
     // SL: спершу намагаємось чистий stop-market (без price), фолбек — stop-limit
     if (hasSL && Number.isFinite(slPrice) && slPrice > 0) {
       const slParams = { ...reduceParams, stopPrice: slPrice };
       try {
+        // 0) Для Binance USDⓈ-M часто працює саме closePosition STOP_MARKET через createOrder.
+        // Це не OCO/брекет, але коректно закриває відкриту позицію по тригеру.
+        if (this.exchangeId === 'binance') {
+          try {
+            const p = {
+              ...slParams,
+              closePosition: true,
+              workingType: slParams.workingType || 'CONTRACT_PRICE',
+              priceProtect: slParams.priceProtect ?? 'TRUE',
+            };
+            const slClosePos = await this.exchange.createOrder(mappedSymbol, 'stop_market', opposite, undefined, undefined, p);
+            const slCloseId = this._resolveOrderId(slClosePos);
+            if (slCloseId) {
+              childIds.push(slCloseId);
+              slParams._algoPlaced = true;
+            }
+          } catch (closeErr) {
+            console.warn(`[${this.provider}] Binance closePosition STOP_MARKET SL failed, trying algo/createOrder fallback`, closeErr?.message || String(closeErr));
+          }
+        }
+
+        // 0) Binance Algo API
+        try {
+          if (slParams._algoPlaced) throw new Error('SL_ALREADY_PLACED');
+          const algoSL = await tryBinanceAlgoOrder({ kind: 'SL', triggerPrice: slPrice });
+          if (algoSL?.id) {
+            childIds.push(algoSL.id);
+            slParams._algoPlaced = true;
+          }
+        } catch (algoErr) {
+          if (String(algoErr?.message || '') === 'SL_ALREADY_PLACED') {
+            // skip algo attempt
+          } else {
+          console.warn(`[${this.provider}] Binance algo SL failed, fallback to createOrder`, algoErr?.message || String(algoErr));
+          }
+        }
+
+        if (slParams._algoPlaced) {
+          delete slParams._algoPlaced;
+          // already placed via algo endpoint
+        } else {
         // 1) Спроба створити чистий stop-market (без price)
         // Binance: деривативи — STOP_MARKET, spot — STOP_LOSS
         let slOrder;
@@ -734,6 +878,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         }
         const slId = this._resolveOrderId(slOrder);
         if (slId) childIds.push(slId);
+        }
       } catch (e) {
         console.error(`[${this.provider}] Failed to place SL order:`, e?.message || String(e));
       }
@@ -745,16 +890,30 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     // 3) fallback: звичайний limit (може бути відхилений на деяких біржах)
     if (hasTP && Number.isFinite(tpPrice) && tpPrice > 0) {
       let placed = false;
-      // 1) TP market on trigger
+      // 0) Binance Algo API
       try {
-        const p = { ...reduceParams, stopPrice: tpPrice };
-        const tpOrder = await this.exchange.createOrder(mappedSymbol, 'take_profit_market', opposite, amount, undefined, p);
-        const tpId = this._resolveOrderId(tpOrder);
+        const algoTP = await tryBinanceAlgoOrder({ kind: 'TP', triggerPrice: tpPrice });
+        const tpId = algoTP?.id;
         if (tpId) {
           childIds.push(tpId);
           placed = true;
         }
-      } catch (_) {}
+      } catch (algoErr) {
+        console.warn(`[${this.provider}] Binance algo TP failed, fallback to createOrder`, algoErr?.message || String(algoErr));
+      }
+
+      // 1) TP market on trigger
+      if (!placed) {
+        try {
+          const p = { ...reduceParams, stopPrice: tpPrice };
+          const tpOrder = await this.exchange.createOrder(mappedSymbol, 'take_profit_market', opposite, amount, undefined, p);
+          const tpId = this._resolveOrderId(tpOrder);
+          if (tpId) {
+            childIds.push(tpId);
+            placed = true;
+          }
+        } catch (_) {}
+      }
 
       // 2) TP limit on trigger
       if (!placed) {
@@ -879,7 +1038,18 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       let algoOrders = [];
       if (this.exchangeId === 'binance') {
         const nativeSymbol = this.getNativeSymbol(sym);
-        algoOrders = await this.exchange.fapiPrivateGetOpenAlgoOrders({"symbol": nativeSymbol, "stop": true});
+        const getOpenAlgo =
+          this.exchange.fapiPrivateGetOpenAlgoOrders
+          || this.exchange.fapiPrivate_get_openalgoorders;
+        if (typeof getOpenAlgo === 'function') {
+          algoOrders = await getOpenAlgo.call(this.exchange, { symbol: nativeSymbol, stop: true });
+        } else {
+          try {
+            algoOrders = await this._binanceSignedRequest('GET', '/fapi/v1/openAlgoOrders', { symbol: nativeSymbol });
+          } catch (e) {
+            console.warn(`[${this.provider}] raw openAlgoOrders failed for ${sym}:`, e?.message || String(e));
+          }
+        }
       }
 
       console.log("Open orders sym", this.exchangeId,  simpleOrders, conditionalOrders, algoOrders );
@@ -907,7 +1077,18 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
 
       let algoOrders = [];
       if (this.exchangeId === 'binance') {
-        algoOrders = await this.exchange.fapiPrivateGetOpenAlgoOrders();
+        const getOpenAlgo =
+          this.exchange.fapiPrivateGetOpenAlgoOrders
+          || this.exchange.fapiPrivate_get_openalgoorders;
+        if (typeof getOpenAlgo === 'function') {
+          algoOrders = await getOpenAlgo.call(this.exchange);
+        } else if (typeof this.exchange.request === 'function') {
+          try {
+            algoOrders = await this.exchange.request('openAlgoOrders', 'fapiPrivate', 'GET', {});
+          } catch (e) {
+            console.warn(`[${this.provider}] raw openAlgoOrders failed:`, e?.message || String(e));
+          }
+        }
       }
       console.log("Open orders", this.exchangeId, simpleOrders, conditionalOrders, algoOrders );
 
