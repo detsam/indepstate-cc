@@ -1633,16 +1633,16 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
           return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'last', price: Number(response?.price), timestamp: response?.time, raw: response };
         }
         if (quoteType === 'mark') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'mark', markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'mark', price: Number(response?.markPrice), markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, timestamp: response?.time, raw: response };
         }
 
         const bid = Number(response?.bidPrice);
         const ask = Number(response?.askPrice);
         const mid = Number.isFinite(bid) && Number.isFinite(ask) ? (bid + ask) / 2 : undefined;
         if (quoteType === 'execution') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, timestamp: response?.time, raw: response };
         }
-        const result = { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, timestamp: response?.time, raw: response };
+        const result = { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, timestamp: response?.time, raw: response };
         console.log(`[${this.provider}] getQuote:trace:done`, { traceId, type: result.type, endpoint, symbol: normalizedSymbol });
         return result;
       }
