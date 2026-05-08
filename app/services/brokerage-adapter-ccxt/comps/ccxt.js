@@ -88,6 +88,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     // Конфіг бажаних SL/TP по тікету (щоб забезпечити та відновлювати SL/TP після фактичного входу)
     this._desiredProtectionByTicket = new Map(); // ticket -> { symbol, side, amount, slPts, tpPts, tickSize }
 
+    this._brackets = new Map();
+    this._entryClientToBracket = new Map();
+    this._reconcileTimer = setInterval(() => { this._reconcileBrackets().catch(() => {}); }, Math.max(5000, Number(cfg.bracketReconcileMs) || 10000));
+
     // Binance USDⓈ-M REST helpers
     this._binanceTimeOffsetMs = 0;
     this._binanceTimeOffsetUpdatedAt = 0;
@@ -757,6 +761,62 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     }
   }
 
+
+
+  _shouldUseBinanceBracketFlow({ ccxtType, order }) {
+    if (!this._isBinanceUsdmLike() || ccxtType !== 'limit') return false;
+    const tp = Number(order.takeProfitPrice ?? order.tpPrice);
+    const sl = Number(order.stopLossPrice ?? order.slPrice);
+    return Number.isFinite(tp) && tp > 0 && Number.isFinite(sl) && sl > 0;
+  }
+
+  _makeBracketIds(bracketId) {
+    return {
+      entryClientOrderId: `br_${bracketId}_entry`,
+      tpClientAlgoId: `br_${bracketId}_tp`,
+      slClientAlgoId: `br_${bracketId}_sl`
+    };
+  }
+
+  async _placeBinanceBracketEntry({ order, symbol, side, amount, price, params, cid }) {
+    const now = Date.now();
+    const bracketId = String(order.bracketId || order.strategyId || cid || crypto.randomBytes(6).toString('hex'));
+    const ids = this._makeBracketIds(bracketId);
+    const nativeSymbol = await this.normalizeBinanceUsdmSymbol(symbol);
+    const direction = String(side).toUpperCase() === 'BUY' ? 'LONG' : 'SHORT';
+    const hedgePos = String(params.positionSide || '').toUpperCase();
+    const hedgeMode = hedgePos === 'LONG' || hedgePos === 'SHORT';
+    const positionSide = hedgeMode ? hedgePos : 'BOTH';
+    const { tickSize, stepSize, minNotional } = await this._getBinanceSymbolFilters(nativeSymbol);
+    const qtyRounded = this._roundToStep(amount, stepSize || 0.000001, 'floor');
+    const priceRounded = this._roundToStep(price, tickSize || 0.01, 'round');
+    if ((qtyRounded * priceRounded) < minNotional) return { status: 'rejected', provider: this.provider, reason: 'MIN_NOTIONAL validation failed' };
+    const tp = String(this._roundToStep(Number(order.takeProfitPrice ?? order.tpPrice), tickSize || 0.01, 'round'));
+    const sl = String(this._roundToStep(Number(order.stopLossPrice ?? order.slPrice), tickSize || 0.01, 'round'));
+
+    const entryReq = { symbol: nativeSymbol, side: direction === 'LONG' ? 'BUY' : 'SELL', type: 'LIMIT', timeInForce: 'GTC', quantity: String(qtyRounded), price: String(priceRounded), newClientOrderId: ids.entryClientOrderId };
+    if (hedgeMode) entryReq.positionSide = positionSide;
+    const entryRes = await this._binanceSignedRequest('POST', '/fapi/v1/order', entryReq);
+
+    this._brackets.set(bracketId, { bracketId, symbol: nativeSymbol, positionSide, direction, entryClientOrderId: ids.entryClientOrderId, tpClientAlgoId: null, slClientAlgoId: null, entryOrderId: Number(entryRes?.orderId || 0) || null, status: 'ENTRY_PLACED', expectedQty: String(qtyRounded), actualQty: null, entryPrice: String(priceRounded), takeProfitPrice: tp, stopLossPrice: sl, createdAt: now, updatedAt: now });
+    this._entryClientToBracket.set(ids.entryClientOrderId, bracketId);
+    this.pending.set(cid, { order, createdAt: now });
+    return { status: 'ok', provider: this.provider, providerOrderId: `pending:${cid}`, raw: { enqueued: true, bracketId, entry: entryRes } };
+  }
+
+  async _placeBracketProtection(bracket) {
+    const qty = String(bracket.actualQty || bracket.expectedQty);
+    const closeSide = bracket.direction === 'LONG' ? 'SELL' : 'BUY';
+    const common = { algoType: 'CONDITIONAL', symbol: bracket.symbol, side: closeSide, type: '', quantity: qty, workingType: 'MARK_PRICE' };
+    if (bracket.positionSide !== 'BOTH') common.positionSide = bracket.positionSide; else common.reduceOnly = 'true';
+    const tpId = this._makeBracketIds(bracket.bracketId).tpClientAlgoId;
+    const slId = this._makeBracketIds(bracket.bracketId).slClientAlgoId;
+    const tpReq = { ...common, type: 'TAKE_PROFIT_MARKET', triggerPrice: bracket.takeProfitPrice, clientAlgoId: tpId };
+    const slReq = { ...common, type: 'STOP_MARKET', triggerPrice: bracket.stopLossPrice, clientAlgoId: slId };
+    await this._binanceSignedRequest('POST', '/fapi/v1/algoOrder', tpReq);
+    await this._binanceSignedRequest('POST', '/fapi/v1/algoOrder', slReq);
+    bracket.tpClientAlgoId = tpId; bracket.slClientAlgoId = slId; bracket.status = 'PROTECTED'; bracket.updatedAt = Date.now();
+  }
   _startWatchLoop() {
     if (this._watchTimer || typeof this.exchange.fetchPositions !== 'function') return;
     this._watchTimer = setInterval(() => {
@@ -1452,36 +1512,10 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         }
       }
 
-      if (this._isBinanceUsdmLike() && ccxtType === 'limit' && (Number.isFinite(Number(order.takeProfitPrice ?? order.tpPrice)) || Number.isFinite(Number(order.stopLossPrice ?? order.slPrice)))) {
-        const nativeSymbol = await this.normalizeBinanceUsdmSymbol(symbol);
-        const hedgePos = String(params.positionSide || '').toUpperCase();
-        const hedgeMode = hedgePos === 'LONG' || hedgePos === 'SHORT';
-        const sideU = String(side).toUpperCase();
-        const strategyId = String(order.strategyId || order.meta?.strategyId || cid);
-        const { tickSize, stepSize, minNotional } = await this._getBinanceSymbolFilters(nativeSymbol);
-        const qtyRounded = this._roundToStep(amount, stepSize || 0.000001, 'floor');
-        const priceRounded = this._roundToStep(price, tickSize || 0.01, 'round');
-        if ((qtyRounded * priceRounded) < minNotional) return { status: 'rejected', provider: this.provider, reason: 'MIN_NOTIONAL validation failed' };
-        const entryParams = { symbol: nativeSymbol, side: sideU, type: 'LIMIT', timeInForce: 'GTC', quantity: String(qtyRounded), price: String(priceRounded), newClientOrderId: `entry_${strategyId}` };
-        if (hedgeMode) entryParams.positionSide = hedgePos;
-        const entryRes = await this._binanceSignedRequest('POST', '/fapi/v1/order', entryParams);
-        const filled = await this._waitBinanceOrderFilled(nativeSymbol, entryParams.newClientOrderId);
-        const fillQty = String(this._roundToStep(Number(filled?.executedQty || filled?.cumQty || qtyRounded), stepSize || 0.000001, 'floor'));
-        const tp = Number(order.takeProfitPrice ?? order.tpPrice);
-        const sl = Number(order.stopLossPrice ?? order.slPrice);
-        const closeSide = sideU === 'BUY' ? 'SELL' : 'BUY';
-        const common = { algoType: 'CONDITIONAL', symbol: nativeSymbol, side: closeSide, quantity: fillQty, workingType: 'MARK_PRICE' };
-        if (hedgeMode) common.positionSide = hedgePos; else common.reduceOnly = 'true';
-        const tpReq = { ...common, type: 'TAKE_PROFIT_MARKET', triggerPrice: String(this._roundToStep(tp, tickSize || 0.01, 'round')), clientAlgoId: `tp_${strategyId}` };
-        const slReq = { ...common, type: 'STOP_MARKET', triggerPrice: String(this._roundToStep(sl, tickSize || 0.01, 'round')), clientAlgoId: `sl_${strategyId}` };
-        const tpRes = await this._binanceSignedRequest('POST', '/fapi/v1/algoOrder', tpReq);
-        const slRes = await this._binanceSignedRequest('POST', '/fapi/v1/algoOrder', slReq);
-        const parentId = String(entryRes?.orderId || entryRes?.clientOrderId || entryParams.newClientOrderId);
-        this._childOrdersByParent.set(parentId, { symbol, children: [tpReq.clientAlgoId, slReq.clientAlgoId] });
-        this._ticketToSymbol.set(parentId, symbol);
-        this.events.emit('order:confirmed', { pendingId: cid, ticket: parentId, mtOrder: entryRes, origOrder: order });
-        return { status: 'ok', provider: this.provider, providerOrderId: parentId, raw: { entry: entryRes, filled, tp: tpRes, sl: slRes } };
+      if (this._shouldUseBinanceBracketFlow({ ccxtType, order })) {
+        return await this._placeBinanceBracketEntry({ order, symbol, side, amount, price, params, cid });
       }
+
 
       // --- Pending: повертаємо відразу, а виконання — асинхронно ---
       this.pending.set(cid, { order, createdAt: Date.now() });
@@ -1575,6 +1609,91 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       };
     }
   }
+
+
+
+
+
+  async _reconcileBrackets() {
+    for (const b of this._brackets.values()) {
+      if (['CLOSED','CANCELED'].includes(b.status)) continue;
+      let posAmt = 0;
+      try {
+        const all = await this._binanceSignedRequest('GET', '/fapi/v2/positionRisk', {});
+        const row = (all || []).find((r) => String(r.symbol) === b.symbol && String(r.positionSide || 'BOTH') === b.positionSide);
+        posAmt = Math.abs(Number(row?.positionAmt || 0));
+      } catch {}
+      let open = [];
+      try { open = await this._binanceSignedRequest('GET', '/fapi/v1/openAlgoOrders', { symbol: b.symbol }); } catch {}
+      const set = new Set((open || []).map((x) => String(x.clientAlgoId || '')));
+      if (posAmt === 0) { await this.cancelBracketProtection(b.bracketId); b.status = 'CLOSED'; continue; }
+      const hasTp = b.tpClientAlgoId && set.has(b.tpClientAlgoId); const hasSl = b.slClientAlgoId && set.has(b.slClientAlgoId);
+      if ((!hasTp || !hasSl) && b.status === 'PROTECTED') b.status = 'ERROR';
+    }
+  }
+  async handleBinanceUserDataEvent(evt = {}) {
+    const type = evt?.e;
+    if (type === 'ORDER_TRADE_UPDATE') return this._onOrderTradeUpdate(evt);
+    if (type === 'ACCOUNT_UPDATE') return this._onAccountUpdate(evt);
+    if (type === 'ALGO_UPDATE') return this._onAlgoUpdate(evt);
+  }
+
+  async _onOrderTradeUpdate(evt) {
+    const o = evt?.o || {};
+    const cid = String(o?.c || '');
+    const bracketId = this._entryClientToBracket.get(cid);
+    if (!bracketId) return;
+    const bracket = this._brackets.get(bracketId); if (!bracket) return;
+    const status = String(o?.X || '').toUpperCase();
+    if (status === 'FILLED') {
+      bracket.status = 'ENTRY_FILLED'; bracket.actualQty = String(o?.z || o?.q || bracket.expectedQty); bracket.updatedAt = Date.now();
+      await this._placeBracketProtection(bracket);
+    } else if (['CANCELED','EXPIRED','REJECTED'].includes(status)) {
+      bracket.status = 'CANCELED'; bracket.updatedAt = Date.now();
+    }
+  }
+
+  async _onAccountUpdate(evt) {
+    const positions = evt?.a?.P || [];
+    for (const p of positions) {
+      const symbol = String(p?.s || ''); const ps = String(p?.ps || 'BOTH'); const pa = Number(p?.pa || 0);
+      if (pa !== 0) continue;
+      for (const b of this._brackets.values()) {
+        if (b.symbol === symbol && b.positionSide === ps && !['CLOSED','CANCELED'].includes(b.status)) {
+          b.status = 'CLOSING'; b.updatedAt = Date.now();
+          await this.cancelBracketProtection(b.bracketId);
+          b.status = 'CLOSED'; b.updatedAt = Date.now();
+        }
+      }
+    }
+  }
+
+  async _onAlgoUpdate(evt) {
+    const o = evt?.o || {}; const caid = String(o?.caid || ''); if (!caid.startsWith('br_')) return;
+    const parts = caid.split('_'); const bracketId = parts[1];
+    const bracket = this._brackets.get(bracketId); if (!bracket) return;
+    const x = String(o?.X || '').toUpperCase();
+    if (['TRIGGERED','FINISHED'].includes(x)) {
+      const other = caid.endsWith('_tp') ? bracket.slClientAlgoId : bracket.tpClientAlgoId;
+      if (other) await this._binanceSignedRequest('DELETE', '/fapi/v1/algoOrder', { symbol: bracket.symbol, clientAlgoId: other }).catch(()=>{});
+    }
+    if (['REJECTED','EXPIRED'].includes(x)) { bracket.status = 'ERROR'; bracket.updatedAt = Date.now(); }
+  }
+
+  async cancelBracketProtection(bracketId) {
+    const b = this._brackets.get(String(bracketId)); if (!b) return;
+    const ids = [b.tpClientAlgoId, b.slClientAlgoId].filter(Boolean);
+    for (const id of ids) {
+      try { await this._binanceSignedRequest('DELETE', '/fapi/v1/algoOrder', { symbol: b.symbol, clientAlgoId: id }); } catch (e) {
+        const m = String(e?.message || ''); if (!m.includes('not found') && !m.includes('already')) throw e;
+      }
+    }
+    const open = await this._binanceSignedRequest('GET', '/fapi/v1/openAlgoOrders', { symbol: b.symbol }).catch(() => []);
+    const rest = (Array.isArray(open) ? open : []).filter((x) => String(x?.clientAlgoId || '').startsWith(`br_${bracketId}_`));
+    if (!rest.length) { b.tpClientAlgoId = null; b.slClientAlgoId = null; }
+  }
+
+  async cancelAllProtectionForSymbol(symbol) { return this._binanceSignedRequest('DELETE', '/fapi/v1/algoOpenOrders', { symbol }); }
 
   async cancelOrder(orderId, symbol) {
     try {
