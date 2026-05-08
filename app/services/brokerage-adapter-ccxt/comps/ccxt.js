@@ -592,8 +592,31 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   async _updateTickerCache(mappedSymbol, ticker, allowOrderBookFallback) {
     if (!mappedSymbol || !ticker) return;
     const quote = await this._parseQuoteFromTicker(mappedSymbol, ticker, allowOrderBookFallback);
-    if (!quote) return;
+    if (!quote) {
+      this._debugQuote('updateTickerCache:no-quote', mappedSymbol, {
+        allowOrderBookFallback,
+        tickerKeys: Object.keys(ticker || {}),
+        infoKeys: Object.keys(ticker?.info || {})
+      });
+      return;
+    }
     this._tickerCache.set(mappedSymbol, quote);
+  }
+
+  _debugQuote(stage, mappedSymbol, extra = {}) {
+    const now = Date.now();
+    const key = `${mappedSymbol || 'unknown'}::${stage}`;
+    const lastLogAt = this._quoteDebugLastLogAt.get(key) || 0;
+    if (now - lastLogAt < this.quoteDebugThrottleMs) return;
+    this._quoteDebugLastLogAt.set(key, now);
+    try {
+      console.debug('[CCXTExecutionAdapter:quote-debug]', {
+        provider: this.provider,
+        stage,
+        symbol: mappedSymbol,
+        ...extra
+      });
+    } catch {}
   }
 
   async _parseQuoteFromTicker(mappedSymbol, t, allowOrderBookFallback = true) {
@@ -660,25 +683,16 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     if (!Number.isFinite(price)) return null;
 
     const tickSize = this._getTickSizeFromMarket(mappedSymbol);
-    const now = Date.now();
-    const lastLogAt = this._quoteDebugLastLogAt.get(mappedSymbol) || 0;
-    if (now - lastLogAt >= this.quoteDebugThrottleMs) {
-      this._quoteDebugLastLogAt.set(mappedSymbol, now);
-      try {
-        console.debug('[CCXTExecutionAdapter:_parseQuoteFromTicker]', {
-          provider: this.provider,
-          symbol: mappedSymbol,
-          tickerKeys: Object.keys(t || {}),
-          infoKeys: Object.keys(t?.info || {}),
-          bidSource,
-          askSource,
-          priceSource,
-          bid,
-          ask,
-          price
-        });
-      } catch {}
-    }
+    this._debugQuote('parseTicker:resolved', mappedSymbol, {
+      tickerKeys: Object.keys(t || {}),
+      infoKeys: Object.keys(t?.info || {}),
+      bidSource,
+      askSource,
+      priceSource,
+      bid,
+      ask,
+      price
+    });
     return { bid, ask, price, tickSize };
   }
 
@@ -1564,8 +1578,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       await this.ensureReady();
       const mapped = this.mapSymbol(symbol);
       if (!mapped) return null;
+      this._debugQuote('getQuote:start', mapped, { inputSymbol: symbol });
       const cached = this._tickerCache.get(mapped);
-      if (cached) return cached;
+      if (cached) {
+        this._debugQuote('getQuote:cache-hit', mapped, cached);
+        return cached;
+      }
 
       if (this._supportsWatchTicker() || typeof this.exchange.fetchTicker === 'function') {
         this._ensureTickerTask(mapped);
@@ -1573,10 +1591,24 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
 
       if (typeof this.exchange.fetchTicker !== 'function') return null;
       const t = await this.exchange.fetchTicker(mapped);
-      if (!t) return null;
+      if (!t) {
+        this._debugQuote('getQuote:fetchTicker-empty', mapped);
+        return null;
+      }
+      this._debugQuote('getQuote:fetchTicker-ok', mapped, {
+        tickerKeys: Object.keys(t || {}),
+        infoKeys: Object.keys(t?.info || {})
+      });
       const quote = await this._parseQuoteFromTicker(mapped, t, true);
-      if (!quote) return null;
+      if (!quote) {
+        this._debugQuote('getQuote:parseTicker-null', mapped, {
+          tickerKeys: Object.keys(t || {}),
+          infoKeys: Object.keys(t?.info || {})
+        });
+        return null;
+      }
       this._tickerCache.set(mapped, quote);
+      this._debugQuote('getQuote:return', mapped, quote);
       return quote;
     } catch {
       return null;
