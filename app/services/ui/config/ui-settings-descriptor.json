@@ -12,6 +12,10 @@
     "autoscroll": {
       "type": "boolean",
       "description": "Scroll to newest orders automatically"
+    },
+    "alwaysOnTop": {
+      "type": "boolean",
+      "description": "Keep application window above other windows"
     }
   }
 }
