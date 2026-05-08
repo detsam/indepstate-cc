@@ -639,6 +639,11 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   }
 
 
+  _isBinanceUsdmLike() {
+    const id = String(this.exchangeId || '').toLowerCase();
+    return id === 'binance' || id === 'binanceusdm' || id === 'binance-futures' || id === 'binancefutures';
+  }
+
   _binanceQuoteTypeToEndpoint(quoteType = 'book') {
     if (quoteType === 'last') return '/fapi/v2/ticker/price';
     if (quoteType === 'mark') return '/fapi/v1/premiumIndex';
@@ -899,7 +904,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       try {
         // 0) Для Binance USDⓈ-M часто працює саме closePosition STOP_MARKET через createOrder.
         // Це не OCO/брекет, але коректно закриває відкриту позицію по тригеру.
-        if (this.exchangeId === 'binance') {
+        if (this._isBinanceUsdmLike()) {
           try {
             const p = {
               ...slParams,
@@ -1113,7 +1118,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       }));
 
       let algoOrders = [];
-      if (this.exchangeId === 'binance') {
+      if (this._isBinanceUsdmLike()) {
         const nativeSymbol = this.getNativeSymbol(sym);
         const getOpenAlgo =
           this.exchange.fapiPrivateGetOpenAlgoOrders
@@ -1153,7 +1158,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       }));
 
       let algoOrders = [];
-      if (this.exchangeId === 'binance') {
+      if (this._isBinanceUsdmLike()) {
         const getOpenAlgo =
           this.exchange.fapiPrivateGetOpenAlgoOrders
           || this.exchange.fapiPrivate_get_openalgoorders;
@@ -1591,7 +1596,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     let endpoint = this._binanceQuoteTypeToEndpoint(quoteType);
     let ccxtSymbol;
     try {
-      if (this.exchangeId === 'binance') {
+      if (this._isBinanceUsdmLike()) {
         normalizedSymbol = await this.normalizeBinanceUsdmSymbol(symbol);
         ccxtSymbol = `${normalizedSymbol.slice(0, -4)}/${normalizedSymbol.slice(-4)}:USDT`;
 
