@@ -247,6 +247,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: uiCfg?.width || 1280,
     height: uiCfg?.height || 900,
+    alwaysOnTop: uiCfg?.alwaysOnTop === true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
