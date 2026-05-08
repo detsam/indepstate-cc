@@ -177,6 +177,38 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     return json;
   }
 
+
+
+  _roundToStep(value, step, mode = 'round') {
+    const v = Number(value); const st = Number(step);
+    if (!Number.isFinite(v) || !Number.isFinite(st) || st <= 0) return v;
+    const n = v / st;
+    const r = mode === 'floor' ? Math.floor(n) : mode === 'ceil' ? Math.ceil(n) : Math.round(n);
+    return Number((r * st).toFixed(12));
+  }
+
+  async _getBinanceSymbolFilters(symbol) {
+    const info = await this._getBinanceExchangeInfo();
+    const row = (info?.symbols || []).find((s) => String(s?.symbol || '').toUpperCase() === String(symbol || '').toUpperCase());
+    if (!row) throw new Error(`Symbol ${symbol} not found in exchangeInfo`);
+    const filters = row.filters || [];
+    const pf = filters.find((f) => f.filterType === 'PRICE_FILTER') || {};
+    const lf = filters.find((f) => f.filterType === 'LOT_SIZE') || {};
+    const mn = filters.find((f) => f.filterType === 'MIN_NOTIONAL') || {};
+    return { tickSize: Number(pf.tickSize || 0), stepSize: Number(lf.stepSize || 0), minNotional: Number(mn.notional || mn.minNotional || 0) };
+  }
+
+  async _waitBinanceOrderFilled(symbol, clientOrderId, timeoutMs = 120000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const o = await this._binanceSignedRequest('GET', '/fapi/v1/order', { symbol, origClientOrderId: clientOrderId });
+      const st = String(o?.status || '').toUpperCase();
+      if (st === 'FILLED') return o;
+      if (['CANCELED','REJECTED','EXPIRED'].includes(st)) throw new Error(`Entry order finished with status ${st}`);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    throw new Error('Timeout waiting entry FILLED');
+  }
   _buildSymbolMapFromMarkets(markets) {
     try {
       const list = Array.isArray(markets) ? markets : Object.values(markets || {});
@@ -1072,7 +1104,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
            // Ймовірно algoId для Binance Futures
            try {
              const nativeSymbol = this.getNativeSymbol(mappedSymbol);
-             await this.exchange.fapiPrivateDeleteAlgoOpenOrders({ symbol: nativeSymbol, algoId: cid });
+             await this._binanceSignedRequest('DELETE', '/fapi/v1/algoOrder', { symbol: nativeSymbol, clientAlgoId: cid });
              continue;
            } catch (e) {
              // якщо не вдалося через fapi - спробуємо звичайним cancelOrder
@@ -1418,6 +1450,37 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         if (!Number.isFinite(price) || price <= 0) {
           return { status: 'rejected', provider: this.provider, reason: 'price required for limit/stoplimit orders' };
         }
+      }
+
+      if (this._isBinanceUsdmLike() && ccxtType === 'limit' && (Number.isFinite(Number(order.takeProfitPrice ?? order.tpPrice)) || Number.isFinite(Number(order.stopLossPrice ?? order.slPrice)))) {
+        const nativeSymbol = await this.normalizeBinanceUsdmSymbol(symbol);
+        const hedgePos = String(params.positionSide || '').toUpperCase();
+        const hedgeMode = hedgePos === 'LONG' || hedgePos === 'SHORT';
+        const sideU = String(side).toUpperCase();
+        const strategyId = String(order.strategyId || order.meta?.strategyId || cid);
+        const { tickSize, stepSize, minNotional } = await this._getBinanceSymbolFilters(nativeSymbol);
+        const qtyRounded = this._roundToStep(amount, stepSize || 0.000001, 'floor');
+        const priceRounded = this._roundToStep(price, tickSize || 0.01, 'round');
+        if ((qtyRounded * priceRounded) < minNotional) return { status: 'rejected', provider: this.provider, reason: 'MIN_NOTIONAL validation failed' };
+        const entryParams = { symbol: nativeSymbol, side: sideU, type: 'LIMIT', timeInForce: 'GTC', quantity: String(qtyRounded), price: String(priceRounded), newClientOrderId: `entry_${strategyId}` };
+        if (hedgeMode) entryParams.positionSide = hedgePos;
+        const entryRes = await this._binanceSignedRequest('POST', '/fapi/v1/order', entryParams);
+        const filled = await this._waitBinanceOrderFilled(nativeSymbol, entryParams.newClientOrderId);
+        const fillQty = String(this._roundToStep(Number(filled?.executedQty || filled?.cumQty || qtyRounded), stepSize || 0.000001, 'floor'));
+        const tp = Number(order.takeProfitPrice ?? order.tpPrice);
+        const sl = Number(order.stopLossPrice ?? order.slPrice);
+        const closeSide = sideU === 'BUY' ? 'SELL' : 'BUY';
+        const common = { algoType: 'CONDITIONAL', symbol: nativeSymbol, side: closeSide, quantity: fillQty, workingType: 'MARK_PRICE' };
+        if (hedgeMode) common.positionSide = hedgePos; else common.reduceOnly = 'true';
+        const tpReq = { ...common, type: 'TAKE_PROFIT_MARKET', triggerPrice: String(this._roundToStep(tp, tickSize || 0.01, 'round')), clientAlgoId: `tp_${strategyId}` };
+        const slReq = { ...common, type: 'STOP_MARKET', triggerPrice: String(this._roundToStep(sl, tickSize || 0.01, 'round')), clientAlgoId: `sl_${strategyId}` };
+        const tpRes = await this._binanceSignedRequest('POST', '/fapi/v1/algoOrder', tpReq);
+        const slRes = await this._binanceSignedRequest('POST', '/fapi/v1/algoOrder', slReq);
+        const parentId = String(entryRes?.orderId || entryRes?.clientOrderId || entryParams.newClientOrderId);
+        this._childOrdersByParent.set(parentId, { symbol, children: [tpReq.clientAlgoId, slReq.clientAlgoId] });
+        this._ticketToSymbol.set(parentId, symbol);
+        this.events.emit('order:confirmed', { pendingId: cid, ticket: parentId, mtOrder: entryRes, origOrder: order });
+        return { status: 'ok', provider: this.provider, providerOrderId: parentId, raw: { entry: entryRes, filled, tp: tpRes, sl: slRes } };
       }
 
       // --- Pending: повертаємо відразу, а виконання — асинхронно ---
