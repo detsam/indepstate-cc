@@ -1537,7 +1537,8 @@ function tickSize(row) {
   return resolveTickSize({
     symbol: row.ticker,
     explicitTickSize: row?.tickSize,
-    quoteTickSize: info?.tickSize
+    quoteTickSize: info?.tickSize,
+    quoteTickSource: info?.tickSource
   });
 }
 

@@ -31,6 +31,6 @@ console.log('binanceBracketPriceResolver.test passed');
   a._getTickSizeFromMarket = () => 1;
   a.normalizeBinanceUsdmSymbol = async () => 'SOMEUSDT';
   a._getBinanceSymbolFilters = async () => ({ tickSize: 0.0001, stepSize: 1, minNotional: 0 });
-  const tick = await a._getQuoteTickSize('SOME/USDT:USDT', 'SOMEUSDT.P');
+  const tick = await a._resolveQuoteTickSize('SOME/USDT:USDT', 'SOMEUSDT.P');
   assert.strictEqual(tick, 0.0001);
 })();

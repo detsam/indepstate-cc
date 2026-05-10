@@ -589,7 +589,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   _getTickSizeFromMarket(mappedSymbol) {
     try {
       const m = (this.exchange.markets && this.exchange.markets[mappedSymbol]) || this.exchange.market(mappedSymbol);
-      if (!m) return 0.01;
+      if (!m) return undefined;
 
       // 1) За precision.price
       const p = m?.precision?.price;
@@ -631,9 +631,9 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       const okxTs = parseFloat(info?.tickSz || info?.tickSize);
       if (Number.isFinite(okxTs) && okxTs > 0) return okxTs;
 
-      return 0.01;
+      return undefined;
     } catch {
-      return 0.01;
+      return undefined;
     }
   }
 
@@ -706,19 +706,28 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   }
 
 
-  async _getQuoteTickSize(mappedSymbol, originalSymbol) {
-    const fromMarket = this._getTickSizeFromMarket(mappedSymbol);
-    if (Number.isFinite(fromMarket) && fromMarket > 0 && fromMarket !== 1) return fromMarket;
+  async _getBinanceTickSizeForQuote(symbolOrMappedSymbol) {
+    if (!this._isBinanceUsdmLike()) return undefined;
+    try {
+      const nativeSymbol = await this.normalizeBinanceUsdmSymbol(symbolOrMappedSymbol);
+      const filters = await this._getBinanceSymbolFilters(nativeSymbol);
+      const tick = Number(filters?.tickSize);
+      return Number.isFinite(tick) && tick > 0 ? tick : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
+  async _resolveQuoteTickSize(mappedSymbol, originalSymbol) {
     if (this._isBinanceUsdmLike()) {
-      try {
-        const nativeSymbol = await this.normalizeBinanceUsdmSymbol(originalSymbol || mappedSymbol);
-        const filters = await this._getBinanceSymbolFilters(nativeSymbol);
-        if (Number.isFinite(filters?.tickSize) && filters.tickSize > 0) return filters.tickSize;
-      } catch {}
+      const binanceTick = await this._getBinanceTickSizeForQuote(originalSymbol || mappedSymbol);
+      if (Number.isFinite(binanceTick) && binanceTick > 0) return binanceTick;
     }
 
-    return fromMarket;
+    const marketTick = this._getTickSizeFromMarket(mappedSymbol);
+    if (Number.isFinite(marketTick) && marketTick > 0) return marketTick;
+
+    return undefined;
   }
 
   async _updateTickerCache(mappedSymbol, ticker, allowOrderBookFallback) {
@@ -762,8 +771,13 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         : (Number.isFinite(Number(t.close)) ? Number(t.close)
           : (Number.isFinite(Number(t.info?.lastPrice)) ? Number(t.info.lastPrice) : undefined));
 
-    const tickSize = await this._getQuoteTickSize(mappedSymbol, originalSymbol || mappedSymbol);
-    return { bid, ask, price, tickSize };
+    const tickSize = await this._resolveQuoteTickSize(mappedSymbol, originalSymbol || mappedSymbol);
+    const quote = { bid, ask, price };
+    if (Number.isFinite(tickSize) && tickSize > 0) {
+      quote.tickSize = tickSize;
+      quote.tickSource = this._isBinanceUsdmLike() ? 'binance-exchangeInfo' : 'ccxt-market';
+    }
+    return quote;
   }
 
   // Витягнути найбільш надійний ідентифікатор ордера з відповіді біржі
@@ -1985,21 +1999,21 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         }
 
         const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
-        const tickSize = await this._getQuoteTickSize(ccxtSymbol, symbol);
+        const tickSize = await this._resolveQuoteTickSize(ccxtSymbol, symbol);
         if (quoteType === 'last') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'last', price: Number(response?.price), tickSize, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'last', price: Number(response?.price), tickSize, tickSource: Number.isFinite(tickSize) ? 'binance-exchangeInfo' : undefined, timestamp: response?.time, raw: response };
         }
         if (quoteType === 'mark') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'mark', price: Number(response?.markPrice), markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, tickSize, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'mark', price: Number(response?.markPrice), markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, tickSize, tickSource: Number.isFinite(tickSize) ? 'binance-exchangeInfo' : undefined, timestamp: response?.time, raw: response };
         }
 
         const bid = Number(response?.bidPrice);
         const ask = Number(response?.askPrice);
         const mid = Number.isFinite(bid) && Number.isFinite(ask) ? (bid + ask) / 2 : undefined;
         if (quoteType === 'execution') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, tickSize, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, tickSize, tickSource: Number.isFinite(tickSize) ? 'binance-exchangeInfo' : undefined, timestamp: response?.time, raw: response };
         }
-        const result = { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, tickSize, timestamp: response?.time, raw: response };
+        const result = { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, tickSize, tickSource: Number.isFinite(tickSize) ? 'binance-exchangeInfo' : undefined, timestamp: response?.time, raw: response };
         return result;
       }
 
@@ -2007,7 +2021,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       const mapped = this.mapSymbol(symbol);
       if (!mapped || typeof this.exchange.fetchTicker !== 'function') return null;
       const t = await this.exchange.fetchTicker(mapped);
-      const quote = await this._parseQuoteFromTicker(mapped, t, true, symbol);
+      let quote = await this._parseQuoteFromTicker(mapped, t, true, symbol);
+      if (quote && Number(quote.tickSize) === 0.01 && this._isBinanceUsdmLike()) {
+        const realTick = await this._getBinanceTickSizeForQuote(symbol);
+        if (Number.isFinite(realTick) && realTick > 0) quote = { ...quote, tickSize: realTick, tickSource: 'binance-exchangeInfo' };
+        else { const q2 = { ...quote }; delete q2.tickSize; delete q2.tickSource; quote = q2; }
+      }
       if (quote) this._tickerCache.set(mapped, quote);
       return quote || null;
     } catch (err) {

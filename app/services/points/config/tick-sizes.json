@@ -1,9 +1,16 @@
 {
   "bySymbol": {
     "BNBUSDT.P": 0.01,
-    "AIOTUSDT.P": 0.00001
+    "AIOTUSDT.P": 1e-05
   },
   "patterns": [
-    { "match": "*USDC.P", "tickSize": 0.0001 }
+    {
+      "match": "*USDC.P",
+      "tickSize": 0.0001
+    },
+    {
+      "match": "*USDT.P",
+      "tickSize": 0.0001
+    }
   ]
 }
