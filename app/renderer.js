@@ -410,7 +410,7 @@ function priceToPoints(inp, price, row, commit = false) {
   const val = _normNum(raw);
   if (val == null) return val;
   const tick = tickSize(row);
-  if (!Number.isFinite(tick) || tick <= 0) return val;
+  if (!Number.isFinite(tick) || tick <= 0) return undefined;
   const pts = Math.abs(pr - val) / tick
   if (Number.isFinite(pts)) {
     const rounded = Math.round(pts);
@@ -1014,11 +1014,16 @@ function createCryptoBody(row, key) {
     const r = _normNum($risk.value);
     const sl = priceToPoints($sl, _normNum($price.value), row);
     const lot = Number.isFinite(row.lot) && row.lot > 0 ? row.lot : 1;
-    const tick = tickSize(row) || 1; //safe tick 1
+    const tick = tickSize(row);
 
-    if (isPos(r) && isSL(sl)) {
+    if (isPos(r) && isSL(sl) && Number.isFinite(tick) && tick > 0) {
       const q = orderCalc.qty({riskUsd: r, stopPts: sl, tickSize: tick, lot, instrumentType: 'CX'});
+      console.log('[UI][SIZE]', { ticker: row.ticker, riskUsd: r, stopPts: sl, tickSize: tick, quoteTickSize: instrumentInfo.get(row.ticker)?.tickSize, rowTickSize: row.tickSize, qty: q });
       $qty.value = String(q);
+    }
+    if (isPos(r) && isSL(sl) && (!Number.isFinite(tick) || tick <= 0)) {
+      console.log('[UI][SIZE]', { ticker: row.ticker, riskUsd: r, stopPts: sl, tickSize: tick, quoteTickSize: instrumentInfo.get(row.ticker)?.tickSize, rowTickSize: row.tickSize, qty: null, state: 'tick-loading' });
+      $qty.value = '';
     }
     persist();
   };

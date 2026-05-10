@@ -44,6 +44,13 @@ function testOrderCalculator() {
   const qtyCxWrongTick = calc.qty({ riskUsd: 15, stopPts: 12, tickSize: 0.01, lot: 1, instrumentType: 'CX' });
   assert.strictEqual(qtyCxWrongTick, 125);
 
+  const qtyCxNoTick = calc.qty({ riskUsd: 15, stopPts: 35, tickSize: undefined, lot: 1, instrumentType: 'CX' });
+  assert.strictEqual(qtyCxNoTick, 0);
+
+  const qtyCxApprox = calc.qty({ riskUsd: 15, stopPts: 35, tickSize: 0.0001, lot: 1, instrumentType: 'CX' });
+  assert.ok(Math.abs(qtyCxApprox - 4285.714) < 0.01);
+
+
 
   console.log('OrderCalculator tests passed!');
 }

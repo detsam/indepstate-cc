@@ -705,14 +705,30 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     }
   }
 
+
+  async _getQuoteTickSize(mappedSymbol, originalSymbol) {
+    const fromMarket = this._getTickSizeFromMarket(mappedSymbol);
+    if (Number.isFinite(fromMarket) && fromMarket > 0 && fromMarket !== 1) return fromMarket;
+
+    if (this._isBinanceUsdmLike()) {
+      try {
+        const nativeSymbol = await this.normalizeBinanceUsdmSymbol(originalSymbol || mappedSymbol);
+        const filters = await this._getBinanceSymbolFilters(nativeSymbol);
+        if (Number.isFinite(filters?.tickSize) && filters.tickSize > 0) return filters.tickSize;
+      } catch {}
+    }
+
+    return fromMarket;
+  }
+
   async _updateTickerCache(mappedSymbol, ticker, allowOrderBookFallback) {
     if (!mappedSymbol || !ticker) return;
-    const quote = await this._parseQuoteFromTicker(mappedSymbol, ticker, allowOrderBookFallback);
+    const quote = await this._parseQuoteFromTicker(mappedSymbol, ticker, allowOrderBookFallback, mappedSymbol);
     if (!quote) return;
     this._tickerCache.set(mappedSymbol, quote);
   }
 
-  async _parseQuoteFromTicker(mappedSymbol, t, allowOrderBookFallback = true) {
+  async _parseQuoteFromTicker(mappedSymbol, t, allowOrderBookFallback = true, originalSymbol) {
     if (!t) return null;
     // Надійне діставання bid/ask: спочатку з уніфікованих полів, далі з info, і як fallback — orderbook
     let bid = Number.isFinite(t.bid) ? Number(t.bid)
@@ -746,7 +762,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         : (Number.isFinite(Number(t.close)) ? Number(t.close)
           : (Number.isFinite(Number(t.info?.lastPrice)) ? Number(t.info.lastPrice) : undefined));
 
-    const tickSize = this._getTickSizeFromMarket(mappedSymbol);
+    const tickSize = await this._getQuoteTickSize(mappedSymbol, originalSymbol || mappedSymbol);
     return { bid, ask, price, tickSize };
   }
 
@@ -1969,20 +1985,21 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         }
 
         const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
+        const tickSize = await this._getQuoteTickSize(ccxtSymbol, symbol);
         if (quoteType === 'last') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'last', price: Number(response?.price), timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'last', price: Number(response?.price), tickSize, timestamp: response?.time, raw: response };
         }
         if (quoteType === 'mark') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'mark', price: Number(response?.markPrice), markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'mark', price: Number(response?.markPrice), markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, tickSize, timestamp: response?.time, raw: response };
         }
 
         const bid = Number(response?.bidPrice);
         const ask = Number(response?.askPrice);
         const mid = Number.isFinite(bid) && Number.isFinite(ask) ? (bid + ask) / 2 : undefined;
         if (quoteType === 'execution') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, tickSize, timestamp: response?.time, raw: response };
         }
-        const result = { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, timestamp: response?.time, raw: response };
+        const result = { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, tickSize, timestamp: response?.time, raw: response };
         return result;
       }
 
@@ -1990,7 +2007,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       const mapped = this.mapSymbol(symbol);
       if (!mapped || typeof this.exchange.fetchTicker !== 'function') return null;
       const t = await this.exchange.fetchTicker(mapped);
-      const quote = await this._parseQuoteFromTicker(mapped, t, true);
+      const quote = await this._parseQuoteFromTicker(mapped, t, true, symbol);
       if (quote) this._tickerCache.set(mapped, quote);
       return quote || null;
     } catch (err) {
