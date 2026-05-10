@@ -188,32 +188,43 @@ class PendingOrderHub {
           explicitTickSize: payload.tickSize,
           quoteTickSize: quote?.tickSize
         });
-        if (!Number.isFinite(effectiveTickSize) || effectiveTickSize <= 0) {
-          throw new Error(`No tickSize for ${symbol}; cannot calculate risk-based qty`);
-        }
 
-        const stopPts = orderCalc.stopPts({
-          tickSize: effectiveTickSize,
-          symbol,
-          entryPrice: limitPrice,
-          stopPrice: stopLoss,
-          instrumentType: payload.instrumentType
-        });
-
-        const takePts = orderCalc.takePts(stopPts);
-
+        let stopPts;
+        let takePts;
         let qty;
         const risk = Number(payload.meta?.riskUsd);
-        if (Number.isFinite(risk) && risk > 0) {
-          qty = orderCalc.qty({
-            riskUsd: risk,
-            stopPts,
+
+        if (Number.isFinite(effectiveTickSize) && effectiveTickSize > 0) {
+          stopPts = orderCalc.stopPts({
             tickSize: effectiveTickSize,
-            lot: payload.lot,
+            symbol,
+            entryPrice: limitPrice,
+            stopPrice: stopLoss,
             instrumentType: payload.instrumentType
           });
+          takePts = orderCalc.takePts(stopPts);
+          if (Number.isFinite(risk) && risk > 0) {
+            qty = orderCalc.qty({
+              riskUsd: risk,
+              stopPts,
+              tickSize: effectiveTickSize,
+              lot: payload.lot,
+              instrumentType: payload.instrumentType
+            });
+          } else {
+            qty = Number(payload.meta?.qty || payload.qty || 0);
+          }
         } else {
+          stopPts = Number(payload.meta?.stopPts ?? payload.sl);
+          takePts = Number(payload.meta?.takePts ?? payload.tp);
           qty = Number(payload.meta?.qty || payload.qty || 0);
+        }
+
+        const hasStopPts = Number.isFinite(stopPts) && stopPts > 0;
+        const stopLossPrice = Number(stopLoss);
+        const hasStopLossPrice = Number.isFinite(stopLossPrice) && stopLossPrice > 0;
+        if (!hasStopPts && !hasStopLossPrice) {
+          throw new Error(`No stop points/stop loss for ${symbol}; cannot execute pending order`);
         }
 
         const finalPayload = {
@@ -224,9 +235,17 @@ class PendingOrderHub {
           instrumentType: payload.instrumentType,
           tickSize: effectiveTickSize,
           qty,
-          sl: stopPts,
-          tp: takePts,
-          meta: { ...payload.meta, stopPts, ...(takePts != null ? { takePts } : {}) }
+          sl: hasStopPts ? stopPts : undefined,
+          tp: Number.isFinite(takePts) && takePts > 0 ? takePts : undefined,
+          stopLossPrice: hasStopPts ? undefined : stopLossPrice,
+          takeProfitPrice: Number.isFinite(takePts) && takePts > 0 ? undefined : (Number.isFinite(Number(takeProfit)) ? Number(takeProfit) : undefined),
+          meta: {
+            ...payload.meta,
+            riskUsd: Number.isFinite(risk) ? risk : payload.meta?.riskUsd,
+            ...(hasStopPts ? { stopPts } : {}),
+            ...(Number.isFinite(takePts) && takePts > 0 ? { takePts } : {}),
+            ...(!Number.isFinite(effectiveTickSize) || effectiveTickSize <= 0 ? { riskBasedQtyPending: true } : {})
+          }
         };
         try {
           await this.queuePlaceOrder(finalPayload);

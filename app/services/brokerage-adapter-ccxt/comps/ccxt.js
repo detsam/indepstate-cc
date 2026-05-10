@@ -809,20 +809,31 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     const hedgeMode = hedgePos === 'LONG' || hedgePos === 'SHORT';
     const positionSide = hedgeMode ? hedgePos : 'BOTH';
     const { tickSize, stepSize, minNotional } = await this._getBinanceSymbolFilters(nativeSymbol);
+    const priceRounded = this._roundToStep(price, tickSize || 0.01, 'round');
     let effectiveAmount = amount;
     const riskUsd = Number(order?.meta?.riskUsd);
-    const stopPts = Number(order.sl ?? order.stopPts ?? order?.meta?.stopPts);
-    if (Number.isFinite(riskUsd) && riskUsd > 0 && Number.isFinite(stopPts) && stopPts > 0) {
+    let stopPts = Number(order.sl ?? order.stopPts ?? order?.meta?.stopPts);
+    if ((!Number.isFinite(stopPts) || stopPts <= 0) && Number.isFinite(Number(order.stopLossPrice ?? order.slPrice))) {
+      const slAbs = Number(order.stopLossPrice ?? order.slPrice);
+      stopPts = Math.round(Math.abs(priceRounded - slAbs) / tickSize);
+    }
+    if (Number.isFinite(riskUsd) && riskUsd > 0) {
+      if (!Number.isFinite(stopPts) || stopPts <= 0) {
+        return { status: 'rejected', provider: this.provider, reason: 'Unable to calculate Binance risk-based qty: missing stopPts/stopLossPrice' };
+      }
       effectiveAmount = orderCalc.qty({
         riskUsd,
         stopPts,
         tickSize,
-        lot: order.lot || order.meta?.lot || 1,
+        lot: Number(order.lot ?? order.meta?.lot ?? 1),
         instrumentType: order.instrumentType
       });
+      if (!Number.isFinite(effectiveAmount) || effectiveAmount <= 0) {
+        return { status: 'rejected', provider: this.provider, reason: `Unable to calculate Binance risk-based qty: computed amount=${effectiveAmount}` };
+      }
     }
     const qtyRounded = this._roundToStep(effectiveAmount, stepSize || 0.000001, 'floor');
-    const priceRounded = this._roundToStep(price, tickSize || 0.01, 'round');
+    console.log('[EXEC][BINANCE_SIZE]', { symbol: nativeSymbol, riskUsd, stopPts, exchangeTickSize: tickSize, stepSize, inputAmount: amount, effectiveAmount, qtyRounded, priceRounded, source: 'exchangeInfo' });
     if ((qtyRounded * priceRounded) < minNotional) return { status: 'rejected', provider: this.provider, reason: 'MIN_NOTIONAL validation failed' };
     const { takeProfitPrice, stopLossPrice, source } = this._resolveBinanceBracketPrices({ order, direction, entryPrice: priceRounded, tickSize });
     const tp = String(this._roundToStep(takeProfitPrice, tickSize || 0.01, 'round'));
