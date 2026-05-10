@@ -37,18 +37,21 @@ class OrderCalculator {
   }
 
   // Calculate position size from risk in USD
-  qty({ riskUsd, stopPts, tickSize = 1, lot = 1, instrumentType }) {
+  qty({ riskUsd, stopPts, tickSize, lot = 1, instrumentType }) {
     if (Number.isFinite(riskUsd) && riskUsd > 0 && Number.isFinite(stopPts) && stopPts > 0) {
-      const tick = tickSize || 1;
+      const tick = Number(tickSize);
       let q;
       if (instrumentType === 'FX') {
+        const safeTick = Number.isFinite(tick) && tick > 0 ? tick : 1;
         const lotSize = Number(lot) || 100000;
-        q = Math.floor((riskUsd / tick) / stopPts / lotSize / 0.01) * 0.01;
+        q = Math.floor((riskUsd / safeTick) / stopPts / lotSize / 0.01) * 0.01;
       } else if (instrumentType === 'CX') {
+        if (!Number.isFinite(tick) || tick <= 0) return 0;
         const lotSize = Number(lot) || 1;
         q = Math.floor((riskUsd / tick) / stopPts / lotSize / 0.001) * 0.001;
       } else {
-        q = Math.floor((riskUsd / tick) / stopPts);
+        const safeTick = Number.isFinite(tick) && tick > 0 ? tick : 1;
+        q = Math.floor((riskUsd / safeTick) / stopPts);
       }
       if (!Number.isFinite(q) || q < 0) q = 0;
       return q;

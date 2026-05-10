@@ -98,4 +98,22 @@ function toPoints(hookTick, symbol, deltaPrice, priceHint, deltaTokenForFallback
   return undefined;
 }
 
-module.exports = { toPoints, digitsFallbackPoints, findTickSizeFromConfig };
+function resolveTickSize({ symbol, explicitTickSize, quoteTickSize, quoteTickSource, fallbackTickSize } = {}) {
+  const quoteTick = Number(quoteTickSize);
+  const quoteSource = String(quoteTickSource || '').trim();
+  const suspiciousQuoteFallback = quoteTick === 0.01 && /\.P$/i.test(String(symbol || '')) && !quoteSource;
+  if (Number.isFinite(quoteTick) && quoteTick > 0 && !suspiciousQuoteFallback) return quoteTick;
+
+  const fromCfg = Number(findTickSizeFromConfig(symbol));
+  if (Number.isFinite(fromCfg) && fromCfg > 0) return fromCfg;
+
+  const explicit = Number(explicitTickSize);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+
+  const fallback = Number(fallbackTickSize);
+  if (Number.isFinite(fallback) && fallback > 0) return fallback;
+
+  return undefined;
+}
+
+module.exports = { toPoints, digitsFallbackPoints, findTickSizeFromConfig, resolveTickSize };

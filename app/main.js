@@ -16,6 +16,7 @@ const { createPendingOrderHub } = require('./services/pendingOrders');
 const tradeRules = servicesApi.tradeRules || require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const orderCalc = servicesApi.orderCalculator || require('./services/orderCalculator');
+const { resolveTickSize } = require('./services/points');
 const execCfg = loadConfig('../services/brokerage/config/execution.json');
 const orderCardsCfg = loadConfig('../services/orderCards/config/order-cards.json');
 const uiCfg = loadConfig('../services/ui/config/ui.json');
@@ -369,8 +370,11 @@ function normalizeOrderPayload(payload) {
 
 function validateOrder(order) {
   if (order.instrumentType === 'CX') {
-    const ok = order.qty > 0 && order.price > 0 && order.sl > 0;
-    return ok ? { ok: true } : { ok: false, reason: 'CX: qty>0, price>0, sl>0 required' };
+    const riskUsd = Number(order.meta?.riskUsd);
+    const hasRiskSizing = Number.isFinite(riskUsd) && riskUsd > 0;
+    const hasManualQty = Number(order.qty) > 0;
+    const ok = Number(order.price) > 0 && Number(order.sl) > 0 && (hasManualQty || hasRiskSizing);
+    return ok ? { ok: true } : { ok: false, reason: 'CX: price>0, sl>0 and qty>0 or riskUsd>0 required' };
   } else if (order.instrumentType === 'FX') {
     const ok = (order.meta?.riskUsd > 0) && order.sl > 0 && order.price > 0 && order.qty > 0;
     return ok ? { ok: true } : { ok: false, reason: 'FX: riskUsd>0, sl>0, price>0, qty>0 required' };
@@ -378,6 +382,13 @@ function validateOrder(order) {
     const ok = (order.meta?.riskUsd > 0) && order.sl > 0 && order.price > 0 && (order.qty >= 1);
     return ok ? { ok: true } : { ok: false, reason: 'EQ: riskUsd>0, sl>0, price>0, qty>=1 required' };
   }
+}
+
+
+function providerCanResolveRiskQty(providerName, adapter) {
+  const p = String(providerName || '').toLowerCase();
+  const id = String(adapter?.exchangeId || '').toLowerCase();
+  return p.includes('binance') || ['binance', 'binanceusdm', 'binance-futures', 'binancefutures'].includes(id);
 }
 
 function pickProviderName(instrumentType) {
@@ -470,6 +481,40 @@ function setupIpc(orderSvc) {
         appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });
         return rej;
       }
+
+      const riskUsd = Number(order?.meta?.riskUsd);
+      const stopPts = Number(execOrder.sl);
+      const isRiskBased = Number.isFinite(riskUsd) && riskUsd > 0 && Number.isFinite(stopPts) && stopPts > 0;
+      const effectiveTickSize = resolveTickSize({
+        symbol: execOrder.symbol,
+        explicitTickSize: execOrder.tickSize,
+        quoteTickSize: quote?.tickSize
+      });
+
+      if (Number.isFinite(effectiveTickSize) && effectiveTickSize > 0) {
+        execOrder.tickSize = effectiveTickSize;
+        if (isRiskBased) {
+          execOrder.qty = orderCalc.qty({
+            riskUsd,
+            stopPts,
+            tickSize: effectiveTickSize,
+            lot: execOrder.lot || order.lot || 1,
+            instrumentType: execOrder.instrumentType
+          });
+        }
+      } else if (isRiskBased) {
+        if (!providerCanResolveRiskQty(providerName, adapter)) {
+          const rej = { status: 'rejected', provider: providerName, reason: `No tickSize for ${execOrder.symbol}; cannot calculate risk-based qty for provider ${providerName}` };
+          appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });
+          return rej;
+        }
+        execOrder.meta.riskBasedQtyPending = true;
+        execOrder.meta.riskUsd = riskUsd;
+        execOrder.meta.stopPts = stopPts;
+      }
+
+      console.log('[EXEC][SIZE]', { symbol: execOrder.symbol, price: execOrder.price, riskUsd, stopPts, tickSize: execOrder.tickSize, lot: execOrder.lot, qty: execOrder.qty, tickSource: Number(quote?.tickSize) > 0 ? 'quote' : (Number(execOrder.tickSize) > 0 ? 'payload/config' : 'adapter-pending') });
+
       const rule = tradeRules.validate(execOrder, quote);
       if (!rule.ok) {
         const rej = { status: 'rejected', provider: providerName, reason: rule.reason };

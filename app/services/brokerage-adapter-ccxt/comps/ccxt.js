@@ -3,6 +3,7 @@ const { ExecutionAdapter } = require('../../brokerage/comps/base');
 const ccxt = require('ccxt');
 const crypto = require('crypto');
 const events = require('../../events');
+const orderCalc = require('../../orderCalculator');
 
 class CCXTExecutionAdapter extends ExecutionAdapter {
   /**
@@ -588,7 +589,7 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
   _getTickSizeFromMarket(mappedSymbol) {
     try {
       const m = (this.exchange.markets && this.exchange.markets[mappedSymbol]) || this.exchange.market(mappedSymbol);
-      if (!m) return 0.01;
+      if (!m) return undefined;
 
       // 1) За precision.price
       const p = m?.precision?.price;
@@ -630,9 +631,9 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       const okxTs = parseFloat(info?.tickSz || info?.tickSize);
       if (Number.isFinite(okxTs) && okxTs > 0) return okxTs;
 
-      return 0.01;
+      return undefined;
     } catch {
-      return 0.01;
+      return undefined;
     }
   }
 
@@ -704,14 +705,39 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     }
   }
 
+
+  async _getBinanceTickSizeForQuote(symbolOrMappedSymbol) {
+    if (!this._isBinanceUsdmLike()) return undefined;
+    try {
+      const nativeSymbol = await this.normalizeBinanceUsdmSymbol(symbolOrMappedSymbol);
+      const filters = await this._getBinanceSymbolFilters(nativeSymbol);
+      const tick = Number(filters?.tickSize);
+      return Number.isFinite(tick) && tick > 0 ? tick : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async _resolveQuoteTickSize(mappedSymbol, originalSymbol) {
+    if (this._isBinanceUsdmLike()) {
+      const binanceTick = await this._getBinanceTickSizeForQuote(originalSymbol || mappedSymbol);
+      if (Number.isFinite(binanceTick) && binanceTick > 0) return binanceTick;
+    }
+
+    const marketTick = this._getTickSizeFromMarket(mappedSymbol);
+    if (Number.isFinite(marketTick) && marketTick > 0) return marketTick;
+
+    return undefined;
+  }
+
   async _updateTickerCache(mappedSymbol, ticker, allowOrderBookFallback) {
     if (!mappedSymbol || !ticker) return;
-    const quote = await this._parseQuoteFromTicker(mappedSymbol, ticker, allowOrderBookFallback);
+    const quote = await this._parseQuoteFromTicker(mappedSymbol, ticker, allowOrderBookFallback, mappedSymbol);
     if (!quote) return;
     this._tickerCache.set(mappedSymbol, quote);
   }
 
-  async _parseQuoteFromTicker(mappedSymbol, t, allowOrderBookFallback = true) {
+  async _parseQuoteFromTicker(mappedSymbol, t, allowOrderBookFallback = true, originalSymbol) {
     if (!t) return null;
     // Надійне діставання bid/ask: спочатку з уніфікованих полів, далі з info, і як fallback — orderbook
     let bid = Number.isFinite(t.bid) ? Number(t.bid)
@@ -745,8 +771,13 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         : (Number.isFinite(Number(t.close)) ? Number(t.close)
           : (Number.isFinite(Number(t.info?.lastPrice)) ? Number(t.info.lastPrice) : undefined));
 
-    const tickSize = this._getTickSizeFromMarket(mappedSymbol);
-    return { bid, ask, price, tickSize };
+    const tickSize = await this._resolveQuoteTickSize(mappedSymbol, originalSymbol || mappedSymbol);
+    const quote = { bid, ask, price };
+    if (Number.isFinite(tickSize) && tickSize > 0) {
+      quote.tickSize = tickSize;
+      quote.tickSource = this._isBinanceUsdmLike() ? 'binance-exchangeInfo' : 'ccxt-market';
+    }
+    return quote;
   }
 
   // Витягнути найбільш надійний ідентифікатор ордера з відповіді біржі
@@ -808,8 +839,31 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     const hedgeMode = hedgePos === 'LONG' || hedgePos === 'SHORT';
     const positionSide = hedgeMode ? hedgePos : 'BOTH';
     const { tickSize, stepSize, minNotional } = await this._getBinanceSymbolFilters(nativeSymbol);
-    const qtyRounded = this._roundToStep(amount, stepSize || 0.000001, 'floor');
     const priceRounded = this._roundToStep(price, tickSize || 0.01, 'round');
+    let effectiveAmount = amount;
+    const riskUsd = Number(order?.meta?.riskUsd);
+    let stopPts = Number(order.sl ?? order.stopPts ?? order?.meta?.stopPts);
+    if ((!Number.isFinite(stopPts) || stopPts <= 0) && Number.isFinite(Number(order.stopLossPrice ?? order.slPrice))) {
+      const slAbs = Number(order.stopLossPrice ?? order.slPrice);
+      stopPts = Math.round(Math.abs(priceRounded - slAbs) / tickSize);
+    }
+    if (Number.isFinite(riskUsd) && riskUsd > 0) {
+      if (!Number.isFinite(stopPts) || stopPts <= 0) {
+        return { status: 'rejected', provider: this.provider, reason: 'Unable to calculate Binance risk-based qty: missing stopPts/stopLossPrice' };
+      }
+      effectiveAmount = orderCalc.qty({
+        riskUsd,
+        stopPts,
+        tickSize,
+        lot: Number(order.lot ?? order.meta?.lot ?? 1),
+        instrumentType: order.instrumentType
+      });
+      if (!Number.isFinite(effectiveAmount) || effectiveAmount <= 0) {
+        return { status: 'rejected', provider: this.provider, reason: `Unable to calculate Binance risk-based qty: computed amount=${effectiveAmount}` };
+      }
+    }
+    const qtyRounded = this._roundToStep(effectiveAmount, stepSize || 0.000001, 'floor');
+    console.log('[EXEC][BINANCE_SIZE]', { symbol: nativeSymbol, riskUsd, stopPts, exchangeTickSize: tickSize, stepSize, inputAmount: amount, effectiveAmount, qtyRounded, priceRounded, source: 'exchangeInfo' });
     if ((qtyRounded * priceRounded) < minNotional) return { status: 'rejected', provider: this.provider, reason: 'MIN_NOTIONAL validation failed' };
     const { takeProfitPrice, stopLossPrice, source } = this._resolveBinanceBracketPrices({ order, direction, entryPrice: priceRounded, tickSize });
     const tp = String(this._roundToStep(takeProfitPrice, tickSize || 0.01, 'round'));
@@ -1945,20 +1999,21 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
         }
 
         const response = await this._binancePublicRequest(endpoint, { symbol: normalizedSymbol });
+        const tickSize = await this._resolveQuoteTickSize(ccxtSymbol, symbol);
         if (quoteType === 'last') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'last', price: Number(response?.price), timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'last', price: Number(response?.price), tickSize, tickSource: Number.isFinite(tickSize) ? 'binance-exchangeInfo' : undefined, timestamp: response?.time, raw: response };
         }
         if (quoteType === 'mark') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'mark', price: Number(response?.markPrice), markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'mark', price: Number(response?.markPrice), markPrice: Number(response?.markPrice), indexPrice: Number(response?.indexPrice), lastFundingRate: Number(response?.lastFundingRate), nextFundingTime: response?.nextFundingTime, tickSize, tickSource: Number.isFinite(tickSize) ? 'binance-exchangeInfo' : undefined, timestamp: response?.time, raw: response };
         }
 
         const bid = Number(response?.bidPrice);
         const ask = Number(response?.askPrice);
         const mid = Number.isFinite(bid) && Number.isFinite(ask) ? (bid + ask) / 2 : undefined;
         if (quoteType === 'execution') {
-          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, timestamp: response?.time, raw: response };
+          return { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'execution', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, ask, mid, suggestedBuyLimit: ask, suggestedSellLimit: bid, tickSize, tickSource: Number.isFinite(tickSize) ? 'binance-exchangeInfo' : undefined, timestamp: response?.time, raw: response };
         }
-        const result = { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, timestamp: response?.time, raw: response };
+        const result = { provider: 'binance-usdm', symbolInput: symbol, symbol: normalizedSymbol, normalizedSymbol, endpoint, type: 'book', price: Number.isFinite(mid) ? mid : (Number.isFinite(ask) ? ask : bid), bid, bidQty: Number(response?.bidQty), ask, askQty: Number(response?.askQty), mid, tickSize, tickSource: Number.isFinite(tickSize) ? 'binance-exchangeInfo' : undefined, timestamp: response?.time, raw: response };
         return result;
       }
 
@@ -1966,7 +2021,12 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
       const mapped = this.mapSymbol(symbol);
       if (!mapped || typeof this.exchange.fetchTicker !== 'function') return null;
       const t = await this.exchange.fetchTicker(mapped);
-      const quote = await this._parseQuoteFromTicker(mapped, t, true);
+      let quote = await this._parseQuoteFromTicker(mapped, t, true, symbol);
+      if (quote && Number(quote.tickSize) === 0.01 && this._isBinanceUsdmLike()) {
+        const realTick = await this._getBinanceTickSizeForQuote(symbol);
+        if (Number.isFinite(realTick) && realTick > 0) quote = { ...quote, tickSize: realTick, tickSource: 'binance-exchangeInfo' };
+        else { const q2 = { ...quote }; delete q2.tickSize; delete q2.tickSource; quote = q2; }
+      }
       if (quote) this._tickerCache.set(mapped, quote);
       return quote || null;
     } catch (err) {
