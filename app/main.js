@@ -121,6 +121,7 @@ const APP_ROOT = app.isPackaged ? path.dirname(app.getAppPath()) : path.resolve(
 global.APP_ROOT = APP_ROOT;
 const LOG_DIR = path.join(app.getPath('userData'), 'logs');
 const EXEC_LOG = path.join(LOG_DIR, 'executions.jsonl');
+const WINDOW_STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
 
 // ----------------- FS utils -----------------
 function ensureLogs({ truncateExecutionsOnStart = false } = {}) {
@@ -243,17 +244,72 @@ const nowTs = () => Date.now();
 let mainWindow;
 let orderCardServices = [];
 let orderCardService;
+let windowStateSaveTimer = null;
+
+function loadWindowState() {
+  try {
+    if (!fs.existsSync(WINDOW_STATE_FILE)) return {};
+    const raw = fs.readFileSync(WINDOW_STATE_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const state = {};
+    if (Number.isFinite(parsed.width) && parsed.width > 100) state.width = Math.trunc(parsed.width);
+    if (Number.isFinite(parsed.height) && parsed.height > 100) state.height = Math.trunc(parsed.height);
+    if (Number.isFinite(parsed.x)) state.x = Math.trunc(parsed.x);
+    if (Number.isFinite(parsed.y)) state.y = Math.trunc(parsed.y);
+    if (typeof parsed.maximized === 'boolean') state.maximized = parsed.maximized;
+    return state;
+  } catch (err) {
+    console.warn('[windowState] Failed to load state:', err?.message || err);
+    return {};
+  }
+}
+
+function writeWindowState(state) {
+  try {
+    fs.writeFileSync(WINDOW_STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (err) {
+    console.warn('[windowState] Failed to save state:', err?.message || err);
+  }
+}
+
+function saveWindowStateNow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const bounds = mainWindow.getBounds();
+  const state = {
+    ...bounds,
+    maximized: mainWindow.isMaximized()
+  };
+  writeWindowState(state);
+}
+
+function scheduleWindowStateSave() {
+  if (windowStateSaveTimer) clearTimeout(windowStateSaveTimer);
+  windowStateSaveTimer = setTimeout(() => {
+    windowStateSaveTimer = null;
+    saveWindowStateNow();
+  }, 250);
+}
 
 function createWindow() {
+  const savedState = loadWindowState();
   mainWindow = new BrowserWindow({
-    width: uiCfg?.width || 1280,
-    height: uiCfg?.height || 900,
+    width: savedState.width || uiCfg?.width || 1280,
+    height: savedState.height || uiCfg?.height || 900,
+    x: Number.isFinite(savedState.x) ? savedState.x : undefined,
+    y: Number.isFinite(savedState.y) ? savedState.y : undefined,
     alwaysOnTop: uiCfg?.alwaysOnTop === true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
     }
   });
+  if (savedState.maximized) {
+    mainWindow.maximize();
+  }
+  mainWindow.on('resize', scheduleWindowStateSave);
+  mainWindow.on('move', scheduleWindowStateSave);
+  mainWindow.on('close', saveWindowStateNow);
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
   if (IS_ELECTRON_MENU_ENABLED == false) {
     Menu.setApplicationMenu(null);
