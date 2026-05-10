@@ -7,6 +7,7 @@ const servicesApi = require('../servicesApi');
 const tradeRules = require('../tradeRules');
 const orderCalc = servicesApi.orderCalculator || require('../orderCalculator');
 const loadConfig = require('../../config/load');
+const { resolveTickSize } = require('../points');
 
 const execCfg = loadConfig('../services/brokerage/config/execution.json');
 const userData = require('electron')?.app?.getPath('userData') || path.join(__dirname, '..', '..');
@@ -181,8 +182,18 @@ class PendingOrderHub {
       onExecute: async ({ limitPrice, stopLoss, takeProfit }) => {
         this.pendingIndex.delete(pendingId);
 
+        const quote = await getQuote();
+        const effectiveTickSize = resolveTickSize({
+          symbol,
+          explicitTickSize: payload.tickSize,
+          quoteTickSize: quote?.tickSize
+        });
+        if (!Number.isFinite(effectiveTickSize) || effectiveTickSize <= 0) {
+          throw new Error(`No tickSize for ${symbol}; cannot calculate risk-based qty`);
+        }
+
         const stopPts = orderCalc.stopPts({
-          tickSize: payload.tickSize,
+          tickSize: effectiveTickSize,
           symbol,
           entryPrice: limitPrice,
           stopPrice: stopLoss,
@@ -197,7 +208,7 @@ class PendingOrderHub {
           qty = orderCalc.qty({
             riskUsd: risk,
             stopPts,
-            tickSize: payload.tickSize,
+            tickSize: effectiveTickSize,
             lot: payload.lot,
             instrumentType: payload.instrumentType
           });
@@ -211,7 +222,7 @@ class PendingOrderHub {
           type: 'limit',
           price: limitPrice,
           instrumentType: payload.instrumentType,
-          tickSize: payload.tickSize,
+          tickSize: effectiveTickSize,
           qty,
           sl: stopPts,
           tp: takePts,

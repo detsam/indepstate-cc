@@ -16,6 +16,7 @@ const { createPendingOrderHub } = require('./services/pendingOrders');
 const tradeRules = servicesApi.tradeRules || require('./services/tradeRules');
 const loadConfig = require('./config/load');
 const orderCalc = servicesApi.orderCalculator || require('./services/orderCalculator');
+const { resolveTickSize } = require('./services/points');
 const execCfg = loadConfig('../services/brokerage/config/execution.json');
 const orderCardsCfg = loadConfig('../services/orderCards/config/order-cards.json');
 const uiCfg = loadConfig('../services/ui/config/ui.json');
@@ -465,6 +466,28 @@ function setupIpc(orderSvc) {
       wireAdapter(adapter, providerName);
 
       const quote = await adapter.getQuote?.(execOrder.symbol);
+      const effectiveTickSize = resolveTickSize({
+        symbol: execOrder.symbol,
+        explicitTickSize: execOrder.tickSize,
+        quoteTickSize: quote?.tickSize
+      });
+      if (!Number.isFinite(effectiveTickSize) || effectiveTickSize <= 0) {
+        const rej = { status: 'rejected', provider: providerName, reason: `No tickSize for ${execOrder.symbol}; cannot calculate risk-based qty` };
+        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });
+        return rej;
+      }
+      execOrder.tickSize = effectiveTickSize;
+      const riskUsd = Number(order?.meta?.riskUsd);
+      if (riskUsd > 0 && Number(execOrder.sl) > 0) {
+        execOrder.qty = orderCalc.qty({
+          riskUsd,
+          stopPts: Number(execOrder.sl),
+          tickSize: effectiveTickSize,
+          lot: execOrder.lot || order.lot || 1,
+          instrumentType: execOrder.instrumentType
+        });
+      }
+      console.log('[EXEC][SIZE]', { symbol: execOrder.symbol, price: execOrder.price, riskUsd, stopPts: execOrder.sl, tickSize: execOrder.tickSize, lot: execOrder.lot, qty: execOrder.qty, tickSource: Number(execOrder.tickSize) === Number(order.tickSize) ? 'payload' : (Number(quote?.tickSize) === Number(execOrder.tickSize) ? 'quote' : 'config') });
       if (!quote || !Number.isFinite(quote.price)) {
         const rej = { status: 'rejected', provider: providerName, reason: 'No quote' };
         appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });

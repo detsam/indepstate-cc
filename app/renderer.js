@@ -5,7 +5,7 @@ const loadConfig = require('./config/load');
 const servicesApi = require('./services/servicesApi');
 const tradeRules = servicesApi.tradeRules || require('./services/tradeRules');
 const {detectInstrumentType} = require("./services/instruments");
-const {findTickSizeFromConfig} = require('./services/points');
+const {resolveTickSize} = require('./services/points');
 const orderCalc = servicesApi.orderCalculator || require('./services/orderCalculator');
 const orderCardsCfg = loadConfig('../services/orderCards/config/order-cards.json');
 const envEquityStop = Number(process.env.DEFAULT_EQUITY_STOP_USD);
@@ -409,7 +409,9 @@ function priceToPoints(inp, price, row, commit = false) {
   if (!isPos(pr)) return _normNum(raw);
   const val = _normNum(raw);
   if (val == null) return val;
-  const pts = Math.abs(pr - val) / 0.01; // fixed minimal tick for testing
+  const tick = tickSize(row);
+  if (!Number.isFinite(tick) || tick <= 0) return val;
+  const pts = Math.abs(pr - val) / tick
   if (Number.isFinite(pts)) {
     const rounded = Math.round(pts);
     if (commit) inp.value = String(rounded);
@@ -1527,22 +1529,11 @@ function createEquitiesBody(row, key) {
 
 function tickSize(row) {
   const info = instrumentInfo.get(row.ticker);
-
-  // 1) Прямо з рядка (якщо задано)
-  const direct = Number(row?.tickSize);
-  if (Number.isFinite(direct) && direct > 0) return direct;
-
-  // 2) З instrumentInfo (біржа/адаптер)
-  const fromInfo = Number(info?.tickSize);
-  if (Number.isFinite(fromInfo) && fromInfo > 0) return fromInfo;
-
-  // 3) З конфігурації через services/points
-  const fromCfg = Number(findTickSizeFromConfig(row.ticker));
-  if (Number.isFinite(fromCfg) && fromCfg > 0) return fromCfg;
-
-  // 4) Фолбек за типом інструмента
-  const instrType = row.instrumentType || detectInstrumentType(row.ticker);
-  return (instrType === 'FX') ? 0.00001 : 0.01;
+  return resolveTickSize({
+    symbol: row.ticker,
+    explicitTickSize: row?.tickSize,
+    quoteTickSize: info?.tickSize
+  });
 }
 
 function decimalsFromTick(tick) {

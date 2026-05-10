@@ -38,6 +38,13 @@ function testOrderCalculator() {
 
   assert.strictEqual(customCalc.takePts(10), 50);
 
+  const qtyCxFine = calc.qty({ riskUsd: 15, stopPts: 12, tickSize: 0.0001, lot: 1, instrumentType: 'CX' });
+  assert.strictEqual(qtyCxFine, 12500);
+
+  const qtyCxWrongTick = calc.qty({ riskUsd: 15, stopPts: 12, tickSize: 0.01, lot: 1, instrumentType: 'CX' });
+  assert.strictEqual(qtyCxWrongTick, 125);
+
+
   console.log('OrderCalculator tests passed!');
 }
 

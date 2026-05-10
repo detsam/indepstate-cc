@@ -3,6 +3,7 @@ const { ExecutionAdapter } = require('../../brokerage/comps/base');
 const ccxt = require('ccxt');
 const crypto = require('crypto');
 const events = require('../../events');
+const orderCalc = require('../../orderCalculator');
 
 class CCXTExecutionAdapter extends ExecutionAdapter {
   /**
@@ -808,7 +809,19 @@ class CCXTExecutionAdapter extends ExecutionAdapter {
     const hedgeMode = hedgePos === 'LONG' || hedgePos === 'SHORT';
     const positionSide = hedgeMode ? hedgePos : 'BOTH';
     const { tickSize, stepSize, minNotional } = await this._getBinanceSymbolFilters(nativeSymbol);
-    const qtyRounded = this._roundToStep(amount, stepSize || 0.000001, 'floor');
+    let effectiveAmount = amount;
+    const riskUsd = Number(order?.meta?.riskUsd);
+    const stopPts = Number(order.sl ?? order.stopPts ?? order?.meta?.stopPts);
+    if (Number.isFinite(riskUsd) && riskUsd > 0 && Number.isFinite(stopPts) && stopPts > 0) {
+      effectiveAmount = orderCalc.qty({
+        riskUsd,
+        stopPts,
+        tickSize,
+        lot: order.lot || order.meta?.lot || 1,
+        instrumentType: order.instrumentType
+      });
+    }
+    const qtyRounded = this._roundToStep(effectiveAmount, stepSize || 0.000001, 'floor');
     const priceRounded = this._roundToStep(price, tickSize || 0.01, 'round');
     if ((qtyRounded * priceRounded) < minNotional) return { status: 'rejected', provider: this.provider, reason: 'MIN_NOTIONAL validation failed' };
     const { takeProfitPrice, stopLossPrice, source } = this._resolveBinanceBracketPrices({ order, direction, entryPrice: priceRounded, tickSize });
