@@ -544,7 +544,8 @@ function setupIpc(orderSvc) {
       const effectiveTickSize = resolveTickSize({
         symbol: execOrder.symbol,
         explicitTickSize: execOrder.tickSize,
-        quoteTickSize: quote?.tickSize
+        quoteTickSize: quote?.tickSize,
+        quoteTickSource: quote?.tickSource
       });
 
       if (Number.isFinite(effectiveTickSize) && effectiveTickSize > 0) {
@@ -569,7 +570,7 @@ function setupIpc(orderSvc) {
         execOrder.meta.stopPts = stopPts;
       }
 
-      console.log('[EXEC][SIZE]', { symbol: execOrder.symbol, price: execOrder.price, riskUsd, stopPts, tickSize: execOrder.tickSize, lot: execOrder.lot, qty: execOrder.qty, tickSource: Number(quote?.tickSize) > 0 ? 'quote' : (Number(execOrder.tickSize) > 0 ? 'payload/config' : 'adapter-pending') });
+      console.log('[EXEC][SIZE]', { symbol: execOrder.symbol, price: execOrder.price, riskUsd, stopPts, tickSize: execOrder.tickSize, lot: execOrder.lot, qty: execOrder.qty, tickSource: quote?.tickSource || (Number(execOrder.tickSize) > 0 ? 'payload/config' : 'adapter-pending') });
 
       const rule = tradeRules.validate(execOrder, quote);
       if (!rule.ok) {
@@ -740,6 +741,19 @@ function setupIpc(orderSvc) {
       const providerName = provider || pickProviderName(instrumentType);
       const adapter = getAdapter(providerName);
       const q = await adapter.getQuote?.(String(symbol || ''));
+      const resolvedTickSize = resolveTickSize({
+        symbol,
+        quoteTickSize: q?.tickSize,
+        quoteTickSource: q?.tickSource
+      });
+      console.log('[INSTRUMENT][GET]', {
+        symbol,
+        provider: providerName,
+        price: q?.price,
+        tickSize: q?.tickSize,
+        tickSource: q?.tickSource,
+        resolvedTickSize
+      });
       return q || null;
     } catch {
       return null;

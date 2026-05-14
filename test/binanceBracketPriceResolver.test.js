@@ -34,3 +34,13 @@ console.log('binanceBracketPriceResolver.test passed');
   const tick = await a._resolveQuoteTickSize('SOME/USDT:USDT', 'SOMEUSDT.P');
   assert.strictEqual(tick, 0.0001);
 })();
+
+(function testGetTickSizeFromMarketNoFakeDefault() {
+  const a = Object.create(CCXTExecutionAdapter.prototype);
+  a.exchange = {
+    markets: { 'SOME/USDT:USDT': { info: {} } },
+    market: () => ({ info: {} })
+  };
+  const tick = a._getTickSizeFromMarket('SOME/USDT:USDT');
+  assert.strictEqual(tick, undefined);
+})();
