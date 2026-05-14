@@ -3,36 +3,30 @@ const orderCalc = require('../app/services/orderCalculator');
 const { resolveTickSize } = require('../app/services/points');
 
 function run() {
-  const qty = orderCalc.qty({ riskUsd: 15, stopPts: 12, tickSize: 0.0001, lot: 1, instrumentType: 'CX' });
-  assert.strictEqual(qty, 12500);
+  assert.strictEqual(resolveTickSize({ symbol: 'UNKNOWNUSDT.P' }), 0.01);
 
-  const wrong = orderCalc.qty({ riskUsd: 15, stopPts: 12, tickSize: 0.01, lot: 1, instrumentType: 'CX' });
-  assert.strictEqual(wrong, 125);
+  assert.strictEqual(resolveTickSize({ symbol: 'MOVRUSDT.P' }), 0.0001);
 
-  const symbol = 'SOMEUSDT.P';
-  const payloadTick = 0.01;
-  const quoteTick = 0.0001;
-  const effectiveTickSize = resolveTickSize({ symbol, explicitTickSize: payloadTick, quoteTickSize: quoteTick });
-  assert.strictEqual(effectiveTickSize, 0.0001);
+  assert.strictEqual(resolveTickSize({
+    symbol: 'BNBUSDT.P',
+    quoteTickSize: 0.01,
+    quoteTickSource: 'binance-exchangeInfo'
+  }), 0.01);
 
-  const finalExecOrder = {
-    symbol,
-    sl: 12,
-    instrumentType: 'CX',
-    meta: { riskUsd: 15 },
+  assert.strictEqual(resolveTickSize({
+    symbol: 'MOVRUSDT.P',
+    quoteTickSize: 0.01
+  }), 0.0001);
+
+  const qty = orderCalc.qty({
+    riskUsd: 15,
+    stopPts: 35,
+    tickSize: resolveTickSize({ symbol: 'UNKNOWNUSDT.P' }),
     lot: 1,
-    tickSize: effectiveTickSize
-  };
-  finalExecOrder.qty = orderCalc.qty({
-    riskUsd: Number(finalExecOrder.meta.riskUsd),
-    stopPts: Number(finalExecOrder.sl),
-    tickSize: finalExecOrder.tickSize,
-    lot: finalExecOrder.lot,
-    instrumentType: finalExecOrder.instrumentType
+    instrumentType: 'CX'
   });
 
-  assert.strictEqual(finalExecOrder.tickSize, 0.0001);
-  assert.strictEqual(finalExecOrder.qty, 12500);
+  assert.strictEqual(qty, 42.857);
 }
 
 run();

@@ -13,7 +13,12 @@ function wildcardToRegExp(pat) {
   return new RegExp('^' + pat.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i');
 }
 
-function findTickSizeFromConfig(symbol) {
+function getDefaultTickSize() {
+  const def = Number(cfg?.defaultTickSize);
+  return Number.isFinite(def) && def > 0 ? def : 0.01;
+}
+
+function findTickSizeOverride(symbol) {
   if (!symbol) return null;
   const bySymbol = cfg?.bySymbol || {};
   if (Object.prototype.hasOwnProperty.call(bySymbol, symbol)) {
@@ -28,8 +33,13 @@ function findTickSizeFromConfig(symbol) {
       return Number.isFinite(v) && v > 0 ? v : null;
     }
   }
-  const def = Number(cfg?.defaultTickSize);
-  return Number.isFinite(def) && def > 0 ? def : null;
+  return null;
+}
+
+function findTickSizeFromConfig(symbol) {
+  const override = findTickSizeOverride(symbol);
+  if (Number.isFinite(override) && override > 0) return override;
+  return getDefaultTickSize();
 }
 
 // ---------- Цифровой fallback ----------
@@ -101,11 +111,10 @@ function toPoints(hookTick, symbol, deltaPrice, priceHint, deltaTokenForFallback
 function resolveTickSize({ symbol, explicitTickSize, quoteTickSize, quoteTickSource, fallbackTickSize } = {}) {
   const quoteTick = Number(quoteTickSize);
   const quoteSource = String(quoteTickSource || '').trim();
-  const suspiciousQuoteFallback = quoteTick === 0.01 && /\.P$/i.test(String(symbol || '')) && !quoteSource;
-  if (Number.isFinite(quoteTick) && quoteTick > 0 && !suspiciousQuoteFallback) return quoteTick;
+  if (Number.isFinite(quoteTick) && quoteTick > 0 && quoteSource) return quoteTick;
 
-  const fromCfg = Number(findTickSizeFromConfig(symbol));
-  if (Number.isFinite(fromCfg) && fromCfg > 0) return fromCfg;
+  const override = Number(findTickSizeOverride(symbol));
+  if (Number.isFinite(override) && override > 0) return override;
 
   const explicit = Number(explicitTickSize);
   if (Number.isFinite(explicit) && explicit > 0) return explicit;
@@ -113,7 +122,7 @@ function resolveTickSize({ symbol, explicitTickSize, quoteTickSize, quoteTickSou
   const fallback = Number(fallbackTickSize);
   if (Number.isFinite(fallback) && fallback > 0) return fallback;
 
-  return undefined;
+  return getDefaultTickSize();
 }
 
-module.exports = { toPoints, digitsFallbackPoints, findTickSizeFromConfig, resolveTickSize };
+module.exports = { toPoints, digitsFallbackPoints, findTickSizeOverride, findTickSizeFromConfig, getDefaultTickSize, resolveTickSize };
