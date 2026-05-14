@@ -741,19 +741,6 @@ function setupIpc(orderSvc) {
       const providerName = provider || pickProviderName(instrumentType);
       const adapter = getAdapter(providerName);
       const q = await adapter.getQuote?.(String(symbol || ''));
-      const resolvedTickSize = resolveTickSize({
-        symbol,
-        quoteTickSize: q?.tickSize,
-        quoteTickSource: q?.tickSource
-      });
-      console.log('[INSTRUMENT][GET]', {
-        symbol,
-        provider: providerName,
-        price: q?.price,
-        tickSize: q?.tickSize,
-        tickSource: q?.tickSource,
-        resolvedTickSize
-      });
       return q || null;
     } catch {
       return null;
