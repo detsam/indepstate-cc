@@ -45,6 +45,7 @@ class DWXAdapter extends ExecutionAdapter {
         userHandler.on_message?.(msg);
       },
       on_tick: (...a) => userHandler.on_tick?.(...a),
+      on_market_depth: (...a) => userHandler.on_market_depth?.(...a),
       on_bar_data: (...a) => userHandler.on_bar_data?.(...a),
       on_historic_data: (...a) => userHandler.on_historic_data?.(...a),
       on_historic_trades() {
@@ -72,6 +73,8 @@ class DWXAdapter extends ExecutionAdapter {
     this._ticketMeta = new Map();
     // symbols we have subscribed to for market data
     this._subscribedSymbols = new Set();
+    // symbols we have subscribed to for market depth (DOM)
+    this._subscribedDepthSymbols = new Set();
   }
 
   /**
@@ -292,6 +295,42 @@ class DWXAdapter extends ExecutionAdapter {
     else if (Number.isFinite(ask)) price = ask;
     const tickSize = undefined;
     return { bid, ask, price, tickSize };
+  }
+
+  /**
+   * Subscribe to Market Depth (DOM) for a symbol. Idempotent.
+   * After this the latest snapshot is available via getMarketDepth(symbol),
+   * and updates are emitted on the adapter as 'depth' events: { symbol, levels }.
+   *
+   * NOTE: only works for symbols whose broker provides DOM in MT5
+   * (typically options, futures, exchange-traded equities — not most FX).
+   * If the broker has no DOM for the symbol, MQL will emit an ERROR message
+   * (visible via 'message' / on_message) and the symbol will simply not produce updates.
+   */
+  async subscribeMarketDepth(symbol) {
+    symbol = String(symbol || '').trim();
+    if (!symbol) return;
+    if (!this._subscribedDepthSymbols.has(symbol)) {
+      this._subscribedDepthSymbols.add(symbol);
+      try { await this.client.subscribe_market_depth([...this._subscribedDepthSymbols]); } catch {}
+    }
+  }
+
+  /** Current DOM snapshot for the symbol (or null if not yet received). */
+  getMarketDepth(symbol) {
+    symbol = String(symbol || '').trim();
+    if (!symbol) return null;
+    const levels = this.client.market_depth?.[symbol];
+    return levels ? { symbol, levels } : null;
+  }
+
+  /** Unsubscribe from Market Depth for a symbol. */
+  async forgetMarketDepth(symbol) {
+    symbol = String(symbol || '').trim();
+    if (!symbol) return;
+    if (this._subscribedDepthSymbols.delete(symbol)) {
+      try { await this.client.subscribe_market_depth([...this._subscribedDepthSymbols]); } catch {}
+    }
   }
 
   async forgetQuote(symbol) {

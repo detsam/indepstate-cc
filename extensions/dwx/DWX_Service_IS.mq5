@@ -61,12 +61,13 @@ string folderName = "DWX";
 string filePathOrders = folderName + "/DWX_Orders.txt";
 string filePathMessages = folderName + "/DWX_Messages.txt";
 string filePathMarketData = folderName + "/DWX_Market_Data.txt";
+string filePathMarketDepth = folderName + "/DWX_Market_Depth.txt";
 string filePathBarData = folderName + "/DWX_Bar_Data.txt";
 string filePathHistoricData = folderName + "/DWX_Historic_Data.txt";
 string filePathHistoricTrades = folderName + "/DWX_Historic_Trades.txt";
 string filePathCommandsPrefix = folderName + "/DWX_Commands_";
 
-string lastOrderText = "", lastMarketDataText = "", lastMessageText = "";
+string lastOrderText = "", lastMarketDataText = "", lastMarketDepthText = "", lastMessageText = "";
 
 struct MESSAGE
 {
@@ -77,6 +78,7 @@ struct MESSAGE
 MESSAGE lastMessages[];
 
 string MarketDataSymbols[];
+string MarketDepthSymbols[];
 
 int commandIDindex = 0;
 int commandIDs[];
@@ -171,7 +173,26 @@ void OnDeinit(const int reason) {
 
    EventKillTimer();
 
+   // release all DOM subscriptions
+   for (int i=0; i<ArraySize(MarketDepthSymbols); i++) {
+      MarketBookRelease(MarketDepthSymbols[i]);
+   }
+   ArrayResize(MarketDepthSymbols, 0);
+
    ResetFolder();
+}
+
+//+------------------------------------------------------------------+
+//| Market Book event — DOM update for one symbol                    |
+//+------------------------------------------------------------------+
+void OnBookEvent(const string &symbol) {
+   // only react if we are subscribed to this symbol
+   for (int i=0; i<ArraySize(MarketDepthSymbols); i++) {
+      if (MarketDepthSymbols[i] == symbol) {
+         CheckMarketDepth();
+         return;
+      }
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -262,6 +283,8 @@ void CheckCommands() {
          SubscribeSymbols(content);
       } else if (command == "SUBSCRIBE_SYMBOLS_BAR_DATA") {
          SubscribeSymbolsBarData(content);
+      } else if (command == "SUBSCRIBE_MARKET_DEPTH") {
+         SubscribeMarketDepth(content);
       } else if (command == "GET_HISTORIC_TRADES") {
          GetHistoricTrades(content);
       } else if (command == "GET_HISTORIC_DATA") {
@@ -683,6 +706,105 @@ void SubscribeSymbolsBarData(string dataStr) {
       CheckBarData();
    } else {
       SendError("SUBSCRIBE_BAR_DATA", "Could not subscribe to bar data for: " + errorSymbols);
+   }
+}
+
+
+void SubscribeMarketDepth(string symbolsStr) {
+
+   // release previous subscriptions first
+   for (int i=0; i<ArraySize(MarketDepthSymbols); i++) {
+      MarketBookRelease(MarketDepthSymbols[i]);
+   }
+   ArrayResize(MarketDepthSymbols, 0);
+
+   string sep = ",";
+   ushort uSep = StringGetCharacter(sep, 0);
+   string data[];
+   StringSplit(symbolsStr, uSep, data);
+
+   if (ArraySize(data) == 0 || (ArraySize(data) == 1 && StringLen(data[0]) == 0)) {
+      // empty list -> just unsubscribe, also clear the depth file
+      lastMarketDepthText = "";
+      WriteToFileAtomic(filePathMarketDepth, "{}", 0);
+      SendInfo("Unsubscribed from all market depth because of empty symbol list.");
+      return;
+   }
+
+   string successSymbols = "", errorSymbols = "";
+   for (int i=0; i<ArraySize(data); i++) {
+      string sym = data[i];
+      if (StringLen(sym) == 0) continue;
+
+      if (!SymbolSelect(sym, true)) {
+         errorSymbols += sym + " (select failed), ";
+         continue;
+      }
+
+      if (!MarketBookAdd(sym)) {
+         errorSymbols += sym + " (no DOM: " + ErrorDescription(GetLastError()) + "), ";
+         continue;
+      }
+
+      int n = ArraySize(MarketDepthSymbols);
+      ArrayResize(MarketDepthSymbols, n+1);
+      MarketDepthSymbols[n] = sym;
+      successSymbols += sym + ", ";
+   }
+
+   if (StringLen(errorSymbols) > 0) {
+      SendError("SUBSCRIBE_MARKET_DEPTH", "Could not subscribe to market depth for: " + StringSubstr(errorSymbols, 0, StringLen(errorSymbols)-2));
+   }
+   if (StringLen(successSymbols) > 0) {
+      SendInfo("Successfully subscribed to market depth: " + StringSubstr(successSymbols, 0, StringLen(successSymbols)-2));
+      // push initial snapshot right away (don't wait for first OnBookEvent)
+      CheckMarketDepth();
+   }
+}
+
+
+string BookTypeToString(int t) {
+   if (t == BOOK_TYPE_SELL)         return "sell";
+   if (t == BOOK_TYPE_BUY)          return "buy";
+   if (t == BOOK_TYPE_SELL_MARKET)  return "sell_market";
+   if (t == BOOK_TYPE_BUY_MARKET)   return "buy_market";
+   return "unknown";
+}
+
+
+void CheckMarketDepth() {
+
+   bool firstSym = true;
+   string text = "{";
+
+   for (int s=0; s<ArraySize(MarketDepthSymbols); s++) {
+      string sym = MarketDepthSymbols[s];
+      MqlBookInfo book[];
+      if (!MarketBookGet(sym, book)) continue;
+
+      int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+
+      if (!firstSym) text += ", ";
+      text += "\"" + sym + "\": [";
+
+      for (int i=0; i<ArraySize(book); i++) {
+         if (i > 0) text += ", ";
+         text += StringFormat("{\"type\": \"%s\", \"price\": %.*f, \"volume\": %.0f, \"volume_real\": %.5f}",
+                              BookTypeToString((int)book[i].type),
+                              digits, book[i].price,
+                              (double)book[i].volume,
+                              book[i].volume_real);
+      }
+      text += "]";
+      firstSym = false;
+   }
+
+   text += "}";
+
+   // only write if changed
+   if (text == lastMarketDepthText) return;
+   if (WriteToFileAtomic(filePathMarketDepth, text, 0)) {
+      lastMarketDepthText = text;
    }
 }
 
@@ -1221,6 +1343,7 @@ void ResetFolder() {
    //FolderDelete(folderName);  // does not always work.
    FolderCreate(folderName);
    FileDelete(filePathMarketData);
+   FileDelete(filePathMarketDepth);
    FileDelete(filePathBarData);
    FileDelete(filePathHistoricData);
    FileDelete(filePathOrders);

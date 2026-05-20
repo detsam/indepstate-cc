@@ -52,6 +52,7 @@ class dwx_client {
     this.path_orders = path.join(metatrader_dir_path, 'DWX', 'DWX_Orders.txt');
     this.path_messages = path.join(metatrader_dir_path, 'DWX', 'DWX_Messages.txt');
     this.path_market_data = path.join(metatrader_dir_path, 'DWX', 'DWX_Market_Data.txt');
+    this.path_market_depth = path.join(metatrader_dir_path, 'DWX', 'DWX_Market_Depth.txt');
     this.path_bar_data = path.join(metatrader_dir_path, 'DWX', 'DWX_Bar_Data.txt');
     this.path_historic_data = path.join(metatrader_dir_path, 'DWX', 'DWX_Historic_Data.txt');
     this.path_historic_trades = path.join(metatrader_dir_path, 'DWX', 'DWX_Historic_Trades.txt');
@@ -65,6 +66,7 @@ class dwx_client {
     this._last_open_orders_str = '';
     this._last_messages_str = '';
     this._last_market_data_str = '';
+    this._last_market_depth_str = '';
     this._last_bar_data_str = '';
     this._last_historic_data_str = '';
     this._last_historic_trades_str = '';
@@ -72,6 +74,7 @@ class dwx_client {
     this.open_orders = {};
     this.account_info = {};
     this.market_data = {};
+    this.market_depth = {};
     this.bar_data = {};
     this.historic_data = {};
     this.historic_trades = {};
@@ -90,6 +93,7 @@ class dwx_client {
     // Запуск "потоков" (асинхронные циклы)
     this.messages_loop = this.check_messages();
     this.market_data_loop = this.check_market_data();
+    this.market_depth_loop = this.check_market_depth();
     this.bar_data_loop = this.check_bar_data();
     this.open_orders_loop = this.check_open_orders();
     this.historic_data_loop = this.check_historic_data();
@@ -236,6 +240,42 @@ class dwx_client {
     }
   }
 
+  /** Regularly checks the file for market depth (DOM) and triggers the event_handler.on_market_depth() function.
+   *
+   * File format produced by DWX_Service_IS.mq5 CheckMarketDepth():
+   *   { "<symbol>": [{ "type": "buy|sell|buy_market|sell_market", "price": <num>, "volume": <num>, "volume_real": <num> }, ...] }
+   * It is a full snapshot (latest state), atomically rewritten by MQL on every OnBookEvent for any subscribed symbol.
+   */
+  async check_market_depth() {
+    const delayMs = Math.max(1, Math.floor(this.sleep_delay * 1000));
+    while (this.ACTIVE) {
+      await sleep(delayMs);
+      if (!this.START) continue;
+
+      const text = await this.try_read_file(this.path_market_depth);
+      if (text.trim().length === 0 || text === this._last_market_depth_str) continue;
+
+      this._last_market_depth_str = text;
+      let data; try { data = JSON.parse(text); } catch { continue; }
+      if (!data || typeof data !== 'object') continue;
+
+      // we receive a full snapshot — replace the cache wholesale.
+      // also detect which symbols actually changed, to avoid spamming handlers.
+      const prev = this.market_depth || {};
+      this.market_depth = data;
+
+      if (this.event_handler && typeof this.event_handler.on_market_depth === 'function') {
+        for (const symbol of Object.keys(data)) {
+          const curStr = JSON.stringify(data[symbol]);
+          const prvStr = prev[symbol] ? JSON.stringify(prev[symbol]) : null;
+          if (curStr !== prvStr) {
+            try { this.event_handler.on_market_depth(symbol, data[symbol]); } catch {}
+          }
+        }
+      }
+    }
+  }
+
   /** Regularly checks the file for bar data and triggers the event_handler.on_bar_data() function. */
   async check_bar_data() {
     const delayMs = Math.max(1, Math.floor(this.sleep_delay * 1000));
@@ -344,6 +384,14 @@ class dwx_client {
   /** API: subscribe_symbols */
   async subscribe_symbols(symbols) {
     this.send_command('SUBSCRIBE_SYMBOLS', (symbols || []).join(','));
+  }
+
+  /** API: subscribe_market_depth — DOM (Market Book) subscription for a list of symbols.
+   *  Empty list unsubscribes from all. Mirrors SUBSCRIBE_MARKET_DEPTH on the MQL side
+   *  (DWX_Service_IS.mq5 SubscribeMarketDepth), which calls MarketBookAdd/Release.
+   */
+  async subscribe_market_depth(symbols) {
+    this.send_command('SUBSCRIBE_MARKET_DEPTH', (symbols || []).join(','));
   }
 
   /** API: subscribe_symbols_bar_data */
