@@ -74,6 +74,26 @@ function ready(adapter, client, nextId = 100) {
     assert(invalid.errors.length >= 5);
   }
 
+
+
+  {
+    const arrayCfg = validateConfig({ enabled: false, host: '127.0.0.1', port: 4002, clientId: 1, mode: 'paper', defaultTif: 'DAY', contractResolution: { preferredPrimaryExchanges: ['NASDAQ', 'NYSE'] } });
+    assert.strictEqual(arrayCfg.ok, true);
+    assert.deepStrictEqual(arrayCfg.config.contractResolution.preferredPrimaryExchanges, ['NASDAQ', 'NYSE']);
+
+    const csvCfg = validateConfig({ enabled: false, host: '127.0.0.1', port: 4002, clientId: 1, mode: 'paper', defaultTif: 'DAY', contractResolution: { preferredPrimaryExchanges: 'NASDAQ,NYSE, ARCA, AMEX' } });
+    assert.strictEqual(csvCfg.ok, true);
+    assert.deepStrictEqual(csvCfg.config.contractResolution.preferredPrimaryExchanges, ['NASDAQ', 'NYSE', 'ARCA', 'AMEX']);
+
+    const emptyCfg = validateConfig({ enabled: false, host: '127.0.0.1', port: 4002, clientId: 1, mode: 'paper', defaultTif: 'DAY', contractResolution: { preferredPrimaryExchanges: '' } });
+    assert.strictEqual(emptyCfg.ok, true);
+    assert.deepStrictEqual(emptyCfg.config.contractResolution.preferredPrimaryExchanges, ['NASDAQ', 'NYSE', 'ARCA', 'AMEX']);
+
+    const objectCfg = validateConfig({ enabled: false, host: '127.0.0.1', port: 4002, clientId: 1, mode: 'paper', defaultTif: 'DAY', contractResolution: { preferredPrimaryExchanges: { primary: 'NASDAQ' } } });
+    assert.strictEqual(objectCfg.ok, false);
+    assert(objectCfg.errors.includes('contractResolution.preferredPrimaryExchanges must be an array'));
+  }
+
   {
     const adapter = new IBKRAdapter({ enabled: false, autoConnect: false }, 'ibkr');
     const res = await adapter.placeOrder({ symbol: 'AAPL', side: 'buy', type: 'market', qty: 1 });

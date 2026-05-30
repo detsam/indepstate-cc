@@ -87,8 +87,20 @@ function createContextError(message, context = {}) {
   return err;
 }
 
+
+function normalizePreferredPrimaryExchanges(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return DEFAULTS.contractResolution.preferredPrimaryExchanges.slice();
+    return trimmed.split(',').map(part => part.trim()).filter(Boolean);
+  }
+  return value;
+}
+
 function validateConfig(input = {}) {
   const cfg = { ...DEFAULTS, ...input, contractResolution: { ...DEFAULTS.contractResolution, ...((input && input.contractResolution) || {}) } };
+  cfg.contractResolution.preferredPrimaryExchanges = normalizePreferredPrimaryExchanges(cfg.contractResolution.preferredPrimaryExchanges);
   const errors = [];
   if (typeof cfg.enabled !== 'boolean') errors.push('enabled must be boolean');
   if (!['paper', 'live'].includes(String(cfg.mode))) errors.push('mode must be "paper" or "live"');
