@@ -20,26 +20,53 @@
         },
         "dwx": {
             "adapter": "dwx",
-            "metatraderDirPath" : "${ENV:DWX_SOCKET_DIR}",
+            "metatraderDirPath": "${ENV:DWX_SOCKET_DIR}",
             "openOrderRetryDelayMs": 500
         },
         "ccxt-binance-futures": {
-          "adapter": "ccxt",
-          "exchangeId": "binance",
-          "apiKey": "${ENV:BINANCE_API_KEY}",
-          "secret": "${ENV:BINANCE_API_SECRET}",
-          "sandbox": true,
-          "enableRateLimit": true,
-          "options": {
-            "defaultType": "future"
-          },
-          "params": {
-            "recvWindow": 5000
-          },
-          "symbolMap": {
-            "BTCUSDT": "BTC/USDT:USDT",
-            "ETHUSDT": "ETH/USDT:USDT"
-          }
+            "adapter": "ccxt",
+            "exchangeId": "binance",
+            "apiKey": "${ENV:BINANCE_API_KEY}",
+            "secret": "${ENV:BINANCE_API_SECRET}",
+            "sandbox": true,
+            "enableRateLimit": true,
+            "options": {
+                "defaultType": "future"
+            },
+            "params": {
+                "recvWindow": 5000
+            },
+            "symbolMap": {
+                "BTCUSDT": "BTC/USDT:USDT",
+                "ETHUSDT": "ETH/USDT:USDT"
+            }
+        },
+        "ibkr": {
+            "adapter": "ibkr",
+            "enabled": false,
+            "mode": "paper",
+            "host": "127.0.0.1",
+            "port": 4002,
+            "clientId": 12,
+            "accountId": "",
+            "defaultTif": "DAY",
+            "instruments": {},
+            "quoteTimeoutMs": 5000,
+            "marketDataType": 3,
+            "defaultTickSize": "",
+            "contractResolveTimeoutMs": 5000,
+            "contractResolution": {
+                "enabled": true,
+                "defaultSecType": "STK",
+                "defaultExchange": "SMART",
+                "defaultCurrency": "USD",
+                "preferredPrimaryExchanges": [
+                    "NASDAQ",
+                    "NYSE",
+                    "ARCA",
+                    "AMEX"
+                ]
+            }
         }
     }
 }
