@@ -12,9 +12,17 @@ const DEFAULTS = Object.freeze({
   accountId: '',
   defaultTif: 'DAY',
   quoteTimeoutMs: 5000,
+  contractResolveTimeoutMs: 5000,
   marketDataType: 3,
   defaultTickSize: null,
   snapshotQuotes: false,
+  contractResolution: {
+    enabled: true,
+    defaultSecType: 'STK',
+    defaultExchange: 'SMART',
+    defaultCurrency: 'USD',
+    preferredPrimaryExchanges: ['NASDAQ', 'NYSE', 'ARCA', 'AMEX'],
+  },
   autoConnect: true,
 });
 
@@ -33,6 +41,12 @@ const TICK_PRICE_FIELDS = Object.freeze({
   75: 'close', // delayed close
 });
 const MARKET_DATA_PERMISSION_CODES = new Set([354, 10167]);
+const PRIMARY_EXCHANGE_ALIASES = Object.freeze({
+  NASDAQ: new Set(['NASDAQ', 'ISLAND', 'NMS']),
+  NYSE: new Set(['NYSE']),
+  ARCA: new Set(['ARCA', 'NYSEARCA']),
+  AMEX: new Set(['AMEX', 'NYSEAMEX']),
+});
 
 function normalizeString(value) {
   return value == null ? '' : String(value).trim();
@@ -74,7 +88,7 @@ function createContextError(message, context = {}) {
 }
 
 function validateConfig(input = {}) {
-  const cfg = { ...DEFAULTS, ...input };
+  const cfg = { ...DEFAULTS, ...input, contractResolution: { ...DEFAULTS.contractResolution, ...((input && input.contractResolution) || {}) } };
   const errors = [];
   if (typeof cfg.enabled !== 'boolean') errors.push('enabled must be boolean');
   if (!['paper', 'live'].includes(String(cfg.mode))) errors.push('mode must be "paper" or "live"');
@@ -83,9 +97,19 @@ function validateConfig(input = {}) {
   if (!Number.isInteger(Number(cfg.clientId)) || Number(cfg.clientId) < 0) errors.push('clientId must be a non-negative integer');
   if (!normalizeString(cfg.defaultTif)) errors.push('defaultTif is required');
   if (!Number.isInteger(Number(cfg.quoteTimeoutMs)) || Number(cfg.quoteTimeoutMs) <= 0) errors.push('quoteTimeoutMs must be a positive integer');
+  if (!Number.isInteger(Number(cfg.contractResolveTimeoutMs)) || Number(cfg.contractResolveTimeoutMs) <= 0) errors.push('contractResolveTimeoutMs must be a positive integer');
   if (!Number.isInteger(Number(cfg.marketDataType)) || Number(cfg.marketDataType) < 1) errors.push('marketDataType must be a positive integer');
   if (cfg.defaultTickSize != null && cfg.defaultTickSize !== '' && !positiveNumber(cfg.defaultTickSize)) errors.push('defaultTickSize must be a positive number when provided');
   if (typeof cfg.snapshotQuotes !== 'boolean') errors.push('snapshotQuotes must be boolean');
+  if (!cfg.contractResolution || typeof cfg.contractResolution !== 'object' || Array.isArray(cfg.contractResolution)) {
+    errors.push('contractResolution must be an object');
+  } else {
+    if (typeof cfg.contractResolution.enabled !== 'boolean') errors.push('contractResolution.enabled must be boolean');
+    for (const key of ['defaultSecType', 'defaultExchange', 'defaultCurrency']) {
+      if (!normalizeString(cfg.contractResolution[key])) errors.push(`contractResolution.${key} is required`);
+    }
+    if (!Array.isArray(cfg.contractResolution.preferredPrimaryExchanges)) errors.push('contractResolution.preferredPrimaryExchanges must be an array');
+  }
   if (cfg.instruments != null && (typeof cfg.instruments !== 'object' || Array.isArray(cfg.instruments))) errors.push('instruments must be an object keyed by app symbol');
   return { ok: errors.length === 0, errors, config: cfg };
 }
@@ -106,13 +130,44 @@ function validateContract(symbol, contract) {
 }
 
 function configuredTickSize(contract, cfg) {
-  return positiveNumber(contract?.tickSize) || positiveNumber(cfg?.defaultTickSize);
+  return positiveNumber(contract?.tickSize) || positiveNumber(contract?.minTick) || positiveNumber(cfg?.defaultTickSize);
+}
+
+function normalizePrimaryExchange(value) {
+  return normalizeString(value).toUpperCase();
+}
+
+function primaryExchangeMatches(candidate, preferred) {
+  const c = normalizePrimaryExchange(candidate);
+  const p = normalizePrimaryExchange(preferred);
+  if (!c || !p) return false;
+  if (c === p) return true;
+  return PRIMARY_EXCHANGE_ALIASES[p]?.has(c) || false;
+}
+
+function contractSupportsExchange(contract, exchange) {
+  const ex = normalizeString(exchange).toUpperCase();
+  if (!ex) return true;
+  if (normalizeString(contract.exchange).toUpperCase() === ex) return true;
+  const valid = normalizeString(contract.validExchanges).toUpperCase().split(',').map(x => x.trim()).filter(Boolean);
+  return valid.includes(ex);
+}
+
+function extractContractFromDetails(details) {
+  return details?.contract || details?.summary || details || {};
+}
+
+function normalizeContractDetails(details) {
+  const contract = extractContractFromDetails(details);
+  const out = normalizeContract(contract);
+  const minTick = positiveNumber(details?.minTick ?? contract?.minTick);
+  return { contract: out, tickSize: minTick, raw: safeClone(details) };
 }
 
 function normalizeContract(contract) {
   const out = {};
   for (const [key, value] of Object.entries(contract || {})) {
-    if (value === undefined || value === null || value === '') continue;
+    if (value === undefined || value === null || value === '' || key === 'tickSize' || key === 'minTick' || key === 'validExchanges') continue;
     out[key] = key === 'conId' ? Number(value) : value;
   }
   return out;
@@ -220,6 +275,8 @@ function loadStoqeyClientFactory() {
       openOrder: EventName.openOrder || 'openOrder',
       orderStatus: EventName.orderStatus || 'orderStatus',
       execDetails: EventName.execDetails || 'execDetails',
+      contractDetails: EventName.contractDetails || 'contractDetails',
+      contractDetailsEnd: EventName.contractDetailsEnd || 'contractDetailsEnd',
       tickPrice: EventName.tickPrice || 'tickPrice',
       tickSize: EventName.tickSize || 'tickSize',
       tickSnapshotEnd: EventName.tickSnapshotEnd || 'tickSnapshotEnd',
@@ -243,8 +300,14 @@ class IBKRAdapter extends ExecutionAdapter {
     this.cfg.accountId = normalizeString(this.cfg.accountId);
     this.cfg.defaultTif = normalizeString(this.cfg.defaultTif).toUpperCase();
     this.cfg.quoteTimeoutMs = Number(this.cfg.quoteTimeoutMs);
+    this.cfg.contractResolveTimeoutMs = Number(this.cfg.contractResolveTimeoutMs);
     this.cfg.marketDataType = Number(this.cfg.marketDataType);
     this.cfg.defaultTickSize = this.cfg.defaultTickSize == null || this.cfg.defaultTickSize === '' ? null : Number(this.cfg.defaultTickSize);
+    this.cfg.contractResolution = { ...DEFAULTS.contractResolution, ...(this.cfg.contractResolution || {}) };
+    this.cfg.contractResolution.defaultSecType = normalizeString(this.cfg.contractResolution.defaultSecType).toUpperCase();
+    this.cfg.contractResolution.defaultExchange = normalizeString(this.cfg.contractResolution.defaultExchange).toUpperCase();
+    this.cfg.contractResolution.defaultCurrency = normalizeString(this.cfg.contractResolution.defaultCurrency).toUpperCase();
+    this.cfg.contractResolution.preferredPrimaryExchanges = (this.cfg.contractResolution.preferredPrimaryExchanges || []).map(x => normalizeString(x).toUpperCase()).filter(Boolean);
     this.cfg.instruments = this.cfg.instruments || {};
     this.events = new EventEmitter();
     this.client = null;
@@ -259,7 +322,10 @@ class IBKRAdapter extends ExecutionAdapter {
     this.orderStatus = new Map();
     this.quoteRequests = new Map();
     this.quoteRequestsBySymbol = new Map();
+    this.contractRequests = new Map();
+    this.resolvedContracts = new Map();
     this.nextQuoteReqId = Number.isInteger(Number(this.cfg.quoteReqIdStart)) ? Number(this.cfg.quoteReqIdStart) : 900000000;
+    this.nextContractReqId = Number.isInteger(Number(this.cfg.contractReqIdStart)) ? Number(this.cfg.contractReqIdStart) : 800000000;
     this.logs = [];
 
     if (this.cfg.enabled && this.cfg.autoConnect !== false) this.connect().catch(err => this.#log('error', 'connect failed', { error: err.message }));
@@ -327,6 +393,8 @@ class IBKRAdapter extends ExecutionAdapter {
     on('openOrder', (orderId, contract, order, orderState) => this.#handleOpenOrder(orderId, contract, order, orderState));
     on('orderStatus', (orderId, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld) => this.#handleOrderStatus(orderId, status, { filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld }));
     on('execDetails', (reqId, contract, execution) => this.#log('info', 'execution details', { provider: this.provider, reqId, orderId: execution?.orderId, symbol: contract?.symbol }));
+    on('contractDetails', (reqId, details) => this.#handleContractDetails(reqId, details));
+    on('contractDetailsEnd', reqId => this.#handleContractDetailsEnd(reqId));
     on('tickPrice', (reqId, tickType, price, attribs) => this.#handleTickPrice(reqId, tickType, price, attribs));
     on('tickSize', (reqId, tickType, size) => this.#handleTickSize(reqId, tickType, size));
     on('tickSnapshotEnd', reqId => this.#handleTickSnapshotEnd(reqId));
@@ -406,8 +474,11 @@ class IBKRAdapter extends ExecutionAdapter {
     const key = String(reqId);
     if (this.quoteRequests.has(key)) {
       const isPermission = MARKET_DATA_PERMISSION_CODES.has(Number(code));
-      this.#log('error', isPermission ? 'market data permission error' : 'market data error', { provider: this.provider, reqId, code, message });
+      this.#log('error', isPermission ? 'IBKR market data subscription missing or unavailable' : 'market data error', { provider: this.provider, reqId, code, message });
       this.#resolveQuote(key, null, isPermission ? 'permission-error' : 'error');
+    }
+    if (this.contractRequests.has(key)) {
+      this.#resolveContract(key, null, `IBKR contract resolution failed for ${this.contractRequests.get(key).symbol}: ${message}`);
     }
     if (this.pending.has(key)) this.#rejectPending(key, mapped.message, { code, reqId });
   }
@@ -415,6 +486,86 @@ class IBKRAdapter extends ExecutionAdapter {
   #allocateQuoteReqId() {
     return this.nextQuoteReqId++;
   }
+
+  #allocateContractReqId() {
+    return this.nextContractReqId++;
+  }
+
+  #buildDefaultContractRequest(symbol) {
+    const cr = this.cfg.contractResolution;
+    return {
+      symbol,
+      secType: cr.defaultSecType,
+      exchange: cr.defaultExchange,
+      currency: cr.defaultCurrency,
+    };
+  }
+
+  #candidateSummaries(candidates) {
+    return candidates.map(c => safeContractSummary(c.contract || c));
+  }
+
+  #selectResolvedContract(symbol, candidates) {
+    const cr = this.cfg.contractResolution;
+    const normalized = candidates.map(normalizeContractDetails).filter(c => Object.keys(c.contract).length);
+    let plausible = normalized.filter(c => positiveNumber(c.contract.conId));
+    plausible = plausible.filter(c => normalizeString(c.contract.secType).toUpperCase() === cr.defaultSecType);
+    plausible = plausible.filter(c => normalizeString(c.contract.currency).toUpperCase() === cr.defaultCurrency);
+    plausible = plausible.filter(c => contractSupportsExchange({ ...c.contract, validExchanges: extractContractFromDetails(c.raw).validExchanges || c.raw?.validExchanges }, cr.defaultExchange));
+
+    if (plausible.length === 0) {
+      throw createContextError(`IBKR could not resolve contract for ${symbol}`, { adapter: 'ibkr', symbol, candidates: this.#candidateSummaries(normalized) });
+    }
+
+    const preferred = cr.preferredPrimaryExchanges || [];
+    for (const pref of preferred) {
+      const matching = plausible.filter(c => primaryExchangeMatches(c.contract.primaryExchange, pref));
+      if (matching.length === 1) return matching[0];
+      if (matching.length > 1) {
+        throw createContextError(`IBKR contract resolution ambiguous for ${symbol}`, { adapter: 'ibkr', symbol, candidates: this.#candidateSummaries(matching) });
+      }
+    }
+
+    if (plausible.length === 1) return plausible[0];
+    throw createContextError(`IBKR contract resolution ambiguous for ${symbol}`, { adapter: 'ibkr', symbol, candidates: this.#candidateSummaries(plausible) });
+  }
+
+  #handleContractDetails(reqId, details) {
+    const rec = this.contractRequests.get(String(reqId));
+    if (!rec) return;
+    rec.candidates.push(details);
+  }
+
+  #handleContractDetailsEnd(reqId) {
+    const key = String(reqId);
+    const rec = this.contractRequests.get(key);
+    if (!rec) return;
+    try {
+      const selected = this.#selectResolvedContract(rec.symbol, rec.candidates);
+      this.#resolveContract(key, selected);
+    } catch (err) {
+      this.#resolveContract(key, null, err.message, err.context);
+    }
+  }
+
+  #resolveContract(reqId, selected, error, context) {
+    const key = String(reqId);
+    const rec = this.contractRequests.get(key);
+    if (!rec) return;
+    clearTimeout(rec.timer);
+    this.contractRequests.delete(key);
+    if (selected) {
+      const record = { contract: selected.contract, tickSize: selected.tickSize || positiveNumber(this.cfg.defaultTickSize), source: 'resolved' };
+      this.resolvedContracts.set(rec.symbol, record);
+      this.#log('info', 'IBKR contract resolved', { provider: this.provider, reqId: Number(key), symbol: rec.symbol, contract: safeContractSummary(record.contract), tickSize: record.tickSize });
+      rec.resolve(record);
+    } else {
+      const message = error || `IBKR could not resolve contract for ${rec.symbol}`;
+      this.#log('error', 'IBKR contract resolution failed', { provider: this.provider, reqId: Number(key), symbol: rec.symbol, reason: message, ...(context ? { context: safeClone(context) } : {}) });
+      rec.reject(createContextError(message, context || { adapter: 'ibkr', symbol: rec.symbol }));
+    }
+  }
+
 
   #selectQuotePrice(quote) {
     if (positiveNumber(quote.bid) && positiveNumber(quote.ask)) return (Number(quote.bid) + Number(quote.ask)) / 2;
@@ -512,26 +663,87 @@ class IBKRAdapter extends ExecutionAdapter {
     return normalizeContract(contractCfg);
   }
 
-  buildOrderRequests(order) {
-    const contract = this.getContractForSymbol(order?.symbol);
+  getStaticContractRecordForSymbol(symbol) {
+    const key = normalizeString(symbol);
+    const contractCfg = this.cfg.instruments[key];
+    if (!contractCfg) return null;
+    const reason = validateContract(key, contractCfg);
+    if (reason) throw createContextError(reason, { adapter: 'ibkr', symbol: key });
+    return { contract: normalizeContract(contractCfg), tickSize: configuredTickSize(contractCfg, this.cfg), source: 'static' };
+  }
+
+  async resolveContractRecordForSymbol(symbol) {
+    const key = normalizeString(symbol).toUpperCase();
+    if (!key) throw createContextError('IBKR symbol is required for contract resolution', { adapter: 'ibkr' });
+
+    const staticRecord = this.getStaticContractRecordForSymbol(key);
+    if (staticRecord) return staticRecord;
+
+    const cached = this.resolvedContracts.get(key);
+    if (cached) return cached;
+
+    if (this.cfg.contractResolution.enabled === false) {
+      throw createContextError(`IBKR contract mapping missing for ${key} and dynamic contractResolution is disabled`, { adapter: 'ibkr', symbol: key });
+    }
+    if (!this.client || typeof this.client.reqContractDetails !== 'function') {
+      throw createContextError('IBKR client does not support reqContractDetails', { adapter: 'ibkr', symbol: key });
+    }
+
+    const reqId = this.#allocateContractReqId();
+    const reqKey = String(reqId);
+    const request = this.#buildDefaultContractRequest(key);
+    this.#log('info', 'IBKR contract resolution started', { provider: this.provider, reqId, symbol: key, contract: safeContractSummary(request) });
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const rec = this.contractRequests.get(reqKey);
+        if (!rec) return;
+        if (rec.candidates.length) {
+          try {
+            const selected = this.#selectResolvedContract(rec.symbol, rec.candidates);
+            this.#resolveContract(reqKey, selected);
+          } catch (err) {
+            this.#resolveContract(reqKey, null, err.message, err.context);
+          }
+        } else {
+          this.#resolveContract(reqKey, null, `IBKR could not resolve contract for ${key}`, { adapter: 'ibkr', symbol: key, candidates: [] });
+        }
+      }, this.cfg.contractResolveTimeoutMs);
+      this.contractRequests.set(reqKey, { reqId, symbol: key, request, candidates: [], resolve, reject, timer });
+      try {
+        this.client.reqContractDetails(reqId, request);
+      } catch (err) {
+        this.#resolveContract(reqKey, null, `IBKR contract resolution failed for ${key}: ${err?.message || String(err)}`, { adapter: 'ibkr', symbol: key });
+      }
+    });
+  }
+
+  async resolveContractForSymbol(symbol) {
+    const record = await this.resolveContractRecordForSymbol(symbol);
+    return record.contract;
+  }
+
+  buildOrderRequests(order, contractOverride) {
+    const contract = contractOverride || this.getContractForSymbol(order?.symbol);
     return buildOrderRequests(order, contract, this.cfg, () => this.allocateOrderId());
   }
 
   async getQuote(symbol) {
-    const key = normalizeString(symbol);
+    const key = normalizeString(symbol).toUpperCase();
     const reason = this.readinessReason();
     if (reason) {
       this.#log('error', 'quote unavailable: adapter not ready', { provider: this.provider, symbol: key, reason });
       return null;
     }
 
-    let contract;
+    let contractRecord;
     try {
-      contract = this.getContractForSymbol(key);
+      contractRecord = await this.resolveContractRecordForSymbol(key);
     } catch (err) {
-      this.#log('error', 'quote unavailable: contract mapping invalid', { provider: this.provider, symbol: key, reason: err.message });
+      this.#log('error', 'quote unavailable: contract resolution failed', { provider: this.provider, symbol: key, reason: err.message, context: err.context });
       return null;
     }
+    const contract = contractRecord.contract;
 
     if (!this.client || typeof this.client.reqMktData !== 'function') {
       this.#log('error', 'quote unavailable: IBKR client does not support reqMktData', { provider: this.provider, symbol: key });
@@ -544,7 +756,7 @@ class IBKRAdapter extends ExecutionAdapter {
     const reqId = this.#allocateQuoteReqId();
     const reqKey = String(reqId);
     const marketDataType = Number(this.cfg.marketDataType);
-    const tickSize = configuredTickSize(this.cfg.instruments[key], this.cfg);
+    const tickSize = contractRecord.tickSize || positiveNumber(this.cfg.defaultTickSize);
 
     this.#log('info', 'quote request started', { provider: this.provider, reqId, symbol: key, contract: safeContractSummary(contract), marketDataType });
     if (typeof this.client.reqMarketDataType === 'function') {
@@ -592,7 +804,8 @@ class IBKRAdapter extends ExecutionAdapter {
     order.meta.cid = cid;
 
     try {
-      const requests = this.buildOrderRequests(order);
+      const contractRecord = await this.resolveContractRecordForSymbol(order?.symbol);
+      const requests = this.buildOrderRequests(order, contractRecord.contract);
       for (const req of requests) this.pending.set(String(req.orderId), { cid, order, request: safeClone(req), createdAt: Date.now() });
       this.#log('info', 'placing order', { provider: this.provider, symbol: order.symbol, cid, orderIds: requests.map(r => r.orderId), contract: safeContractSummary(requests[0].contract), orderType: requests[0].order.orderType });
       for (const req of requests) {

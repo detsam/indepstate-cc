@@ -16,11 +16,13 @@ class FakeClient extends EventEmitter {
     this.marketDataTypes = [];
     this.marketDataRequests = [];
     this.cancelledMarketData = [];
+    this.contractDetailsRequests = [];
   }
   connect() { this.connected = true; this.emit('connect'); }
   reqManagedAccts() {}
   reqIds() {}
   reqOpenOrders() {}
+  reqContractDetails(reqId, contract) { this.contractDetailsRequests.push({ reqId, contract }); }
   reqMarketDataType(type) { this.marketDataTypes.push(type); }
   reqMktData(reqId, contract, genericTickList, snapshot, regulatorySnapshot, options) {
     this.marketDataRequests.push({ reqId, contract, genericTickList, snapshot, regulatorySnapshot, options });
@@ -49,6 +51,12 @@ function makeAdapter(overrides = {}) {
   }, 'ibkr');
   adapter.connect();
   return { adapter, client };
+}
+
+
+function emitContractDetails(client, reqId, contract, extra = {}) {
+  client.emit('contractDetails', reqId, { contract, ...extra });
+  client.emit('contractDetailsEnd', reqId);
 }
 
 function ready(adapter, client, nextId = 100) {
@@ -95,17 +103,46 @@ function ready(adapter, client, nextId = 100) {
   }
 
   {
-    const { adapter, client } = makeAdapter();
+    const { adapter, client } = makeAdapter({ instruments: {} });
+    ready(adapter, client, 90);
+    const promise = adapter.resolveContractForSymbol('INTC');
+    assert.strictEqual(client.contractDetailsRequests.length, 1);
+    assert.deepStrictEqual(client.contractDetailsRequests[0].contract, { symbol: 'INTC', secType: 'STK', exchange: 'SMART', currency: 'USD' });
+    emitContractDetails(client, client.contractDetailsRequests[0].reqId, { conId: 270639, symbol: 'INTC', secType: 'STK', exchange: 'SMART', currency: 'USD', primaryExchange: 'NASDAQ', localSymbol: 'INTC', tradingClass: 'NMS' }, { minTick: 0.01 });
+    const contract = await promise;
+    assert.strictEqual(contract.conId, 270639);
+    assert.strictEqual(contract.symbol, 'INTC');
+    assert(adapter.logs.some(entry => entry.message === 'IBKR contract resolved' && entry.symbol === 'INTC'));
+
+    const cached = await adapter.resolveContractForSymbol('INTC');
+    assert.strictEqual(cached.conId, 270639);
+    assert.strictEqual(client.contractDetailsRequests.length, 1);
+  }
+
+  {
+    const { adapter, client } = makeAdapter({ instruments: {}, contractResolveTimeoutMs: 20 });
     ready(adapter, client, 90);
     const quote = await adapter.getQuote('MSFT');
     assert.strictEqual(quote, null);
-    assert(adapter.logs.some(entry => entry.message === 'quote unavailable: contract mapping invalid' && /contract mapping missing/i.test(entry.reason)));
+    assert(adapter.logs.some(entry => entry.message === 'IBKR contract resolution failed' && /could not resolve contract for MSFT/i.test(entry.reason)));
+  }
+
+  {
+    const { adapter, client } = makeAdapter({ instruments: {} });
+    ready(adapter, client, 90);
+    const promise = adapter.resolveContractForSymbol('DUPE');
+    const reqId = client.contractDetailsRequests[0].reqId;
+    client.emit('contractDetails', reqId, { contract: { conId: 1, symbol: 'DUPE', secType: 'STK', exchange: 'SMART', currency: 'USD', primaryExchange: 'NASDAQ' }, minTick: 0.01 });
+    client.emit('contractDetails', reqId, { contract: { conId: 2, symbol: 'DUPE', secType: 'STK', exchange: 'SMART', currency: 'USD', primaryExchange: 'NASDAQ' }, minTick: 0.01 });
+    client.emit('contractDetailsEnd', reqId);
+    await assert.rejects(promise, /IBKR contract resolution ambiguous for DUPE/);
   }
 
   {
     const { adapter, client } = makeAdapter({ marketDataType: 3 });
     ready(adapter, client, 91);
     const promise = adapter.getQuote('AAPL');
+    await Promise.resolve();
     assert.strictEqual(client.marketDataTypes[0], 3);
     assert.strictEqual(client.marketDataRequests.length, 1);
     assert.strictEqual(client.marketDataRequests[0].contract.conId, 265598);
@@ -122,9 +159,27 @@ function ready(adapter, client, nextId = 100) {
   }
 
   {
+    const { adapter, client } = makeAdapter({ instruments: {} });
+    ready(adapter, client, 91);
+    const promise = adapter.getQuote('INTC');
+    await Promise.resolve();
+    assert.strictEqual(client.contractDetailsRequests.length, 1);
+    emitContractDetails(client, client.contractDetailsRequests[0].reqId, { conId: 270639, symbol: 'INTC', secType: 'STK', exchange: 'SMART', currency: 'USD', primaryExchange: 'NASDAQ', localSymbol: 'INTC', tradingClass: 'NMS' }, { minTick: 0.01 });
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.strictEqual(client.marketDataRequests.length, 1);
+    assert.strictEqual(client.marketDataRequests[0].contract.conId, 270639);
+    client.emit('tickPrice', client.marketDataRequests[0].reqId, 4, 32.5);
+    const quote = await promise;
+    assert.strictEqual(quote.price, 32.5);
+    assert.strictEqual(quote.tickSize, 0.01);
+  }
+
+  {
     const { adapter, client } = makeAdapter();
     ready(adapter, client, 92);
     const promise = adapter.getQuote('AAPL');
+    await Promise.resolve();
     client.emit('tickPrice', client.marketDataRequests[0].reqId, 4, 102.25);
     const quote = await promise;
     assert.strictEqual(quote.price, 102.25);
@@ -135,6 +190,7 @@ function ready(adapter, client, nextId = 100) {
     const { adapter, client } = makeAdapter();
     ready(adapter, client, 93);
     const promise = adapter.getQuote('AAPL');
+    await Promise.resolve();
     client.emit('tickPrice', client.marketDataRequests[0].reqId, 9, 99.75);
     const quote = await promise;
     assert.strictEqual(quote.price, 99.75);
@@ -154,10 +210,26 @@ function ready(adapter, client, nextId = 100) {
     const { adapter, client } = makeAdapter();
     ready(adapter, client, 95);
     const promise = adapter.getQuote('AAPL');
+    await Promise.resolve();
     client.emit('error', new Error('No market data permissions'), 354, client.marketDataRequests[0].reqId);
     const quote = await promise;
     assert.strictEqual(quote, null);
-    assert(adapter.logs.some(entry => entry.message === 'market data permission error'));
+    assert(adapter.logs.some(entry => entry.message === 'IBKR market data subscription missing or unavailable'));
+  }
+
+  {
+    const { adapter, client } = makeAdapter({ instruments: {} });
+    ready(adapter, client, 100);
+    const promise = adapter.placeOrder({ symbol: 'INTC', side: 'buy', type: 'market', qty: 3, clientOrderId: 'cid-intc' });
+    await Promise.resolve();
+    assert.strictEqual(client.contractDetailsRequests.length, 1);
+    emitContractDetails(client, client.contractDetailsRequests[0].reqId, { conId: 270639, symbol: 'INTC', secType: 'STK', exchange: 'SMART', currency: 'USD', primaryExchange: 'NASDAQ', localSymbol: 'INTC', tradingClass: 'NMS' });
+    await Promise.resolve();
+    await Promise.resolve();
+    const res = await promise;
+    assert.strictEqual(res.status, 'ok');
+    assert.strictEqual(client.placed[0].contract.conId, 270639);
+    assert.strictEqual(client.placed[0].order.totalQuantity, 3);
   }
 
   {
