@@ -40,6 +40,27 @@
             "BTCUSDT": "BTC/USDT:USDT",
             "ETHUSDT": "ETH/USDT:USDT"
           }
+
+        },
+        "ibkr": {
+            "adapter": "ibkr",
+            "enabled": false,
+            "mode": "paper",
+            "host": "127.0.0.1",
+            "port": 4002,
+            "clientId": 12,
+            "accountId": "",
+            "defaultTif": "DAY",
+            "instruments": {
+                "AAPL": {
+                    "conId": 265598,
+                    "symbol": "AAPL",
+                    "secType": "STK",
+                    "exchange": "SMART",
+                    "currency": "USD",
+                    "primaryExchange": "NASDAQ"
+                }
+            }
         }
     }
 }
