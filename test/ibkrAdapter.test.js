@@ -13,11 +13,19 @@ class FakeClient extends EventEmitter {
     this.placed = [];
     this.cancels = [];
     this.connected = false;
+    this.marketDataTypes = [];
+    this.marketDataRequests = [];
+    this.cancelledMarketData = [];
   }
   connect() { this.connected = true; this.emit('connect'); }
   reqManagedAccts() {}
   reqIds() {}
   reqOpenOrders() {}
+  reqMarketDataType(type) { this.marketDataTypes.push(type); }
+  reqMktData(reqId, contract, genericTickList, snapshot, regulatorySnapshot, options) {
+    this.marketDataRequests.push({ reqId, contract, genericTickList, snapshot, regulatorySnapshot, options });
+  }
+  cancelMktData(reqId) { this.cancelledMarketData.push(reqId); }
   placeOrder(orderId, contract, order) { this.placed.push({ orderId, contract, order }); }
   cancelOrder(orderId) { this.cancels.push(orderId); }
 }
@@ -34,7 +42,7 @@ function makeAdapter(overrides = {}) {
     accountId: 'DU123',
     defaultTif: 'DAY',
     instruments: {
-      AAPL: { conId: 265598, symbol: 'AAPL', secType: 'STK', exchange: 'SMART', currency: 'USD', primaryExchange: 'NASDAQ' },
+      AAPL: { conId: 265598, symbol: 'AAPL', secType: 'STK', exchange: 'SMART', currency: 'USD', primaryExchange: 'NASDAQ', tickSize: 0.01 },
     },
     clientFactory: { create: () => client, eventNames: {} },
     ...overrides,
@@ -75,6 +83,81 @@ function ready(adapter, client, nextId = 100) {
     assert.strictEqual(validateContract('MSFT', null), 'IBKR contract mapping missing for MSFT');
     assert.match(validateContract('MSFT', { symbol: 'MSFT', secType: 'STK', exchange: 'SMART', currency: 'USD' }), /primaryExchange/);
     assert.strictEqual(validateContract('MSFT', { conId: 123 }), '');
+  }
+
+
+
+  {
+    const { adapter } = makeAdapter();
+    const quote = await adapter.getQuote('AAPL');
+    assert.strictEqual(quote, null);
+    assert(adapter.logs.some(entry => entry.message === 'quote unavailable: adapter not ready'));
+  }
+
+  {
+    const { adapter, client } = makeAdapter();
+    ready(adapter, client, 90);
+    const quote = await adapter.getQuote('MSFT');
+    assert.strictEqual(quote, null);
+    assert(adapter.logs.some(entry => entry.message === 'quote unavailable: contract mapping invalid' && /contract mapping missing/i.test(entry.reason)));
+  }
+
+  {
+    const { adapter, client } = makeAdapter({ marketDataType: 3 });
+    ready(adapter, client, 91);
+    const promise = adapter.getQuote('AAPL');
+    assert.strictEqual(client.marketDataTypes[0], 3);
+    assert.strictEqual(client.marketDataRequests.length, 1);
+    assert.strictEqual(client.marketDataRequests[0].contract.conId, 265598);
+    assert.strictEqual(client.marketDataRequests[0].snapshot, false);
+    client.emit('tickPrice', client.marketDataRequests[0].reqId, 1, 100);
+    client.emit('tickPrice', client.marketDataRequests[0].reqId, 2, 101);
+    const quote = await promise;
+    assert.strictEqual(quote.price, 100.5);
+    assert.strictEqual(quote.bid, 100);
+    assert.strictEqual(quote.ask, 101);
+    assert.strictEqual(quote.tickSize, 0.01);
+    assert.strictEqual(quote.tickSource, 'ibkr');
+    assert.deepStrictEqual(client.cancelledMarketData, [client.marketDataRequests[0].reqId]);
+  }
+
+  {
+    const { adapter, client } = makeAdapter();
+    ready(adapter, client, 92);
+    const promise = adapter.getQuote('AAPL');
+    client.emit('tickPrice', client.marketDataRequests[0].reqId, 4, 102.25);
+    const quote = await promise;
+    assert.strictEqual(quote.price, 102.25);
+    assert.strictEqual(quote.last, 102.25);
+  }
+
+  {
+    const { adapter, client } = makeAdapter();
+    ready(adapter, client, 93);
+    const promise = adapter.getQuote('AAPL');
+    client.emit('tickPrice', client.marketDataRequests[0].reqId, 9, 99.75);
+    const quote = await promise;
+    assert.strictEqual(quote.price, 99.75);
+    assert.strictEqual(quote.close, 99.75);
+  }
+
+  {
+    const { adapter, client } = makeAdapter({ quoteTimeoutMs: 20 });
+    ready(adapter, client, 94);
+    const quote = await adapter.getQuote('AAPL');
+    assert.strictEqual(quote, null);
+    assert.deepStrictEqual(client.cancelledMarketData, [client.marketDataRequests[0].reqId]);
+    assert(adapter.logs.some(entry => entry.message === 'quote timeout'));
+  }
+
+  {
+    const { adapter, client } = makeAdapter();
+    ready(adapter, client, 95);
+    const promise = adapter.getQuote('AAPL');
+    client.emit('error', new Error('No market data permissions'), 354, client.marketDataRequests[0].reqId);
+    const quote = await promise;
+    assert.strictEqual(quote, null);
+    assert(adapter.logs.some(entry => entry.message === 'market data permission error'));
   }
 
   {

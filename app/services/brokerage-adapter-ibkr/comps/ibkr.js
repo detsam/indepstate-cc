@@ -11,6 +11,10 @@ const DEFAULTS = Object.freeze({
   clientId: 12,
   accountId: '',
   defaultTif: 'DAY',
+  quoteTimeoutMs: 5000,
+  marketDataType: 3,
+  defaultTickSize: null,
+  snapshotQuotes: false,
   autoConnect: true,
 });
 
@@ -18,6 +22,17 @@ const SENSITIVE_KEY_RE = /(?:token|secret|password|credential|key)$/i;
 const FINAL_CANCEL_STATUSES = new Set(['Cancelled', 'ApiCancelled']);
 const ACCEPTED_STATUSES = new Set(['PendingSubmit', 'PreSubmitted', 'Submitted', 'Filled']);
 const REJECTED_STATUSES = new Set(['Inactive', 'ApiCancelled', 'Cancelled']);
+const TICK_PRICE_FIELDS = Object.freeze({
+  1: 'bid',
+  2: 'ask',
+  4: 'last',
+  9: 'close',
+  66: 'bid', // delayed bid
+  67: 'ask', // delayed ask
+  68: 'last', // delayed last
+  75: 'close', // delayed close
+});
+const MARKET_DATA_PERMISSION_CODES = new Set([354, 10167]);
 
 function normalizeString(value) {
   return value == null ? '' : String(value).trim();
@@ -26,6 +41,11 @@ function normalizeString(value) {
 function positiveNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function finiteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function safeClone(value) {
@@ -62,6 +82,10 @@ function validateConfig(input = {}) {
   if (!Number.isInteger(Number(cfg.port)) || Number(cfg.port) <= 0 || Number(cfg.port) > 65535) errors.push('port must be an integer from 1 to 65535');
   if (!Number.isInteger(Number(cfg.clientId)) || Number(cfg.clientId) < 0) errors.push('clientId must be a non-negative integer');
   if (!normalizeString(cfg.defaultTif)) errors.push('defaultTif is required');
+  if (!Number.isInteger(Number(cfg.quoteTimeoutMs)) || Number(cfg.quoteTimeoutMs) <= 0) errors.push('quoteTimeoutMs must be a positive integer');
+  if (!Number.isInteger(Number(cfg.marketDataType)) || Number(cfg.marketDataType) < 1) errors.push('marketDataType must be a positive integer');
+  if (cfg.defaultTickSize != null && cfg.defaultTickSize !== '' && !positiveNumber(cfg.defaultTickSize)) errors.push('defaultTickSize must be a positive number when provided');
+  if (typeof cfg.snapshotQuotes !== 'boolean') errors.push('snapshotQuotes must be boolean');
   if (cfg.instruments != null && (typeof cfg.instruments !== 'object' || Array.isArray(cfg.instruments))) errors.push('instruments must be an object keyed by app symbol');
   return { ok: errors.length === 0, errors, config: cfg };
 }
@@ -79,6 +103,10 @@ function validateContract(symbol, contract) {
     return `IBKR SMART-routed US stock contract for ${symbol} requires primaryExchange to avoid ambiguity`;
   }
   return '';
+}
+
+function configuredTickSize(contract, cfg) {
+  return positiveNumber(contract?.tickSize) || positiveNumber(cfg?.defaultTickSize);
 }
 
 function normalizeContract(contract) {
@@ -192,6 +220,9 @@ function loadStoqeyClientFactory() {
       openOrder: EventName.openOrder || 'openOrder',
       orderStatus: EventName.orderStatus || 'orderStatus',
       execDetails: EventName.execDetails || 'execDetails',
+      tickPrice: EventName.tickPrice || 'tickPrice',
+      tickSize: EventName.tickSize || 'tickSize',
+      tickSnapshotEnd: EventName.tickSnapshotEnd || 'tickSnapshotEnd',
       connectionClosed: EventName.connectionClosed || 'connectionClosed',
     },
     create(config) {
@@ -211,6 +242,9 @@ class IBKRAdapter extends ExecutionAdapter {
     this.cfg.clientId = Number(this.cfg.clientId);
     this.cfg.accountId = normalizeString(this.cfg.accountId);
     this.cfg.defaultTif = normalizeString(this.cfg.defaultTif).toUpperCase();
+    this.cfg.quoteTimeoutMs = Number(this.cfg.quoteTimeoutMs);
+    this.cfg.marketDataType = Number(this.cfg.marketDataType);
+    this.cfg.defaultTickSize = this.cfg.defaultTickSize == null || this.cfg.defaultTickSize === '' ? null : Number(this.cfg.defaultTickSize);
     this.cfg.instruments = this.cfg.instruments || {};
     this.events = new EventEmitter();
     this.client = null;
@@ -223,6 +257,9 @@ class IBKRAdapter extends ExecutionAdapter {
     this.pending = new Map();
     this.cancels = new Map();
     this.orderStatus = new Map();
+    this.quoteRequests = new Map();
+    this.quoteRequestsBySymbol = new Map();
+    this.nextQuoteReqId = Number.isInteger(Number(this.cfg.quoteReqIdStart)) ? Number(this.cfg.quoteReqIdStart) : 900000000;
     this.logs = [];
 
     if (this.cfg.enabled && this.cfg.autoConnect !== false) this.connect().catch(err => this.#log('error', 'connect failed', { error: err.message }));
@@ -231,7 +268,16 @@ class IBKRAdapter extends ExecutionAdapter {
   on(event, fn) { this.events.on(event, fn); return () => this.events.off(event, fn); }
 
   #log(level, message, context = {}) {
-    const entry = { level, message, ...safeClone(context) };
+    const safeContext = safeClone(context);
+    if (Object.prototype.hasOwnProperty.call(safeContext, 'message')) {
+      safeContext.detail = safeContext.message;
+      delete safeContext.message;
+    }
+    if (Object.prototype.hasOwnProperty.call(safeContext, 'level')) {
+      safeContext.contextLevel = safeContext.level;
+      delete safeContext.level;
+    }
+    const entry = { level, message, ...safeContext };
     this.logs.push(entry);
     const logger = level === 'error' ? console.error : console.log;
     logger('[IBKR]', entry);
@@ -281,6 +327,9 @@ class IBKRAdapter extends ExecutionAdapter {
     on('openOrder', (orderId, contract, order, orderState) => this.#handleOpenOrder(orderId, contract, order, orderState));
     on('orderStatus', (orderId, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld) => this.#handleOrderStatus(orderId, status, { filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld }));
     on('execDetails', (reqId, contract, execution) => this.#log('info', 'execution details', { provider: this.provider, reqId, orderId: execution?.orderId, symbol: contract?.symbol }));
+    on('tickPrice', (reqId, tickType, price, attribs) => this.#handleTickPrice(reqId, tickType, price, attribs));
+    on('tickSize', (reqId, tickType, size) => this.#handleTickSize(reqId, tickType, size));
+    on('tickSnapshotEnd', reqId => this.#handleTickSnapshotEnd(reqId));
     on('connectionClosed', () => this.#handleDisconnected('connectionClosed'));
     on('error', (err, code, reqId) => this.#handleIbError(err, code, reqId));
     if (typeof this.client.once === 'function') {
@@ -355,7 +404,95 @@ class IBKRAdapter extends ExecutionAdapter {
     const mapped = createContextError('IBKR API error', { adapter: 'ibkr', code, reqId, message });
     this.#log('error', 'api error', { provider: this.provider, code, reqId, message: mapped.message });
     const key = String(reqId);
+    if (this.quoteRequests.has(key)) {
+      const isPermission = MARKET_DATA_PERMISSION_CODES.has(Number(code));
+      this.#log('error', isPermission ? 'market data permission error' : 'market data error', { provider: this.provider, reqId, code, message });
+      this.#resolveQuote(key, null, isPermission ? 'permission-error' : 'error');
+    }
     if (this.pending.has(key)) this.#rejectPending(key, mapped.message, { code, reqId });
+  }
+
+  #allocateQuoteReqId() {
+    return this.nextQuoteReqId++;
+  }
+
+  #selectQuotePrice(quote) {
+    if (positiveNumber(quote.bid) && positiveNumber(quote.ask)) return (Number(quote.bid) + Number(quote.ask)) / 2;
+    if (positiveNumber(quote.last)) return Number(quote.last);
+    if (positiveNumber(quote.close)) return Number(quote.close);
+    return null;
+  }
+
+  #normalizedQuote(rec) {
+    const price = this.#selectQuotePrice(rec.quote);
+    if (!positiveNumber(price)) return null;
+    const out = {
+      bid: rec.quote.bid,
+      ask: rec.quote.ask,
+      last: rec.quote.last,
+      close: rec.quote.close,
+      price,
+      tickSize: rec.tickSize,
+      tickSource: 'ibkr',
+      raw: safeClone(rec.raw),
+    };
+    for (const key of ['bid', 'ask', 'last', 'close', 'tickSize']) {
+      if (out[key] == null) delete out[key];
+    }
+    return out;
+  }
+
+  #cancelQuoteRequest(reqId) {
+    if (!this.client || typeof this.client.cancelMktData !== 'function') return;
+    try {
+      this.client.cancelMktData(Number(reqId));
+    } catch (err) {
+      this.#log('error', 'cancel market data failed', { provider: this.provider, reqId, message: err?.message || String(err) });
+    }
+  }
+
+  #resolveQuote(reqId, quote, reason) {
+    const key = String(reqId);
+    const rec = this.quoteRequests.get(key);
+    if (!rec) return;
+    clearTimeout(rec.timer);
+    this.quoteRequests.delete(key);
+    if (this.quoteRequestsBySymbol.get(rec.symbol) === key) this.quoteRequestsBySymbol.delete(rec.symbol);
+    this.#cancelQuoteRequest(key);
+    if (quote) {
+      this.#log('info', 'quote resolved', { provider: this.provider, reqId: Number(key), symbol: rec.symbol, price: quote.price, bid: quote.bid, ask: quote.ask, last: quote.last, close: quote.close, tickSize: quote.tickSize });
+      rec.resolve(quote);
+    } else {
+      this.#log(reason === 'timeout' ? 'error' : 'error', reason === 'timeout' ? 'quote timeout' : 'quote unavailable', { provider: this.provider, reqId: Number(key), symbol: rec.symbol, reason });
+      rec.resolve(null);
+    }
+  }
+
+  #handleTickPrice(reqId, tickType, price, attribs) {
+    const key = String(reqId);
+    const rec = this.quoteRequests.get(key);
+    if (!rec) return;
+    const field = TICK_PRICE_FIELDS[Number(tickType)];
+    const n = finiteNumber(price);
+    if (field && n != null && n > 0) rec.quote[field] = n;
+    rec.raw.tickPrice.push({ tickType: Number(tickType), field, price: n, attribs: safeClone(attribs) });
+    const quote = this.#normalizedQuote(rec);
+    if (quote) this.#resolveQuote(key, quote, 'resolved');
+  }
+
+  #handleTickSize(reqId, tickType, size) {
+    const key = String(reqId);
+    const rec = this.quoteRequests.get(key);
+    if (!rec) return;
+    rec.raw.tickSize.push({ tickType: Number(tickType), size: finiteNumber(size) });
+  }
+
+  #handleTickSnapshotEnd(reqId) {
+    const key = String(reqId);
+    const rec = this.quoteRequests.get(key);
+    if (!rec) return;
+    const quote = this.#normalizedQuote(rec);
+    this.#resolveQuote(key, quote, quote ? 'snapshot-end' : 'snapshot-end-no-price');
   }
 
   allocateOrderId() {
@@ -378,6 +515,72 @@ class IBKRAdapter extends ExecutionAdapter {
   buildOrderRequests(order) {
     const contract = this.getContractForSymbol(order?.symbol);
     return buildOrderRequests(order, contract, this.cfg, () => this.allocateOrderId());
+  }
+
+  async getQuote(symbol) {
+    const key = normalizeString(symbol);
+    const reason = this.readinessReason();
+    if (reason) {
+      this.#log('error', 'quote unavailable: adapter not ready', { provider: this.provider, symbol: key, reason });
+      return null;
+    }
+
+    let contract;
+    try {
+      contract = this.getContractForSymbol(key);
+    } catch (err) {
+      this.#log('error', 'quote unavailable: contract mapping invalid', { provider: this.provider, symbol: key, reason: err.message });
+      return null;
+    }
+
+    if (!this.client || typeof this.client.reqMktData !== 'function') {
+      this.#log('error', 'quote unavailable: IBKR client does not support reqMktData', { provider: this.provider, symbol: key });
+      return null;
+    }
+
+    const existingReqId = this.quoteRequestsBySymbol.get(key);
+    if (existingReqId) this.#resolveQuote(existingReqId, null, 'superseded');
+
+    const reqId = this.#allocateQuoteReqId();
+    const reqKey = String(reqId);
+    const marketDataType = Number(this.cfg.marketDataType);
+    const tickSize = configuredTickSize(this.cfg.instruments[key], this.cfg);
+
+    this.#log('info', 'quote request started', { provider: this.provider, reqId, symbol: key, contract: safeContractSummary(contract), marketDataType });
+    if (typeof this.client.reqMarketDataType === 'function') {
+      try {
+        this.client.reqMarketDataType(marketDataType);
+      } catch (err) {
+        this.#log('error', 'reqMarketDataType failed', { provider: this.provider, reqId, symbol: key, marketDataType, message: err?.message || String(err) });
+      }
+    }
+
+    return new Promise(resolve => {
+      const timer = setTimeout(() => this.#resolveQuote(reqKey, null, 'timeout'), this.cfg.quoteTimeoutMs);
+      this.quoteRequests.set(reqKey, {
+        reqId,
+        symbol: key,
+        contract,
+        tickSize,
+        quote: {},
+        raw: { tickPrice: [], tickSize: [], marketDataType, snapshot: this.cfg.snapshotQuotes === true },
+        resolve,
+        timer,
+      });
+      this.quoteRequestsBySymbol.set(key, reqKey);
+      try {
+        this.client.reqMktData(reqId, contract, '', this.cfg.snapshotQuotes === true, false, []);
+      } catch (err) {
+        this.#log('error', 'reqMktData failed', { provider: this.provider, reqId, symbol: key, message: err?.message || String(err) });
+        this.#resolveQuote(reqKey, null, 'request-error');
+      }
+    });
+  }
+
+  async forgetQuote(symbol) {
+    const key = normalizeString(symbol);
+    const reqId = this.quoteRequestsBySymbol.get(key);
+    if (reqId) this.#resolveQuote(reqId, null, 'forgotten');
   }
 
   async placeOrder(order) {

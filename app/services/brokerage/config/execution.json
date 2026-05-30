@@ -58,9 +58,13 @@
                     "secType": "STK",
                     "exchange": "SMART",
                     "currency": "USD",
-                    "primaryExchange": "NASDAQ"
+                    "primaryExchange": "NASDAQ",
+                    "tickSize": 0.01
                 }
-            }
+            },
+            "quoteTimeoutMs": 5000,
+            "marketDataType": 3,
+            "defaultTickSize": ""
         }
     }
 }
