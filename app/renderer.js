@@ -404,6 +404,25 @@ function optionPayoffForRow(row) {
   return row?.payoff || row?.estimatedPayoff || row?.meta?.payoff || null;
 }
 
+function optionLegToken(leg) {
+  const qty = signedOptionLegQty(leg);
+  const absQty = Math.abs(qty);
+  const optionCode = String(leg.option || '').toUpperCase().startsWith('P') ? 'P' : 'C';
+  return `${qty > 0 ? '+' : '-'}${absQty}${optionCode}${leg.strike}`;
+}
+
+function formatRiskReward(payoff) {
+  if (!payoff) return '-';
+  if (payoff.isMaxLossInfinite) return '-';
+  const loss = Number(payoff.maxLoss);
+  if (!Number.isFinite(loss) || loss < 0) return '-';
+  if (payoff.isMaxProfitInfinite) return '1:∞';
+  const profit = Number(payoff.maxProfit);
+  if (!Number.isFinite(profit)) return '-';
+  if (loss === 0) return profit > 0 ? '1:∞' : '-';
+  return `1:${(profit / loss).toFixed(1)}`;
+}
+
 function _normNum(val) {
   if (val == null) return null;
   const s = String(val).trim().replace(',', '.');
@@ -734,6 +753,7 @@ function isTouched(ticker) {
 }
 
 const pendingInstruments = new Set();
+const pendingOptionPayoffs = new Set();
 
 function ensureInstrument(ticker, provider) {
   if (!ticker) return;
@@ -767,6 +787,36 @@ function forgetInstrument(ticker, provider) {
   instrumentInfo.delete(ticker);
   pendingInstruments.delete(ticker);
   ipcRenderer.invoke('instrument:forget', {symbol: ticker, provider}).catch(() => {
+  });
+}
+
+function ensureOptionPayoff(row) {
+  if (!row || row.instrumentType !== 'OPT') return;
+  if (optionPayoffForRow(row)) return;
+  const key = rowKey(row);
+  if (pendingOptionPayoffs.has(key)) return;
+  pendingOptionPayoffs.add(key);
+  ipcRenderer.invoke('optionstrat:estimate', {
+    instrumentType: 'OPT',
+    provider: row.provider || 'optionstrat',
+    ticker: row.ticker || row.symbol,
+    symbol: row.symbol || row.ticker,
+    root: row.root,
+    name: row.name,
+    description: row.description,
+    expirationDte: row.expirationDte || row.expiration,
+    isCustomName: row.isCustomName,
+    isCashSecured: row.isCashSecured,
+    legs: row.legs
+  }).then(result => {
+    if (result?.status !== 'ok' || !result.payoff) return;
+    const current = state.rows.find(r => rowKey(r) === key);
+    if (!current) return;
+    current.estimatedPayoff = result.estimatedPayoff || result.payoff;
+    render();
+  }).catch(() => {
+  }).finally(() => {
+    pendingOptionPayoffs.delete(key);
   });
 }
 
@@ -890,6 +940,7 @@ function createCard(row, index) {
 
   // ensure we have a quote for this symbol ASAP
   ensureInstrument(row.ticker, row.provider);
+  if (instrumentType === 'OPT') ensureOptionPayoff(row);
 
   const card = el('div', 'card');
   card.setAttribute('data-rowkey', key);
@@ -1033,31 +1084,27 @@ function createOptionBody(row, key) {
   const line = el('div', 'quad-line option-legs');
   line.style.display = 'grid';
   line.style.gridTemplateColumns = '1fr';
-  line.style.gap = '6px';
+  line.style.gap = '4px';
 
-  const quoteRoot = row.root ? ` root ${row.root}` : '';
-  const summary = el('div', null, `${row.ticker || row.symbol || ''}${quoteRoot} ${row.expirationDte || ''}`.trim(), {
-    style: 'font-size:11px;color:#6b7280'
+  const legs = Array.isArray(row.legs) ? row.legs : [];
+  const summary = el('div', 'option-summary', null, {
+    style: 'font-size:12px;color:#e5e7eb;display:flex;align-items:center;gap:3px;flex-wrap:wrap'
+  });
+  summary.appendChild(document.createTextNode(`${row.ticker || row.symbol || ''} ${row.expirationDte || ''} `.trim()));
+  if (legs.length) summary.appendChild(document.createTextNode(' '));
+  legs.forEach((leg, idx) => {
+    const qty = signedOptionLegQty(leg);
+    const legNode = el('span', null, optionLegToken(leg), {
+      style: `color:${qty < 0 ? '#ef4444' : '#22c55e'};font-weight:700`
+    });
+    summary.appendChild(legNode);
+    if (idx < legs.length - 1) summary.appendChild(document.createTextNode('/'));
   });
   line.appendChild(summary);
 
-  const legs = Array.isArray(row.legs) ? row.legs : [];
-  for (const leg of legs) {
-    const qty = signedOptionLegQty(leg);
-    const text = `${qty > 0 ? '+' : ''}${qty} ${String(leg.option || '').toUpperCase()} ${leg.strike}`;
-    const legNode = el('div', null, text, {
-      style: 'font-size:12px;display:flex;justify-content:space-between;gap:8px'
-    });
-    const side = el('span', null, String(leg.side || '').toUpperCase(), {
-      style: `color:${qty < 0 ? '#c62828' : '#2e7d32'};font-weight:600`
-    });
-    legNode.appendChild(side);
-    line.appendChild(legNode);
-  }
-
   const payoff = optionPayoffForRow(row);
   const payoffRow = el('div', 'option-payoff', null, {
-    style: 'display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#374151'
+    style: 'display:flex;align-items:center;gap:8px;font-size:11px;line-height:1.2;flex-wrap:wrap'
   });
   const maxLoss = payoff
     ? formatPayoffValue(payoff.maxLoss, payoff.isMaxLossInfinite)
@@ -1065,8 +1112,16 @@ function createOptionBody(row, key) {
   const maxProfit = payoff
     ? formatPayoffValue(payoff.maxProfit, payoff.isMaxProfitInfinite)
     : '-';
-  payoffRow.appendChild(el('div', null, `Max Loss ${maxLoss}`));
-  payoffRow.appendChild(el('div', null, `Max Profit ${maxProfit}`));
+  const rr = formatRiskReward(payoff);
+  const lossNode = el('span', null, 'Max Loss ', { style: 'color:#fff' });
+  lossNode.appendChild(el('span', null, maxLoss, { style: 'color:#ef4444;font-weight:700' }));
+  const profitNode = el('span', null, 'Max Profit ', { style: 'color:#fff' });
+  profitNode.appendChild(el('span', null, maxProfit, { style: 'color:#22c55e;font-weight:700' }));
+  const rrNode = el('span', null, 'RR ', { style: 'color:#fff' });
+  rrNode.appendChild(el('span', null, rr, { style: 'color:#e5e7eb;font-weight:700' }));
+  payoffRow.appendChild(lossNode);
+  payoffRow.appendChild(profitNode);
+  payoffRow.appendChild(rrNode);
   line.appendChild(payoffRow);
 
   return {

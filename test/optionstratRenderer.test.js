@@ -10,6 +10,13 @@ const Module = require('module');
 async function run() {
   const handlers = {};
   const cancelled = [];
+  const estimates = [];
+  const payoff = {
+    maxProfit: 100,
+    maxLoss: 900,
+    isMaxProfitInfinite: false,
+    isMaxLossInfinite: false
+  };
   const ipcRenderer = {
     on: (ch, fn) => { handlers[ch] = fn; },
     invoke: async (ch, payload) => {
@@ -22,6 +29,10 @@ async function run() {
       if (ch === 'execution:cancel-order') {
         cancelled.push(payload);
         return { status: 'ok' };
+      }
+      if (ch === 'optionstrat:estimate') {
+        estimates.push(payload);
+        return { status: 'ok', payoff };
       }
       return {};
     }
@@ -57,23 +68,24 @@ async function run() {
     legs: [
       { option: 'CALL', side: 'buy', strike: 755, quantity: 10 },
       { option: 'CALL', side: 'sell', strike: 756, quantity: 10 }
-    ],
-    payoff: {
-      maxProfit: 100,
-      maxLoss: 900,
-      isMaxProfitInfinite: false,
-      isMaxLossInfinite: false
-    }
+    ]
   };
 
   handlers['orders:new'](null, row);
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   const key = t.rowKey(row);
   let card = t.cardByKey(key);
+  assert.strictEqual(estimates.length, 1);
+  assert.strictEqual(estimates[0].ticker, 'SPY');
+  assert.deepStrictEqual(estimates[0].legs, row.legs);
   assert(card.textContent.includes('Max Loss $900'));
   assert(card.textContent.includes('Max Profit $100'));
+  assert(card.textContent.includes('RR 1:0.1'));
+  assert(card.textContent.includes('SPY 0DTE +10C755/-10C756'));
   assert.strictEqual(card.querySelector('button.btn').textContent, 'OPEN');
 
-  t.placedOrderByKey.set(key, { provider: 'optionstrat', ticket: 'deal-1', symbol: 'SPY', payoff: row.payoff });
+  t.placedOrderByKey.set(key, { provider: 'optionstrat', ticket: 'deal-1', symbol: 'SPY', payoff });
   t.setCardState(key, 'placed');
   card = t.cardByKey(key);
   let closeButton = card.querySelector('button.btn');

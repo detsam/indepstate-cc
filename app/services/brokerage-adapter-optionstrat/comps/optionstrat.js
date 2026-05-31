@@ -260,6 +260,7 @@ function calculatePayoffSummary(rawLegs, { multiplier = 100 } = {}) {
 
 function buildOpenStrategyPayload(order, expiration, rows, account) {
   const ticker = String(order.ticker || order.symbol || '').toUpperCase();
+  const strategySymbol = String(order.root || order.chainRoot || ticker).toUpperCase();
   if (!ticker) throw new Error('OptionStrat order requires ticker');
   if (!Array.isArray(order.legs) || order.legs.length === 0) {
     throw new Error('OptionStrat order requires legs');
@@ -282,7 +283,7 @@ function buildOpenStrategyPayload(order, expiration, rows, account) {
     description: order.description || '',
     strategy: {
       isCashSecured: order.isCashSecured === true,
-      symbol: ticker,
+      symbol: strategySymbol,
       items
     },
     account
@@ -380,6 +381,34 @@ class OptionStratAdapter extends ExecutionAdapter {
 
   _chainSymbol(orderOrStrategy) {
     return String(orderOrStrategy?.root || orderOrStrategy?.chainRoot || orderOrStrategy?.ticker || orderOrStrategy?.symbol || '').toUpperCase();
+  }
+
+  async estimateOrder(order) {
+    try {
+      if (!order || order.instrumentType !== 'OPT') {
+        return { status: 'rejected', provider: this.provider, reason: 'OptionStrat adapter accepts only OPT orders.' };
+      }
+      const runtime = this._runtimeConfig();
+      if (!runtime.account) {
+        return { status: 'rejected', provider: this.provider, reason: 'OptionStrat account collection id is required.' };
+      }
+      const ticker = String(order.ticker || order.symbol || '').toUpperCase();
+      const chainSymbol = this._chainSymbol(order) || ticker;
+      const chain = await this.fetchChain(chainSymbol);
+      const expiration = resolveExpirationByDte(chain, chainSymbol, order.expirationDte || order.expiration || '0DTE', this.now());
+      const rows = normalizeOptionChain(chain, chainSymbol);
+      const payload = buildOpenStrategyPayload({ ...order, ticker }, expiration, rows, runtime.account);
+      const payoff = calculateStrategyPayoffSummary(payload.strategy);
+      return {
+        status: 'ok',
+        provider: this.provider,
+        payoff,
+        estimatedPayoff: payoff,
+        raw: { strategy: payload.strategy }
+      };
+    } catch (err) {
+      return { status: 'rejected', provider: this.provider, reason: err?.message || String(err) };
+    }
   }
 
   async placeOrder(order) {

@@ -158,6 +158,32 @@ async function run() {
   assert.strictEqual(built.row.legs[1].side, 'sell');
   assert.strictEqual(built.row.legs[1].quantity, 10);
 
+  const builtDefaultQtyFromMissingArg = buildOptionStratRow({
+    command: 'bcs {s1} {s2} {q}',
+    name: 'BCS {s1}/{s2}',
+    ticker: 'SPY',
+    legs: [
+      { option: 'CALL', side: 'buy', strike: '{s1}', quantity: '{q}' },
+      { option: 'CALL', side: 'sell', strike: '{s2}', quantity: '{q}' }
+    ]
+  }, ['755', '756'], 124);
+  assert.strictEqual(builtDefaultQtyFromMissingArg.ok, true);
+  assert.strictEqual(builtDefaultQtyFromMissingArg.row.legs[0].quantity, 1);
+  assert.strictEqual(builtDefaultQtyFromMissingArg.row.legs[1].quantity, 1);
+
+  const builtDefaultQtyWithoutPlaceholder = buildOptionStratRow({
+    command: 'bcs {s1} {s2}',
+    name: 'BCS {s1}/{s2}',
+    ticker: 'SPY',
+    legs: [
+      { option: 'CALL', side: 'buy', strike: '{s1}', quantity: '{q}' },
+      { option: 'CALL', side: 'sell', strike: '{s2}', quantity: '{q}' }
+    ]
+  }, ['755', '756'], 125);
+  assert.strictEqual(builtDefaultQtyWithoutPlaceholder.ok, true);
+  assert.strictEqual(builtDefaultQtyWithoutPlaceholder.row.legs[0].quantity, 1);
+  assert.strictEqual(builtDefaultQtyWithoutPlaceholder.row.legs[1].quantity, 1);
+
   const noRootCalls = [];
   const noRootAdapter = new OptionStratAdapter({
     account: 'acct-1',
@@ -177,6 +203,25 @@ async function run() {
       throw new Error(`Unexpected no-root request ${url}`);
     }
   }, 'optionstrat');
+
+  const noRootEstimate = await noRootAdapter.estimateOrder({
+    instrumentType: 'OPT',
+    ticker: 'SPY',
+    name: 'BCS 755/756',
+    expirationDte: '0DTE',
+    legs: [
+      { option: 'CALL', side: 'buy', strike: 755, quantity: 10 },
+      { option: 'CALL', side: 'sell', strike: 756, quantity: 10 }
+    ]
+  });
+  assert.strictEqual(noRootEstimate.status, 'ok');
+  assert.deepStrictEqual(noRootEstimate.payoff, {
+    maxProfit: 100,
+    maxLoss: 900,
+    isMaxProfitInfinite: false,
+    isMaxLossInfinite: false,
+    multiplier: 100
+  });
 
   const noRootPlaced = await noRootAdapter.placeOrder({
     instrumentType: 'OPT',
@@ -211,7 +256,7 @@ async function run() {
       if (url.endsWith('/strategy') && opts.method === 'POST') {
         const body = JSON.parse(opts.body);
         assert.strictEqual(body.account, 'acct-1');
-        assert.strictEqual(body.strategy.symbol, 'SPXW');
+        assert.strictEqual(body.strategy.symbol, 'SPX');
         assert.strictEqual(body.strategy.items[0].symbol, '.SPXW260531C755');
         assert.strictEqual(body.strategy.items[0].basis, 4.1);
         return response({ ...body, code: 'deal-1', account: 'acct-1' });
@@ -225,6 +270,23 @@ async function run() {
       throw new Error(`Unexpected request ${url}`);
     }
   }, 'optionstrat');
+
+  const estimate = await adapter.estimateOrder({
+    instrumentType: 'OPT',
+    ticker: 'SPXW',
+    root: 'SPX',
+    name: 'BCS 755/756',
+    expirationDte: '0DTE',
+    legs: built.row.legs
+  });
+  assert.strictEqual(estimate.status, 'ok');
+  assert.deepStrictEqual(estimate.payoff, {
+    maxProfit: -900,
+    maxLoss: 1900,
+    isMaxProfitInfinite: false,
+    isMaxLossInfinite: false,
+    multiplier: 100
+  });
 
   const placed = await adapter.placeOrder({
     instrumentType: 'OPT',
@@ -245,7 +307,7 @@ async function run() {
   });
   const closed = await adapter.cancelOrder('deal-1', 'SPXW');
   assert.strictEqual(closed.status, 'ok');
-  assert.strictEqual(calls.length, 4);
+  assert.strictEqual(calls.length, 5);
 
   console.log('optionstrat tests passed');
 }

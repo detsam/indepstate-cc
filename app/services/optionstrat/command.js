@@ -28,14 +28,18 @@ function buildOptionStratRow(definition, args, now = Date.now()) {
   const tokens = tokenizeTemplate(definition.command);
   if (!tokens.length) throw new Error('OptionStrat command template is empty');
   const argTokens = tokens.slice(1);
-  if (args.length !== argTokens.length) {
+  const allowsDefaultQuantityArg = argTokens.length > 0
+    && variableName(argTokens[argTokens.length - 1]) === 'q'
+    && args.length === argTokens.length - 1;
+  if (args.length !== argTokens.length && !allowsDefaultQuantityArg) {
     return {
       ok: false,
       error: `Usage: ${definition.command}`
     };
   }
-  const vars = {};
-  for (let i = 0; i < argTokens.length; i += 1) {
+  const vars = { q: 1 };
+  const providedArgCount = Math.min(args.length, argTokens.length);
+  for (let i = 0; i < providedArgCount; i += 1) {
     const name = variableName(argTokens[i]);
     if (!name) {
       if (String(argTokens[i]).toLowerCase() !== String(args[i]).toLowerCase()) {

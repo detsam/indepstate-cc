@@ -771,6 +771,25 @@ function setupIpc(orderSvc) {
     }
   });
 
+  ipcMain.handle('optionstrat:estimate', async (_evt, payload = {}) => {
+    const order = normalizeOrderPayload({
+      ...payload,
+      instrumentType: 'OPT',
+      provider: payload.provider || payload.meta?.provider || 'optionstrat'
+    });
+    const providerName = pickOrderProviderName(order);
+    try {
+      const adapter = getAdapter(providerName);
+      wireAdapter(adapter, providerName);
+      if (typeof adapter?.estimateOrder !== 'function') {
+        return { status: 'unsupported', provider: providerName };
+      }
+      return await adapter.estimateOrder(order);
+    } catch (err) {
+      return { status: 'rejected', provider: providerName, reason: err?.message || String(err) };
+    }
+  });
+
   ipcMain.handle('instrument:get', async (_evt, arg) => {
     try {
       const symbol = typeof arg === 'object' ? arg.symbol : arg;
