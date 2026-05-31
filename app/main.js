@@ -677,6 +677,8 @@ function setupIpc(orderSvc) {
           reason: result?.reason,
           providerOrderId: result?.providerOrderId,
           cid,
+          payoff: result?.payoff || result?.raw?.payoff,
+          raw: result?.raw,
           order: execOrder
         });
       }

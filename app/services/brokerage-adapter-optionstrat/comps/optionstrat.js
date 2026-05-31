@@ -196,6 +196,68 @@ function parseOptionSymbol(symbol) {
   };
 }
 
+function normalizePayoffLegs(legs = []) {
+  return (Array.isArray(legs) ? legs : []).map((leg) => {
+    const parsed = leg.symbol ? parseOptionSymbol(leg.symbol) : {};
+    const option = normalizeOptionSide(leg.option || parsed.option);
+    const strike = Number(leg.strike ?? parsed.strike);
+    const quantity = Number(leg.quantity ?? leg.qty);
+    const basis = Number(leg.basis);
+    if (!Number.isFinite(strike)) throw new Error(`Invalid payoff leg strike: ${leg.strike ?? parsed.strike}`);
+    if (!Number.isFinite(quantity) || quantity === 0) throw new Error(`Invalid payoff leg quantity: ${leg.quantity ?? leg.qty}`);
+    if (!Number.isFinite(basis)) throw new Error(`Invalid payoff leg basis: ${leg.basis}`);
+    return { option, strike, quantity, basis };
+  });
+}
+
+function optionIntrinsic(option, strike, underlyingPrice) {
+  return option === 'CALL'
+    ? Math.max(0, underlyingPrice - strike)
+    : Math.max(0, strike - underlyingPrice);
+}
+
+function optionSlopeAtInfinity(option) {
+  return option === 'CALL' ? 1 : 0;
+}
+
+function payoffAt(legs, underlyingPrice, multiplier = 100) {
+  return legs.reduce((sum, leg) => {
+    const intrinsic = optionIntrinsic(leg.option, leg.strike, underlyingPrice);
+    return sum + ((intrinsic - leg.basis) * leg.quantity * multiplier);
+  }, 0);
+}
+
+function calculatePayoffSummary(rawLegs, { multiplier = 100 } = {}) {
+  const legs = normalizePayoffLegs(rawLegs);
+  if (!legs.length) {
+    return {
+      maxProfit: 0,
+      maxLoss: 0,
+      isMaxProfitInfinite: false,
+      isMaxLossInfinite: false,
+      multiplier
+    };
+  }
+
+  const strikes = Array.from(new Set(legs.map(leg => leg.strike))).sort((a, b) => a - b);
+  const points = [0, ...strikes].filter((value, idx, arr) => idx === 0 || value !== arr[idx - 1]);
+  const values = points.map(price => payoffAt(legs, price, multiplier));
+  let maxProfit = Math.max(...values);
+  let minPnl = Math.min(...values);
+
+  const rightSlope = legs.reduce((sum, leg) => sum + optionSlopeAtInfinity(leg.option) * leg.quantity * multiplier, 0);
+  const isMaxProfitInfinite = rightSlope > 0;
+  const isMaxLossInfinite = rightSlope < 0;
+
+  return {
+    maxProfit: isMaxProfitInfinite ? null : Number(maxProfit.toFixed(2)),
+    maxLoss: isMaxLossInfinite ? null : Number(Math.abs(minPnl).toFixed(2)),
+    isMaxProfitInfinite,
+    isMaxLossInfinite,
+    multiplier
+  };
+}
+
 function buildOpenStrategyPayload(order, expiration, rows, account) {
   const ticker = String(order.ticker || order.symbol || '').toUpperCase();
   if (!ticker) throw new Error('OptionStrat order requires ticker');
@@ -225,6 +287,10 @@ function buildOpenStrategyPayload(order, expiration, rows, account) {
     },
     account
   };
+}
+
+function calculateStrategyPayoffSummary(strategy, opts = {}) {
+  return calculatePayoffSummary(strategy?.items || [], opts);
 }
 
 function buildCloseStrategyPayload(created, rows) {
@@ -331,6 +397,7 @@ class OptionStratAdapter extends ExecutionAdapter {
       const expiration = resolveExpirationByDte(chain, chainSymbol, order.expirationDte || order.expiration || '0DTE', this.now());
       const rows = normalizeOptionChain(chain, chainSymbol);
       const payload = buildOpenStrategyPayload({ ...order, ticker }, expiration, rows, runtime.account);
+      const estimatedPayoff = calculateStrategyPayoffSummary(payload.strategy);
       const created = await this._request('/strategy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -342,8 +409,11 @@ class OptionStratAdapter extends ExecutionAdapter {
       }
       if (order.root) created.root = String(order.root).toUpperCase();
       if (chainSymbol) created.chainRoot = chainSymbol;
+      const payoff = calculateStrategyPayoffSummary(created.strategy || payload.strategy);
+      created.payoff = payoff;
+      created.estimatedPayoff = estimatedPayoff;
       this.createdStrategies.set(String(code), created);
-      return { status: 'ok', provider: this.provider, providerOrderId: String(code), raw: created };
+      return { status: 'ok', provider: this.provider, providerOrderId: String(code), payoff, raw: created };
     } catch (err) {
       return { status: 'rejected', provider: this.provider, reason: err?.message || String(err) };
     }
@@ -390,6 +460,10 @@ module.exports = {
   resolveExpirationByDte,
   buildOptionSymbol,
   parseOptionSymbol,
+  normalizePayoffLegs,
+  payoffAt,
+  calculatePayoffSummary,
+  calculateStrategyPayoffSummary,
   buildOpenStrategyPayload,
   buildCloseStrategyPayload,
   findQuoteMid,

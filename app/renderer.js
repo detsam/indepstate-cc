@@ -389,6 +389,21 @@ function signedOptionLegQty(leg) {
   return side === 'sell' || side === 'short' ? -qty : qty;
 }
 
+function formatCurrencyValue(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '-';
+  const sign = n < 0 ? '-' : '';
+  return `${sign}$${Math.abs(n).toFixed(0)}`;
+}
+
+function formatPayoffValue(value, infinite) {
+  return infinite ? '∞' : formatCurrencyValue(value);
+}
+
+function optionPayoffForRow(row) {
+  return row?.payoff || row?.estimatedPayoff || row?.meta?.payoff || null;
+}
+
 function _normNum(val) {
   if (val == null) return null;
   const s = String(val).trim().replace(',', '.');
@@ -615,7 +630,7 @@ function setCardState(key, state) {
       status.onclick = null;
     }
 
-    if (state === 'pending' || state === 'pending-exec' || (state === 'placed' && isOptionCard)) {
+    if (state === 'pending' || state === 'pending-exec' || ((state === 'placed' || state === 'profit') && isOptionCard)) {
       // restore full card for pending states
       card.classList.remove('card--mini');
       if (card._removedParts) {
@@ -632,6 +647,7 @@ function setCardState(key, state) {
       card.querySelectorAll('button.btn').forEach(btn => {
         btn.disabled = !(state === 'placed' && isOptionCard);
       });
+      if (btnsWrap) btnsWrap.style.display = state === 'profit' && isOptionCard ? 'none' : '';
       if (retryBtn) {
         if (state === 'pending') {
           retryBtn.style.display = 'inline-block';
@@ -1038,6 +1054,20 @@ function createOptionBody(row, key) {
     legNode.appendChild(side);
     line.appendChild(legNode);
   }
+
+  const payoff = optionPayoffForRow(row);
+  const payoffRow = el('div', 'option-payoff', null, {
+    style: 'display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#374151'
+  });
+  const maxLoss = payoff
+    ? formatPayoffValue(payoff.maxLoss, payoff.isMaxLossInfinite)
+    : '-';
+  const maxProfit = payoff
+    ? formatPayoffValue(payoff.maxProfit, payoff.isMaxProfitInfinite)
+    : '-';
+  payoffRow.appendChild(el('div', null, `Max Loss ${maxLoss}`));
+  payoffRow.appendChild(el('div', null, `Max Profit ${maxProfit}`));
+  line.appendChild(payoffRow);
 
   return {
     type: 'option',
@@ -1900,8 +1930,10 @@ async function place(kind, row, v, instrumentType, btnLabel) {
         placedOrderByKey.set(key, {
           provider: res.provider || row.provider || 'optionstrat',
           ticket: String(res.providerOrderId),
-          symbol: row.symbol || row.ticker || ''
+          symbol: row.symbol || row.ticker || '',
+          payoff: res.payoff || res.raw?.payoff
         });
+        if (res.payoff || res.raw?.payoff) row.payoff = res.payoff || res.raw.payoff;
         ticketToKey.set(String(res.providerOrderId), key);
         setCardState(key, 'placed');
       } else {
@@ -2185,8 +2217,10 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
       placedOrderByKey.set(key, {
         provider: rec.provider || (row && row.provider) || '',
         ticket: providerOrderId,
-        symbol: symbol
+        symbol: symbol,
+        payoff: rec.payoff || rec.raw?.payoff
       });
+      if (row && (rec.payoff || rec.raw?.payoff)) row.payoff = rec.payoff || rec.raw.payoff;
     }
     toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
     render();
@@ -2322,6 +2356,7 @@ if (typeof module !== 'undefined') {
     pendingIdByReqId,
     retryCounts,
     cardStates,
-    pendingExecLabels
+    pendingExecLabels,
+    placedOrderByKey
   };
 }

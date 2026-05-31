@@ -6,6 +6,7 @@ const {
   normalizeOptionChain,
   resolveExpirationByDte,
   buildOptionSymbol,
+  calculatePayoffSummary,
   buildOpenStrategyPayload
 } = require('../app/services/brokerage-adapter-optionstrat/comps/optionstrat');
 const { buildOptionStratRow } = require('../app/services/optionstrat/command');
@@ -92,6 +93,37 @@ async function run() {
   assert.strictEqual(resolveExpirationByDte(chainSample(), 'SPY', '1DTE', new Date(Date.UTC(2026, 4, 31))), '260601');
   assert.strictEqual(buildOptionSymbol('spy', '260531', 'CALL', 755), '.SPY260531C755');
 
+  const bcsPayoff = calculatePayoffSummary([
+    { option: 'CALL', strike: 755, basis: 2.1, quantity: 10 },
+    { option: 'CALL', strike: 756, basis: 1.2, quantity: -10 }
+  ]);
+  assert.deepStrictEqual(bcsPayoff, {
+    maxProfit: 100,
+    maxLoss: 900,
+    isMaxProfitInfinite: false,
+    isMaxLossInfinite: false,
+    multiplier: 100
+  });
+
+  const longCallPayoff = calculatePayoffSummary([
+    { option: 'CALL', strike: 755, basis: 2.1, quantity: 1 }
+  ]);
+  assert.strictEqual(longCallPayoff.maxLoss, 210);
+  assert.strictEqual(longCallPayoff.isMaxProfitInfinite, true);
+
+  const shortCallPayoff = calculatePayoffSummary([
+    { option: 'CALL', strike: 755, basis: 2.1, quantity: -1 }
+  ]);
+  assert.strictEqual(shortCallPayoff.maxProfit, 210);
+  assert.strictEqual(shortCallPayoff.isMaxLossInfinite, true);
+
+  const mixedPayoff = calculatePayoffSummary([
+    { option: 'PUT', strike: 750, basis: 1, quantity: 2 },
+    { option: 'CALL', strike: 760, basis: 1.5, quantity: -1 }
+  ]);
+  assert.strictEqual(mixedPayoff.isMaxProfitInfinite, false);
+  assert.strictEqual(mixedPayoff.isMaxLossInfinite, true);
+
   const openPayload = buildOpenStrategyPayload({
     ticker: 'SPY',
     name: 'BCS 755/756',
@@ -157,6 +189,13 @@ async function run() {
     ]
   });
   assert.strictEqual(noRootPlaced.status, 'ok');
+  assert.deepStrictEqual(noRootPlaced.payoff, {
+    maxProfit: 100,
+    maxLoss: 900,
+    isMaxProfitInfinite: false,
+    isMaxLossInfinite: false,
+    multiplier: 100
+  });
   assert.strictEqual(noRootCalls[0].url.endsWith('/quote/chain/live/SPY'), true);
 
   const calls = [];
@@ -197,6 +236,13 @@ async function run() {
   });
   assert.strictEqual(placed.status, 'ok');
   assert.strictEqual(placed.providerOrderId, 'deal-1');
+  assert.deepStrictEqual(placed.payoff, {
+    maxProfit: -900,
+    maxLoss: 1900,
+    isMaxProfitInfinite: false,
+    isMaxLossInfinite: false,
+    multiplier: 100
+  });
   const closed = await adapter.cancelOrder('deal-1', 'SPXW');
   assert.strictEqual(closed.status, 'ok');
   assert.strictEqual(calls.length, 4);
