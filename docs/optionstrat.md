@@ -29,6 +29,7 @@ The same API fields are also exposed in the `OptionStrat` settings section:
 - `account`: collection/account id where created strategies are saved.
 - `baseURL`: defaults to `https://optionstrat.com/api`.
 - `timeoutMs`: API request timeout.
+- `valuationRefreshMs`: refresh interval for open strategy live P/L, default `5000`.
 
 Values saved in the `OptionStrat` settings section are read by the adapter at request time and are sent on chain, open, and close API calls. If both execution config and `OptionStrat` settings are present, the `OptionStrat` settings value wins.
 
@@ -59,7 +60,7 @@ Example:
 }
 ```
 
-Running `bcs 755 756 10` creates one `OPT` card named `BCS 755/756` with two call legs. Buy legs are sent with positive quantity; sell legs are sent with negative quantity.
+Running `bcs 755 756 10` creates one `OPT` card named `BCS 755/756` with two call legs. Buy legs are sent with positive quantity; sell legs are sent with negative quantity. The `q` placeholder is optional and defaults to `1`, so `bcs 755 756` opens the same structure with one contract per leg.
 
 If `instantExecution` is `true`, the renderer opens the OptionStrat position immediately after creating the card.
 
@@ -72,6 +73,21 @@ If `instantExecution` is `true`, the renderer opens the OptionStrat position imm
 Opening and closing both read `GET /quote/chain/live/{TICKER}`. If OptionStrat returns `X-Protect: 1`, the adapter decodes the protected raw-DEFLATE payload before parsing JSON.
 
 For each leg, the adapter uses mid price `(bid + ask) / 2`. If bid or ask is missing, that leg is rejected instead of guessing.
+
+## Live Valuation
+
+After an OptionStrat position is successfully opened, the renderer polls `GET /quote/chain/live/{TICKER}` through the adapter and shows the strategy value change at the bottom of the card.
+
+The calculation is:
+
+- Initial value: `sum(open basis * signed quantity * 100)`.
+- Current value: `sum(current mid * signed quantity * 100)`.
+- P/L: `current value - initial value`.
+- Percent: `P/L / abs(initial value)`.
+
+The polling interval is controlled by `valuationRefreshMs` in the `OptionStrat` settings section. Set it to milliseconds; for example `5000` means every five seconds.
+
+When the strategy is closed successfully, live polling stops and the green final card keeps the valuation calculated from the same close prices sent in `items[].close`. If the final close valuation cannot be calculated for some reason, the card keeps the last known live valuation instead of blocking the close flow.
 
 ## Open And Close
 

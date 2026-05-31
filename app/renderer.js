@@ -26,6 +26,7 @@ const envInstrRefresh = Number(process.env.INSTRUMENT_REFRESH_MS);
 const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
   ? envInstrRefresh
   : Number(orderCardsCfg?.instrumentRefreshMs) || 1000;
+let optionStratValuationRefreshMs = 5000;
 
 const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ignore';
 const BUTTON_ROWS = Number(orderCardsCfg?.buttonRows) || 1;
@@ -74,6 +75,7 @@ const handleClosedCard = closedCardStrategies[CLOSED_CARD_EVENT_STRATEGY] || clo
 
 // ======= App state =======
 const state = {rows: [], filter: '', autoscroll: true};
+const appState = state;
 // load UI settings
 ipcRenderer.invoke('settings:get', 'ui').then((res) => {
   if (res && typeof res.autoscroll === 'boolean') {
@@ -81,6 +83,13 @@ ipcRenderer.invoke('settings:get', 'ui').then((res) => {
   } else if (res?.config && typeof res.config.autoscroll === 'boolean') {
     state.autoscroll = res.config.autoscroll;
   }
+}).catch(() => {
+});
+
+ipcRenderer.invoke('settings:get', 'optionstrat').then((res) => {
+  const cfg = res?.config || res || {};
+  const ms = Number(cfg.valuationRefreshMs);
+  if (Number.isFinite(ms) && ms > 0) optionStratValuationRefreshMs = ms;
 }).catch(() => {
 });
 
@@ -404,6 +413,17 @@ function optionPayoffForRow(row) {
   return row?.payoff || row?.estimatedPayoff || row?.meta?.payoff || null;
 }
 
+function optionValuationForRow(row) {
+  return row?.valuation || row?.optionValuation || row?.meta?.valuation || null;
+}
+
+function formatPercentValue(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '-';
+  const sign = n > 0 ? '+' : n < 0 ? '-' : '';
+  return `${sign}${Math.abs(n).toFixed(1)}%`;
+}
+
 function optionLegToken(leg) {
   const qty = signedOptionLegQty(leg);
   const absQty = Math.abs(qty);
@@ -591,7 +611,14 @@ function setCardState(key, state) {
           shakeCard(key);
           return;
         }
+        const finalValuation = result?.valuation || result?.raw?.valuation;
+        if (finalValuation) {
+          const current = appState.rows.find(r => rowKey(r) === key);
+          if (current) current.valuation = finalValuation;
+          if (orderInfo) orderInfo.valuation = finalValuation;
+        }
         placedOrderByKey.delete(key);
+        pendingOptionValuations.delete(key);
         for (const [ticket, k] of ticketToKey.entries()) {
           if (k === key) ticketToKey.delete(ticket);
         }
@@ -601,6 +628,7 @@ function setCardState(key, state) {
       }
 
       placedOrderByKey.delete(key);
+      pendingOptionValuations.delete(key);
       for (const [ticket, k] of ticketToKey.entries()) {
         if (k === key) ticketToKey.delete(ticket);
       }
@@ -754,6 +782,7 @@ function isTouched(ticker) {
 
 const pendingInstruments = new Set();
 const pendingOptionPayoffs = new Set();
+const pendingOptionValuations = new Set();
 
 function ensureInstrument(ticker, provider) {
   if (!ticker) return;
@@ -819,6 +848,47 @@ function ensureOptionPayoff(row) {
     pendingOptionPayoffs.delete(key);
   });
 }
+
+function refreshOptionValuation(key, orderInfo) {
+  if (!orderInfo || !orderInfo.ticket || !orderInfo.provider) return Promise.resolve(null);
+  if (pendingOptionValuations.has(key)) return Promise.resolve(null);
+  pendingOptionValuations.add(key);
+  return ipcRenderer.invoke('optionstrat:valuation', {
+    provider: orderInfo.provider,
+    ticket: orderInfo.ticket,
+    symbol: orderInfo.symbol
+  }).then(result => {
+    if (result?.status !== 'ok' || !result.valuation) return result;
+    const current = state.rows.find(r => rowKey(r) === key);
+    if (current) {
+      current.valuation = result.valuation;
+      render();
+    }
+    const stored = placedOrderByKey.get(key);
+    if (stored) stored.valuation = result.valuation;
+    return result;
+  }).catch(err => {
+    return { status: 'error', reason: err?.message || String(err) };
+  }).finally(() => {
+    pendingOptionValuations.delete(key);
+  });
+}
+
+(function refreshOptionValuationsPeriodically() {
+  setTimeout(async function tick() {
+    try {
+      const entries = Array.from(placedOrderByKey.entries())
+        .filter(([key]) => {
+          if (cardStates.get(key) !== 'placed') return false;
+          const row = state.rows.find(r => rowKey(r) === key);
+          return row?.instrumentType === 'OPT';
+        });
+      await Promise.all(entries.map(([key, orderInfo]) => refreshOptionValuation(key, orderInfo)));
+    } finally {
+      setTimeout(tick, Math.max(1000, Number(optionStratValuationRefreshMs) || 5000));
+    }
+  }, Math.max(1000, Number(optionStratValuationRefreshMs) || 5000));
+})();
 
 // Періодичне оновлення інструментної інформації для всіх видимих карток
 (function refreshAllInstrumentsPeriodically() {
@@ -1123,6 +1193,25 @@ function createOptionBody(row, key) {
   payoffRow.appendChild(profitNode);
   payoffRow.appendChild(rrNode);
   line.appendChild(payoffRow);
+
+  const valuation = optionValuationForRow(row);
+  if (valuation) {
+    const change = Number(valuation.change);
+    const valuationRow = el('div', 'option-valuation', null, {
+      style: 'display:flex;align-items:center;gap:8px;font-size:11px;line-height:1.2;flex-wrap:wrap'
+    });
+    const color = change > 0 ? '#22c55e' : change < 0 ? '#ef4444' : '#e5e7eb';
+    const changeNode = el('span', null, 'P/L ', { style: 'color:#fff' });
+    changeNode.appendChild(el('span', null, formatCurrencyValue(change), { style: `color:${color};font-weight:700` }));
+    const pctNode = el('span', null, 'Change ', { style: 'color:#fff' });
+    pctNode.appendChild(el('span', null, formatPercentValue(valuation.changePct), { style: `color:${color};font-weight:700` }));
+    const valueNode = el('span', null, 'Value ', { style: 'color:#fff' });
+    valueNode.appendChild(el('span', null, formatCurrencyValue(valuation.currentValue), { style: 'color:#e5e7eb;font-weight:700' }));
+    valuationRow.appendChild(changeNode);
+    valuationRow.appendChild(pctNode);
+    valuationRow.appendChild(valueNode);
+    line.appendChild(valuationRow);
+  }
 
   return {
     type: 'option',
@@ -1986,9 +2075,11 @@ async function place(kind, row, v, instrumentType, btnLabel) {
           provider: res.provider || row.provider || 'optionstrat',
           ticket: String(res.providerOrderId),
           symbol: row.symbol || row.ticker || '',
-          payoff: res.payoff || res.raw?.payoff
+          payoff: res.payoff || res.raw?.payoff,
+          valuation: res.valuation || res.raw?.valuation
         });
         if (res.payoff || res.raw?.payoff) row.payoff = res.payoff || res.raw.payoff;
+        if (res.valuation || res.raw?.valuation) row.valuation = res.valuation || res.raw.valuation;
         ticketToKey.set(String(res.providerOrderId), key);
         setCardState(key, 'placed');
       } else {
@@ -2014,6 +2105,7 @@ function clearPendingByKey(key) {
   }
   pendingExecLabels.delete(key);
   placedOrderByKey.delete(key);
+  pendingOptionValuations.delete(key);
 }
 
 function removeRow(row) {
@@ -2273,9 +2365,11 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
         provider: rec.provider || (row && row.provider) || '',
         ticket: providerOrderId,
         symbol: symbol,
-        payoff: rec.payoff || rec.raw?.payoff
+        payoff: rec.payoff || rec.raw?.payoff,
+        valuation: rec.valuation || rec.raw?.valuation
       });
       if (row && (rec.payoff || rec.raw?.payoff)) row.payoff = rec.payoff || rec.raw.payoff;
+      if (row && (rec.valuation || rec.raw?.valuation)) row.valuation = rec.valuation || rec.raw.valuation;
     }
     toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
     render();
@@ -2412,6 +2506,7 @@ if (typeof module !== 'undefined') {
     retryCounts,
     cardStates,
     pendingExecLabels,
-    placedOrderByKey
+    placedOrderByKey,
+    render
   };
 }

@@ -7,6 +7,7 @@ const {
   resolveExpirationByDte,
   buildOptionSymbol,
   calculatePayoffSummary,
+  calculateStrategyValuation,
   buildOpenStrategyPayload
 } = require('../app/services/brokerage-adapter-optionstrat/comps/optionstrat');
 const { buildOptionStratRow } = require('../app/services/optionstrat/command');
@@ -83,6 +84,27 @@ function rootChainSample() {
   };
 }
 
+function rootCloseChainSample() {
+  return {
+    context: {
+      i: {
+        c: {
+          SPX: [
+            {
+              exp: '260531',
+              ua: '2026-05-31T20:00:00Z',
+              s: {
+                755: { c: { b: 4.4, a: 4.6, v: 1, o: 2, p: 4.5 } },
+                756: { c: { b: 1.9, a: 2.1, v: 1, o: 2, p: 2.0 } }
+              }
+            }
+          ]
+        }
+      }
+    }
+  };
+}
+
 async function run() {
   const protectedObj = { ok: true, value: 42 };
   assert.deepStrictEqual(JSON.parse(decodeOptionStratProtected(encodeProtectedJson(protectedObj)).toString('utf8')), protectedObj);
@@ -136,6 +158,27 @@ async function run() {
     ['.SPY260531C755', 2.1, 10],
     ['.SPY260531C756', 1.2, -10]
   ]);
+  const valuationRows = normalizeOptionChain({
+    context: {
+      i: {
+        c: {
+          SPY: [{
+            exp: '260531',
+            ua: '2026-05-31T20:00:00Z',
+            s: {
+              755: { c: { b: 2.5, a: 2.7 } },
+              756: { c: { b: 1.1, a: 1.3 } }
+            }
+          }]
+        }
+      }
+    }
+  }, 'SPY');
+  const valuation = calculateStrategyValuation(openPayload.strategy, valuationRows);
+  assert.strictEqual(valuation.initialValue, 900);
+  assert.strictEqual(valuation.currentValue, 1400);
+  assert.strictEqual(valuation.change, 500);
+  assert.strictEqual(valuation.changePct, 55.56);
 
   const built = buildOptionStratRow({
     command: 'bcs {s1} {s2} {q}',
@@ -241,9 +284,21 @@ async function run() {
     isMaxLossInfinite: false,
     multiplier: 100
   });
+  assert.deepStrictEqual(noRootPlaced.valuation, {
+    initialValue: 900,
+    currentValue: 900,
+    change: 0,
+    changePct: 0,
+    multiplier: 100,
+    legs: [
+      { symbol: '.SPY260531C755', basis: 2.1, current: 2.1, quantity: 10, value: 2100 },
+      { symbol: '.SPY260531C756', basis: 1.2, current: 1.2, quantity: -10, value: -1200 }
+    ]
+  });
   assert.strictEqual(noRootCalls[0].url.endsWith('/quote/chain/live/SPY'), true);
 
   const calls = [];
+  let rootQuoteCalls = 0;
   const adapter = new OptionStratAdapter({
     account: 'acct-1',
     cookie: 'session=abc',
@@ -252,7 +307,10 @@ async function run() {
     fetch: async (url, opts = {}) => {
       calls.push({ url, opts });
       assert.strictEqual(opts.headers.Cookie, 'session=abc');
-      if (url.endsWith('/quote/chain/live/SPX')) return response(rootChainSample());
+      if (url.endsWith('/quote/chain/live/SPX')) {
+        rootQuoteCalls += 1;
+        return response(rootQuoteCalls === 4 ? rootCloseChainSample() : rootChainSample());
+      }
       if (url.endsWith('/strategy') && opts.method === 'POST') {
         const body = JSON.parse(opts.body);
         assert.strictEqual(body.account, 'acct-1');
@@ -264,7 +322,7 @@ async function run() {
       if (url.endsWith('/strategy/deal-1') && opts.method === 'PUT') {
         const body = JSON.parse(opts.body);
         assert.strictEqual(body.strategy.items[0].revision, 1);
-        assert.strictEqual(body.strategy.items[0].close, 4.1);
+        assert.strictEqual(body.strategy.items[0].close, 4.5);
         return response({ ...body, code: 'deal-1' });
       }
       throw new Error(`Unexpected request ${url}`);
@@ -305,9 +363,27 @@ async function run() {
     isMaxLossInfinite: false,
     multiplier: 100
   });
+  assert.strictEqual(placed.valuation.change, 0);
+  const liveValuation = await adapter.getStrategyValuation('deal-1', 'SPXW');
+  assert.strictEqual(liveValuation.status, 'ok');
+  assert.strictEqual(liveValuation.valuation.initialValue, 1900);
+  assert.strictEqual(liveValuation.valuation.currentValue, 1900);
+  assert.strictEqual(liveValuation.valuation.changePct, 0);
   const closed = await adapter.cancelOrder('deal-1', 'SPXW');
   assert.strictEqual(closed.status, 'ok');
-  assert.strictEqual(calls.length, 5);
+  assert.deepStrictEqual(closed.valuation, {
+    initialValue: 1900,
+    currentValue: 2500,
+    change: 600,
+    changePct: 31.58,
+    multiplier: 100,
+    legs: [
+      { symbol: '.SPXW260531C755', basis: 4.1, current: 4.5, quantity: 10, value: 4500 },
+      { symbol: '.SPXW260531C756', basis: 2.2, current: 2, quantity: -10, value: -2000 }
+    ]
+  });
+  assert.deepStrictEqual(closed.raw.valuation, closed.valuation);
+  assert.strictEqual(calls.length, 6);
 
   console.log('optionstrat tests passed');
 }

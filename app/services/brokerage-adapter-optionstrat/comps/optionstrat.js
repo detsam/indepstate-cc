@@ -294,6 +294,44 @@ function calculateStrategyPayoffSummary(strategy, opts = {}) {
   return calculatePayoffSummary(strategy?.items || [], opts);
 }
 
+function calculateStrategyValuation(strategy, rows, { multiplier = 100, currentField = null } = {}) {
+  const items = Array.isArray(strategy?.items) ? strategy.items : [];
+  if (!items.length) throw new Error('OptionStrat strategy has no items');
+  let initialValue = 0;
+  let currentValue = 0;
+  const legs = items.map((item) => {
+    const parsed = parseOptionSymbol(item.symbol);
+    const basis = Number(item.basis);
+    const quantity = Number(item.quantity);
+    if (!Number.isFinite(basis) || !Number.isFinite(quantity)) {
+      throw new Error(`Invalid OptionStrat valuation item ${item.symbol}`);
+    }
+    const fieldCurrent = currentField ? Number(item[currentField]) : NaN;
+    const current = Number.isFinite(fieldCurrent)
+      ? fieldCurrent
+      : (Array.isArray(rows) && rows.length ? findQuoteMid(rows, parsed) : basis);
+    initialValue += basis * quantity * multiplier;
+    currentValue += current * quantity * multiplier;
+    return {
+      symbol: item.symbol,
+      basis,
+      current,
+      quantity,
+      value: current * quantity * multiplier
+    };
+  });
+  const change = currentValue - initialValue;
+  const denom = Math.abs(initialValue);
+  return {
+    initialValue: Number(initialValue.toFixed(2)),
+    currentValue: Number(currentValue.toFixed(2)),
+    change: Number(change.toFixed(2)),
+    changePct: denom > 0 ? Number(((change / denom) * 100).toFixed(2)) : null,
+    multiplier,
+    legs
+  };
+}
+
 function buildCloseStrategyPayload(created, rows) {
   const strategy = created?.strategy || {};
   const symbol = String(strategy.symbol || '').toUpperCase();
@@ -439,12 +477,34 @@ class OptionStratAdapter extends ExecutionAdapter {
       if (order.root) created.root = String(order.root).toUpperCase();
       if (chainSymbol) created.chainRoot = chainSymbol;
       const payoff = calculateStrategyPayoffSummary(created.strategy || payload.strategy);
+      const valuation = calculateStrategyValuation(created.strategy || payload.strategy, []);
       created.payoff = payoff;
       created.estimatedPayoff = estimatedPayoff;
+      created.valuation = valuation;
       this.createdStrategies.set(String(code), created);
-      return { status: 'ok', provider: this.provider, providerOrderId: String(code), payoff, raw: created };
+      return { status: 'ok', provider: this.provider, providerOrderId: String(code), payoff, valuation, raw: created };
     } catch (err) {
       return { status: 'rejected', provider: this.provider, reason: err?.message || String(err) };
+    }
+  }
+
+  async getStrategyValuation(dealId, symbol) {
+    try {
+      const id = String(dealId || '').trim();
+      const created = this.createdStrategies.get(id);
+      if (!created) {
+        return { status: 'error', provider: this.provider, reason: `No stored OptionStrat strategy for ${id}` };
+      }
+      const ticker = String(symbol || created?.strategy?.symbol || '').toUpperCase();
+      const chainSymbol = this._chainSymbol(created) || ticker;
+      const chain = await this.fetchChain(chainSymbol);
+      const rows = normalizeOptionChain(chain, chainSymbol);
+      const valuation = calculateStrategyValuation(created.strategy, rows);
+      created.valuation = valuation;
+      this.createdStrategies.set(id, created);
+      return { status: 'ok', provider: this.provider, valuation };
+    } catch (err) {
+      return { status: 'error', provider: this.provider, reason: err?.message || String(err) };
     }
   }
 
@@ -460,13 +520,21 @@ class OptionStratAdapter extends ExecutionAdapter {
       const chain = await this.fetchChain(chainSymbol);
       const rows = normalizeOptionChain(chain, chainSymbol);
       const payload = buildCloseStrategyPayload(created, rows);
+      const valuation = calculateStrategyValuation(payload.strategy, [], { currentField: 'close' });
       const updated = await this._request(`/strategy/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      this.createdStrategies.set(id, updated || { ...created, ...payload });
-      return { status: 'ok', provider: this.provider, raw: updated };
+      const raw = {
+        ...created,
+        ...(updated || payload),
+        root: created.root,
+        chainRoot: created.chainRoot,
+        valuation
+      };
+      this.createdStrategies.set(id, raw);
+      return { status: 'ok', provider: this.provider, valuation, raw };
     } catch (err) {
       return { status: 'error', provider: this.provider, reason: err?.message || String(err) };
     }
@@ -493,6 +561,7 @@ module.exports = {
   payoffAt,
   calculatePayoffSummary,
   calculateStrategyPayoffSummary,
+  calculateStrategyValuation,
   buildOpenStrategyPayload,
   buildCloseStrategyPayload,
   findQuoteMid,

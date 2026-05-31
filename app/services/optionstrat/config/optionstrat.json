@@ -3,6 +3,7 @@
   "cookie": "",
   "account": "",
   "timeoutMs": 10000,
+  "valuationRefreshMs": 5000,
   "commands": [
     {
       "enabled": true,

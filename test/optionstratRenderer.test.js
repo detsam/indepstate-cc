@@ -11,6 +11,7 @@ async function run() {
   const handlers = {};
   const cancelled = [];
   const estimates = [];
+  const valuations = [];
   const payoff = {
     maxProfit: 100,
     maxLoss: 900,
@@ -21,6 +22,7 @@ async function run() {
     on: (ch, fn) => { handlers[ch] = fn; },
     invoke: async (ch, payload) => {
       if (ch === 'orders:list') return [];
+      if (ch === 'settings:get' && payload === 'optionstrat') return { valuationRefreshMs: 5000 };
       if (ch === 'settings:get') return { autoscroll: true };
       if (ch === 'settings:list') return [];
       if (ch === 'settings:set') return true;
@@ -28,11 +30,31 @@ async function run() {
       if (ch === 'actions-bus:set-enabled') return [];
       if (ch === 'execution:cancel-order') {
         cancelled.push(payload);
-        return { status: 'ok' };
+        return {
+          status: 'ok',
+          valuation: {
+            initialValue: 900,
+            currentValue: 970,
+            change: 70,
+            changePct: 7.78
+          }
+        };
       }
       if (ch === 'optionstrat:estimate') {
         estimates.push(payload);
         return { status: 'ok', payoff };
+      }
+      if (ch === 'optionstrat:valuation') {
+        valuations.push(payload);
+        return {
+          status: 'ok',
+          valuation: {
+            initialValue: 900,
+            currentValue: 950,
+            change: 50,
+            changePct: 5.56
+          }
+        };
       }
       return {};
     }
@@ -86,16 +108,25 @@ async function run() {
   assert.strictEqual(card.querySelector('button.btn').textContent, 'OPEN');
 
   t.placedOrderByKey.set(key, { provider: 'optionstrat', ticket: 'deal-1', symbol: 'SPY', payoff });
+  row.valuation = { initialValue: 900, currentValue: 950, change: 50, changePct: 5.56 };
   t.setCardState(key, 'placed');
+  t.render();
   card = t.cardByKey(key);
   let closeButton = card.querySelector('button.btn');
   assert.strictEqual(closeButton.textContent, 'CLOSE');
+  assert(card.textContent.includes('P/L $50'));
+  assert(card.textContent.includes('Change +5.6%'));
+  assert(card.textContent.includes('Value $950'));
   closeButton.click();
   await new Promise(resolve => setImmediate(resolve));
   assert.deepStrictEqual(cancelled, [{ provider: 'optionstrat', ticket: 'deal-1', symbol: 'SPY' }]);
   card = t.cardByKey(key);
   assert(card.querySelector('.card__status').classList.contains('card__status--profit'));
   assert.strictEqual(card.querySelector('.btns').style.display, 'none');
+  assert(card.textContent.includes('P/L $70'));
+  assert(card.textContent.includes('Change +7.8%'));
+  assert(card.textContent.includes('Value $970'));
+  assert.strictEqual(t.placedOrderByKey.has(key), false);
 
   t.setCardState(key, 'profit');
   card = t.cardByKey(key);

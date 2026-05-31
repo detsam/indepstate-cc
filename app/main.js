@@ -790,6 +790,23 @@ function setupIpc(orderSvc) {
     }
   });
 
+  ipcMain.handle('optionstrat:valuation', async (_evt, payload = {}) => {
+    const providerName = payload.provider || payload.meta?.provider || 'optionstrat';
+    const ticket = typeof payload.ticket === 'string' ? payload.ticket : String(payload.ticket || '');
+    const symbol = typeof payload.symbol === 'string' ? payload.symbol : (payload.symbol == null ? undefined : String(payload.symbol));
+    if (!ticket) return { status: 'error', provider: providerName, reason: 'ticket required' };
+    try {
+      const adapter = getAdapter(providerName);
+      wireAdapter(adapter, providerName);
+      if (typeof adapter?.getStrategyValuation !== 'function') {
+        return { status: 'unsupported', provider: providerName };
+      }
+      return await adapter.getStrategyValuation(ticket, symbol);
+    } catch (err) {
+      return { status: 'error', provider: providerName, reason: err?.message || String(err) };
+    }
+  });
+
   ipcMain.handle('instrument:get', async (_evt, arg) => {
     try {
       const symbol = typeof arg === 'object' ? arg.symbol : arg;
