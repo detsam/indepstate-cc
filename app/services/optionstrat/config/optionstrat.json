@@ -1,0 +1,22 @@
+{
+  "baseURL": "https://optionstrat.com/api",
+  "cookie": "",
+  "account": "",
+  "timeoutMs": 10000,
+  "commands": [
+    {
+      "enabled": true,
+      "command": "bcs {s1} {s2} {q}",
+      "name": "BCS {s1}/{s2}",
+      "ticker": "SPY",
+      "root": "",
+      "expiration": "0DTE",
+      "provider": "optionstrat",
+      "instantExecution": false,
+      "legs": [
+        { "option": "CALL", "side": "buy", "strike": "{s1}", "quantity": "{q}" },
+        { "option": "CALL", "side": "sell", "strike": "{s2}", "quantity": "{q}" }
+      ]
+    }
+  ]
+}

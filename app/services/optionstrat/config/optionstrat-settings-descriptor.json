@@ -1,0 +1,48 @@
+{
+  "properties": {
+    "name": "OptionStrat",
+    "group": "Trading"
+  },
+  "options": {
+    "baseURL": {
+      "type": "string",
+      "description": "OptionStrat API base URL"
+    },
+    "cookie": {
+      "type": "string",
+      "description": "Full Cookie header value for OptionStrat API"
+    },
+    "account": {
+      "type": "string",
+      "description": "Collection/account ID for saved strategies"
+    },
+    "timeoutMs": {
+      "type": "number",
+      "description": "API request timeout ms"
+    },
+    "commands": {
+      "description": "OptionStrat command templates",
+      "item": {
+        "description": "Command",
+        "enabled": { "type": "boolean", "description": "Enabled" },
+        "command": { "type": "string", "description": "Command template" },
+        "name": { "type": "string", "description": "Order name template" },
+        "ticker": { "type": "string", "description": "Underlying ticker" },
+        "root": { "type": "string", "description": "Optional quote-chain root ticker" },
+        "expiration": { "type": "string", "description": "Expiration DTE, for example 0DTE" },
+        "provider": { "type": "string", "description": "Execution provider" },
+        "instantExecution": { "type": "boolean", "description": "Open immediately after creating the card" },
+        "legs": {
+          "description": "Option legs",
+          "item": {
+            "description": "Leg",
+            "option": { "type": "string", "description": "CALL or PUT" },
+            "side": { "type": "string", "description": "buy or sell" },
+            "strike": { "type": "string", "description": "Strike template" },
+            "quantity": { "type": "string", "description": "Quantity template" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -103,6 +103,7 @@ const pendingIdByReqId = new Map();
 const ticketToKey = new Map(); // ticket -> rowKey
 const placedOrderByKey = new Map(); // rowKey -> { provider, ticket, symbol }
 const retryCounts = new Map(); // reqId -> retry count
+const instantExecutedKeys = new Set();
 
 // --- пользователь вручную менял поля карточки для этого тикера?
 const userTouchedByTicker = new Map(); // ticker -> boolean
@@ -382,6 +383,12 @@ function rowKey(row) {
   return `${row.ticker}|${row.event}|${row.time}|${row.price}`;
 }
 
+function signedOptionLegQty(leg) {
+  const qty = Math.abs(Number(leg?.quantity ?? leg?.qty ?? 0));
+  const side = String(leg?.side || '').toLowerCase();
+  return side === 'sell' || side === 'short' ? -qty : qty;
+}
+
 function _normNum(val) {
   if (val == null) return null;
   const s = String(val).trim().replace(',', '.');
@@ -496,6 +503,7 @@ function runCommand(str) {
 function setCardState(key, state) {
   const card = cardByKey(key);
   if (!card) return;
+  const isOptionCard = card.dataset.instrumentType === 'OPT';
   const status = card.querySelector('.card__status');
   const close = card.querySelector('.card__close');
   const retryBtn = card.querySelector('.retry-btn');
@@ -528,26 +536,61 @@ function setCardState(key, state) {
     });
     if (btnsWrap) btnsWrap.style.display = state === 'pending-exec' ? 'none' : '';
 
-    if (state === 'placed') {
-      status.style.cursor = 'pointer';
-      status.title = 'Return to ready to send';
-      status.onclick = () => {
-        const orderInfo = placedOrderByKey.get(key);
-        if (orderInfo && orderInfo.ticket && orderInfo.provider) {
-          ipcRenderer.invoke('execution:cancel-order', {
+    const closePlacedOrder = async () => {
+      const orderInfo = placedOrderByKey.get(key);
+      let result = null;
+      if (orderInfo && orderInfo.ticket && orderInfo.provider) {
+        try {
+          result = await ipcRenderer.invoke('execution:cancel-order', {
             provider: orderInfo.provider,
             ticket: orderInfo.ticket,
             symbol: orderInfo.symbol
-          }).catch(() => {
           });
+        } catch (err) {
+          result = { status: 'error', reason: err?.message || String(err) };
+        }
+      }
+
+      if (isOptionCard) {
+        if (result && result.status !== 'ok') {
+          toast(`âœ– ${orderInfo?.symbol || ''}: ${result.reason || 'Close failed'}`);
+          shakeCard(key);
+          return;
         }
         placedOrderByKey.delete(key);
         for (const [ticket, k] of ticketToKey.entries()) {
           if (k === key) ticketToKey.delete(ticket);
         }
-        setCardState(key, null);
+        setCardState(key, 'profit');
         render();
-      };
+        return;
+      }
+
+      placedOrderByKey.delete(key);
+      for (const [ticket, k] of ticketToKey.entries()) {
+        if (k === key) ticketToKey.delete(ticket);
+      }
+      setCardState(key, null);
+      render();
+    };
+
+    if (state === 'placed') {
+      status.style.cursor = 'pointer';
+      status.title = isOptionCard ? 'Close OptionStrat position' : 'Return to ready to send';
+      status.onclick = closePlacedOrder;
+      if (isOptionCard && btnsWrap) {
+        const closeBtn = btnsWrap.querySelector('button.btn');
+        if (closeBtn) {
+          const replacement = closeBtn.cloneNode(true);
+          replacement.textContent = 'CLOSE';
+          replacement.classList.remove('bl');
+          replacement.classList.add('sl');
+          replacement.disabled = false;
+          replacement.title = 'Close OptionStrat position';
+          replacement.addEventListener('click', closePlacedOrder);
+          closeBtn.replaceWith(replacement);
+        }
+      }
     } else if (state === 'pending-exec') {
       status.style.cursor = 'pointer';
       status.title = 'Отменить pe';
@@ -572,7 +615,7 @@ function setCardState(key, state) {
       status.onclick = null;
     }
 
-    if (state === 'pending' || state === 'pending-exec') {
+    if (state === 'pending' || state === 'pending-exec' || (state === 'placed' && isOptionCard)) {
       // restore full card for pending states
       card.classList.remove('card--mini');
       if (card._removedParts) {
@@ -586,7 +629,9 @@ function setCardState(key, state) {
         card._removedParts = null;
       }
       card.querySelectorAll('input').forEach(inp => inp.disabled = true);
-      card.querySelectorAll('button.btn').forEach(btn => btn.disabled = true);
+      card.querySelectorAll('button.btn').forEach(btn => {
+        btn.disabled = !(state === 'placed' && isOptionCard);
+      });
       if (retryBtn) {
         if (state === 'pending') {
           retryBtn.style.display = 'inline-block';
@@ -633,6 +678,15 @@ function setCardState(key, state) {
       btn.disabled = false;
     });
     if (btnsWrap) btnsWrap.style.display = '';
+    if (isOptionCard && btnsWrap) {
+      const openBtn = btnsWrap.querySelector('button.btn');
+      if (openBtn) {
+        openBtn.textContent = 'OPEN';
+        openBtn.classList.remove('sl');
+        openBtn.classList.add('bl');
+        openBtn.title = '';
+      }
+    }
 
     if (retryBtn) retryBtn.style.display = 'none';
 
@@ -816,6 +870,7 @@ function render() {
 
 function createCard(row, index) {
   const key = rowKey(row);
+  const instrumentType = row.instrumentType || detectInstrumentType(row.ticker); // fallback to EQ if not set
 
   // ensure we have a quote for this symbol ASAP
   ensureInstrument(row.ticker, row.provider);
@@ -823,13 +878,14 @@ function createCard(row, index) {
   const card = el('div', 'card');
   card.setAttribute('data-rowkey', key);
   card.setAttribute('data-ticker', row.ticker);
+  card.setAttribute('data-instrument-type', instrumentType);
 
   // head
   const head = el('div', 'row');
 
   // Левая часть: тикер (+ bid/ask при наявності)
   const left = el('div', null, null, {style: 'display:flex;align-items:center;gap:6px'});
-  left.appendChild(el('div', null, row.ticker, {style: 'font-weight:600;font-size:13px'}));
+  left.appendChild(el('div', null, instrumentType === 'OPT' ? (row.name || row.ticker) : row.ticker, {style: 'font-weight:600;font-size:13px'}));
   if (SHOW_BID_ASK) {
     const $bidask = el('span', 'card__bidask');
     $bidask.title = 'Bid / Ask';
@@ -897,8 +953,6 @@ function createCard(row, index) {
   // meta
   const meta = el('div', 'meta');
 
-  const instrumentType = row.instrumentType || detectInstrumentType(row.ticker); // fallback to EQ if not set
-
   // body
   let body;
   switch (instrumentType) {
@@ -910,6 +964,9 @@ function createCard(row, index) {
       break;
     case 'CX':
       body = createCryptoBody(row, key);
+      break;
+    case 'OPT':
+      body = createOptionBody(row, key);
       break;
     default:
       body = createEquitiesBody(row, key); // fallback
@@ -928,9 +985,12 @@ function createCard(row, index) {
     b.setAttribute('data-kind', kind);
     return b;
   };
-  const cols = Math.ceil(CARD_BUTTONS.length / BUTTON_ROWS);
+  const cardButtons = instrumentType === 'OPT'
+    ? [{ label: 'OPEN', action: 'OPEN', style: 'bl' }]
+    : CARD_BUTTONS;
+  const cols = Math.ceil(cardButtons.length / BUTTON_ROWS);
   btns.style.gridTemplateColumns = `repeat(${cols},1fr)`;
-  for (const {label, action, style} of CARD_BUTTONS) {
+  for (const {label, action, style} of cardButtons) {
     btns.appendChild(mk(label, (style || action).toLowerCase(), action));
   }
 
@@ -951,6 +1011,58 @@ function createCard(row, index) {
   card._validate = (commit = false) => body.validate(commit);
 
   return card;
+}
+
+function createOptionBody(row, key) {
+  const line = el('div', 'quad-line option-legs');
+  line.style.display = 'grid';
+  line.style.gridTemplateColumns = '1fr';
+  line.style.gap = '6px';
+
+  const quoteRoot = row.root ? ` root ${row.root}` : '';
+  const summary = el('div', null, `${row.ticker || row.symbol || ''}${quoteRoot} ${row.expirationDte || ''}`.trim(), {
+    style: 'font-size:11px;color:#6b7280'
+  });
+  line.appendChild(summary);
+
+  const legs = Array.isArray(row.legs) ? row.legs : [];
+  for (const leg of legs) {
+    const qty = signedOptionLegQty(leg);
+    const text = `${qty > 0 ? '+' : ''}${qty} ${String(leg.option || '').toUpperCase()} ${leg.strike}`;
+    const legNode = el('div', null, text, {
+      style: 'font-size:12px;display:flex;justify-content:space-between;gap:8px'
+    });
+    const side = el('span', null, String(leg.side || '').toUpperCase(), {
+      style: `color:${qty < 0 ? '#c62828' : '#2e7d32'};font-weight:600`
+    });
+    legNode.appendChild(side);
+    line.appendChild(legNode);
+  }
+
+  return {
+    type: 'option',
+    line,
+    setButtons($btns) {
+      this._btns = $btns;
+    },
+    setNote($note) {
+      this._note = $note;
+    },
+    validate() {
+      const valid = !!(row.ticker || row.symbol) && legs.length > 0;
+      line.classList.toggle('card--invalid', !valid);
+      const reason = valid ? '' : 'Option legs required';
+      if (this._btns) this._btns.querySelectorAll('button').forEach(b => {
+        b.disabled = !valid;
+        if (!valid) b.title = reason; else b.removeAttribute('title');
+      });
+      if (this._note) {
+        this._note.textContent = reason;
+        this._note.style.display = reason ? 'block' : 'none';
+      }
+      return { valid, type: 'option' };
+    }
+  };
 }
 
 // ======= Crypto body (Qty, Price, SL, TP; TP auto = SL*3) =======
@@ -1687,7 +1799,13 @@ async function place(kind, row, v, instrumentType, btnLabel) {
   }
 
   let qtyVal, priceVal, slVal, takeVal, tick, extra = {};
-  if (v.type === 'crypto') {
+  if (v.type === 'option') {
+    qtyVal = 1;
+    priceVal = 1;
+    slVal = 1;
+    takeVal = null;
+    tick = 0.01;
+  } else if (v.type === 'crypto') {
     qtyVal = v.qty;
     priceVal = v.pr;
     slVal = v.sl;
@@ -1733,6 +1851,24 @@ async function place(kind, row, v, instrumentType, btnLabel) {
       };
       res = await ipcRenderer.invoke('queue-place-pending', pendPayload);
     } else {
+      if (v.type === 'option') {
+        const payload = {
+          ticker: row.ticker,
+          symbol: row.symbol || row.ticker,
+          root: row.root,
+          provider: row.provider,
+          instrumentType: 'OPT',
+          name: row.name,
+          description: row.description,
+          expirationDte: row.expirationDte,
+          isCustomName: row.isCustomName,
+          isCashSecured: row.isCashSecured,
+          legs: row.legs,
+          side: 'OPEN',
+          meta: baseMeta,
+        };
+        res = await ipcRenderer.invoke('queue-place-order', payload);
+      } else {
       const payload = {
         ticker: row.ticker,
         event: row.event,
@@ -1743,6 +1879,7 @@ async function place(kind, row, v, instrumentType, btnLabel) {
         meta: baseMeta,
       };
       res = await ipcRenderer.invoke('queue-place-order', payload);
+      }
     }
     if (res && typeof res.providerOrderId === 'string' && res.providerOrderId.startsWith('pending:')) {
       const pendId = res.providerOrderId.slice('pending:'.length);
@@ -1750,13 +1887,26 @@ async function place(kind, row, v, instrumentType, btnLabel) {
       if (card) card.dataset.pendingId = pendId;
       toast(`… ${row.ticker}: sent, waiting confirmation`);
     }
-    if (!res || res.status === 'rejected') {
+    if (!res || res.status === 'rejected' || res.status === 'error') {
       setCardState(key, null);
       toast(`✖ ${row.ticker}: ${res?.reason || 'Rejected'}`);
       shakeCard(key);
       render();
     } else {
-      setCardState(key, isPendingExec ? 'pending-exec' : 'pending');
+      if (v.type === 'option' && res.providerOrderId) {
+        pendingByReqId.delete(requestId);
+        pendingIdByReqId.delete(requestId);
+        retryCounts.delete(requestId);
+        placedOrderByKey.set(key, {
+          provider: res.provider || row.provider || 'optionstrat',
+          ticket: String(res.providerOrderId),
+          symbol: row.symbol || row.ticker || ''
+        });
+        ticketToKey.set(String(res.providerOrderId), key);
+        setCardState(key, 'placed');
+      } else {
+        setCardState(key, isPendingExec ? 'pending-exec' : 'pending');
+      }
       render();
     }
   } catch (e) {
@@ -1808,6 +1958,18 @@ function removeRowByKey(key) {
     render();
     forgetInstrument(row.ticker, row.provider);
   }
+}
+
+function scheduleInstantExecution(row) {
+  if (!row || row.instrumentType !== 'OPT' || row.instantExecution !== true) return;
+  const key = rowKey(row);
+  if (instantExecutedKeys.has(key)) return;
+  instantExecutedKeys.add(key);
+  setTimeout(() => {
+    const current = state.rows.find(r => rowKey(r) === key);
+    if (!current || cardStates.get(key)) return;
+    place('OPEN', current, { valid: true, type: 'option' }, 'OPT', 'OPEN');
+  }, 0);
 }
 
 // ======= IPC wiring =======
@@ -1934,13 +2096,14 @@ ipcRenderer.on('orders:remove', (_evt, filter) => {
 // Обновлённая логика получения ивента
 ipcRenderer.on('orders:new', (_evt, row) => {
   // ищем существующую карточку по ТИКЕРУ
-  const idx = state.rows.findIndex(r => r.ticker === row.ticker);
+  const idx = state.rows.findIndex(r => row.instrumentType === 'OPT' ? rowKey(r) === rowKey(row) : r.ticker === row.ticker);
 
   if (idx === -1) {
     // карточки нет — добавляем новую
     state.rows.unshift(row);
     if (state.rows.length > 500) state.rows.length = 500;
     render();
+    scheduleInstantExecution(row);
     return;
   }
   // карточка для тикера уже есть

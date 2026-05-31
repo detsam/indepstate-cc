@@ -380,6 +380,28 @@ app.on('quit', () => {
 // A) legacy: { ticker,event,price,kind,meta:{qty,stopPts,takePts,riskUsd?} }
 // B) new:    { symbol,side,qty,price,sl,tp,meta:{riskUsd?} }
 function normalizeOrderPayload(payload) {
+  if (payload?.instrumentType === 'OPT') {
+    const symbol = String(payload.symbol || payload.ticker || '');
+    return {
+      instrumentType: 'OPT',
+      symbol,
+      ticker: symbol,
+      root: payload.root,
+      provider: payload.provider,
+      name: payload.name,
+      description: payload.description,
+      expirationDte: payload.expirationDte || payload.expiration,
+      isCustomName: payload.isCustomName === true,
+      isCashSecured: payload.isCashSecured === true,
+      legs: Array.isArray(payload.legs) ? payload.legs : [],
+      side: payload.side || payload.action || 'OPEN',
+      type: payload.type || 'strategy',
+      qty: 1,
+      price: 1,
+      sl: 1,
+      meta: payload.meta || {}
+    };
+  }
   // определим формат
   const legacy = payload && payload.ticker && payload.meta;
   if (legacy) {
@@ -425,6 +447,13 @@ function normalizeOrderPayload(payload) {
 }
 
 function validateOrder(order) {
+  if (order.instrumentType === 'OPT') {
+    const hasSymbol = !!String(order.symbol || order.ticker || '').trim();
+    const hasLegs = Array.isArray(order.legs) && order.legs.length > 0;
+    return hasSymbol && hasLegs
+      ? { ok: true }
+      : { ok: false, reason: 'OPT: ticker and legs required' };
+  }
   if (order.instrumentType === 'CX') {
     const riskUsd = Number(order.meta?.riskUsd);
     const hasRiskSizing = Number.isFinite(riskUsd) && riskUsd > 0;
@@ -449,6 +478,10 @@ function providerCanResolveRiskQty(providerName, adapter) {
 
 function pickProviderName(instrumentType) {
   return execCfg.byInstrumentType?.[instrumentType] || execCfg.default || 'simulated';
+}
+
+function pickOrderProviderName(order) {
+  return order?.provider || order?.meta?.provider || pickProviderName(order?.instrumentType);
 }
 
 // --- EQ normalization: BL/BSL/SL/SSL -> buy/sell + limit/stoplimit (для адаптеров типа J2T)
@@ -491,7 +524,7 @@ function setupIpc(orderSvc) {
     }
 
     // выбор адаптера, requestId и нормализация под исполнение
-    const providerName = pickProviderName(order.instrumentType);
+    const providerName = pickOrderProviderName(order);
     let execOrder;
     let cid = '';
     try {
@@ -531,8 +564,9 @@ function setupIpc(orderSvc) {
       // разово подключим слушатели подтверждений (если адаптер их поддерживает)
       wireAdapter(adapter, providerName);
 
-      const quote = await adapter.getQuote?.(execOrder.symbol);
-      if (!quote || !Number.isFinite(quote.price)) {
+      const isOptionBlock = execOrder.instrumentType === 'OPT';
+      const quote = isOptionBlock ? { price: 1, tickSize: 0.01 } : await adapter.getQuote?.(execOrder.symbol);
+      if (!isOptionBlock && (!quote || !Number.isFinite(quote.price))) {
         const rej = { status: 'rejected', provider: providerName, reason: 'No quote' };
         appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });
         return rej;
@@ -548,7 +582,7 @@ function setupIpc(orderSvc) {
         quoteTickSource: quote?.tickSource
       });
 
-      if (Number.isFinite(effectiveTickSize) && effectiveTickSize > 0) {
+      if (!isOptionBlock && Number.isFinite(effectiveTickSize) && effectiveTickSize > 0) {
         execOrder.tickSize = effectiveTickSize;
         if (isRiskBased) {
           execOrder.qty = orderCalc.qty({
@@ -559,7 +593,7 @@ function setupIpc(orderSvc) {
             instrumentType: execOrder.instrumentType
           });
         }
-      } else if (isRiskBased) {
+      } else if (!isOptionBlock && isRiskBased) {
         if (!providerCanResolveRiskQty(providerName, adapter)) {
           const rej = { status: 'rejected', provider: providerName, reason: `No tickSize for ${execOrder.symbol}; cannot calculate risk-based qty for provider ${providerName}` };
           appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });
@@ -572,11 +606,13 @@ function setupIpc(orderSvc) {
 
       console.log('[EXEC][SIZE]', { symbol: execOrder.symbol, price: execOrder.price, riskUsd, stopPts, tickSize: execOrder.tickSize, lot: execOrder.lot, qty: execOrder.qty, tickSource: quote?.tickSource || (Number(execOrder.tickSize) > 0 ? 'payload/config' : 'adapter-pending') });
 
-      const rule = tradeRules.validate(execOrder, quote);
-      if (!rule.ok) {
-        const rej = { status: 'rejected', provider: providerName, reason: rule.reason };
-        appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });
-        return rej;
+      if (!isOptionBlock) {
+        const rule = tradeRules.validate(execOrder, quote);
+        if (!rule.ok) {
+          const rej = { status: 'rejected', provider: providerName, reason: rule.reason };
+          appendJsonl(EXEC_LOG, { t: ts, kind: 'place', valid: true, reqId, cid, provider: providerName, order: execOrder, result: rej });
+          return rej;
+        }
       }
 
       console.log('[EXEC][REQ]', { provider: providerName, reqId, cid, symbol: execOrder.symbol, action: order.side, side: execOrder.side, type: execOrder.type, qty: execOrder.qty, price: execOrder.price, sl: execOrder.sl, tp: execOrder.tp });

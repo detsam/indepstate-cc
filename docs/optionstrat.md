@@ -1,0 +1,80 @@
+# OptionStrat Provider
+
+OptionStrat is used as an option-position logging provider. It opens and closes saved multi-leg option strategies through the OptionStrat API; it does not route exchange orders.
+
+## Setup
+
+The execution provider is configured in `app/services/brokerage/config/execution.json`:
+
+```json
+{
+  "byInstrumentType": {
+    "OPT": "optionstrat"
+  },
+  "providers": {
+    "optionstrat": {
+      "adapter": "optionstrat",
+      "baseURL": "https://optionstrat.com/api",
+      "cookie": "${ENV:OPTIONSTRAT_COOKIE}",
+      "account": "${ENV:OPTIONSTRAT_ACCOUNT}",
+      "timeoutMs": 10000
+    }
+  }
+}
+```
+
+The same API fields are also exposed in the `OptionStrat` settings section:
+
+- `cookie`: full `Cookie` header value from an authorized OptionStrat session.
+- `account`: collection/account id where created strategies are saved.
+- `baseURL`: defaults to `https://optionstrat.com/api`.
+- `timeoutMs`: API request timeout.
+
+Values saved in the `OptionStrat` settings section are read by the adapter at request time and are sent on chain, open, and close API calls. If both execution config and `OptionStrat` settings are present, the `OptionStrat` settings value wins.
+
+## Commands
+
+OptionStrat user commands live in `app/services/optionstrat/config/optionstrat.json` and can be overridden through the settings UI.
+
+Example:
+
+```json
+{
+  "commands": [
+    {
+      "enabled": true,
+      "command": "bcs {s1} {s2} {q}",
+      "name": "BCS {s1}/{s2}",
+      "ticker": "SPY",
+      "root": "",
+      "expiration": "0DTE",
+      "provider": "optionstrat",
+      "instantExecution": false,
+      "legs": [
+        { "option": "CALL", "side": "buy", "strike": "{s1}", "quantity": "{q}" },
+        { "option": "CALL", "side": "sell", "strike": "{s2}", "quantity": "{q}" }
+      ]
+    }
+  ]
+}
+```
+
+Running `bcs 755 756 10` creates one `OPT` card named `BCS 755/756` with two call legs. Buy legs are sent with positive quantity; sell legs are sent with negative quantity.
+
+If `instantExecution` is `true`, the renderer opens the OptionStrat position immediately after creating the card.
+
+`root` is optional. When present, the live option chain request uses `root`, while strategy symbols still use `ticker`. For example `ticker: "SPXW"` and `root: "SPX"` fetches `/quote/chain/live/SPX` but creates legs like `.SPXW260531C755`.
+
+## Expiration And Pricing
+
+`expiration` uses `{n}DTE` format. `0DTE` resolves to today's UTC expiration, `1DTE` to tomorrow, and so on. If the live chain does not contain the target expiration, the order is rejected with a clear reason.
+
+Opening and closing both read `GET /quote/chain/live/{TICKER}`. If OptionStrat returns `X-Protect: 1`, the adapter decodes the protected raw-DEFLATE payload before parsing JSON.
+
+For each leg, the adapter uses mid price `(bid + ask) / 2`. If bid or ask is missing, that leg is rejected instead of guessing.
+
+## Open And Close
+
+Opening posts to `POST /strategy` and stores the returned `code` as the provider order id. The UI keeps the card in placed status.
+
+Clicking the placed status calls the existing `execution:cancel-order` path. For OptionStrat this means `PUT /strategy/{dealId}` with the original strategy items plus `revision: 1` and fresh `close` prices from the current live chain.

@@ -10,7 +10,8 @@
       "CX": { "type": "string", "description": "Provider for CX instruments" },
       "EQ": { "type": "string", "description": "Provider for EQ instruments" },
       "FX": { "type": "string", "description": "Provider for FX instruments" },
-      "CFD": { "type": "string", "description": "Provider for CFD instruments" }
+      "CFD": { "type": "string", "description": "Provider for CFD instruments" },
+      "OPT": { "type": "string", "description": "Provider for option block instruments" }
     },
     "providers": {
       "description": "Provider configurations",
@@ -18,6 +19,14 @@
       "simulated": {
         "description": "Simulated provider settings",
         "adapter": { "type": "string", "description": "Adapter name" }
+      },
+      "optionstrat": {
+        "description": "OptionStrat provider settings",
+        "adapter": { "type": "string", "description": "Adapter name" },
+        "baseURL": { "type": "string", "description": "API base URL" },
+        "cookie": { "type": "string", "description": "Full Cookie header value" },
+        "account": { "type": "string", "description": "Collection/account ID" },
+        "timeoutMs": { "type": "number", "description": "Request timeout ms" }
       },
       "j2t": {
         "description": "J2T provider settings",
