@@ -12,7 +12,7 @@
 //+--------------------------------------------------------------+
 #property copyright "Copyright 2017-2021, Darwinex Labs."
 #property link      "https://www.darwinex.com/"
-#property version   "1.1"
+#property version   "1.2"
 #property strict
 
 /*
@@ -614,19 +614,31 @@ void SubscribeSymbols(string symbolsStr) {
    int splits = StringSplit(symbolsStr, uSep, data);
 
    if (ArraySize(data) == 0) {
+      UnselectMarketDataSymbols();
       ArrayResize(MarketDataSymbols, 0);
       SendInfo("Unsubscribed from all tick data because of empty symbol list.");
       return;
    }
 
+   UnselectMarketDataSymbols();
+
    string successSymbols = "", errorSymbols = "";
+   int subscribedCount = 0;
    for(int i=0; i<ArraySize(data); i++) {
-      if (SymbolSelect(data[i], true)) {
-         ArrayResize(MarketDataSymbols, i+1);
-         MarketDataSymbols[i] = data[i];
-         successSymbols += data[i] + ", ";
+      string symbol = data[i];
+      StringTrimLeft(symbol);
+      StringTrimRight(symbol);
+
+      if (StringLen(symbol) == 0) continue;
+
+      ResetLastError();
+      if (SymbolSelect(symbol, true)) {
+         ArrayResize(MarketDataSymbols, subscribedCount+1);
+         MarketDataSymbols[subscribedCount] = symbol;
+         subscribedCount++;
+         successSymbols += symbol + ", ";
       } else {
-         errorSymbols += data[i] + ", ";
+         errorSymbols += SymbolSelectErrorDescription(symbol) + ", ";
       }
    }
 
@@ -661,17 +673,23 @@ void SubscribeSymbolsBarData(string dataStr) {
    string errorSymbols = "";
 
    int numInstruments = ArraySize(data)/2;
+   int subscribedCount = 0;
 
    for(int s=0; s<numInstruments; s++) {
+      string symbol = data[2*s];
+      StringTrimLeft(symbol);
+      StringTrimRight(symbol);
 
-      if (SymbolSelect(data[2*s], true)) {
+      ResetLastError();
+      if (SymbolSelect(symbol, true)) {
 
-         ArrayResize(BarDataInstruments, s+1);
+         ArrayResize(BarDataInstruments, subscribedCount+1);
 
-         BarDataInstruments[s].setup(data[2*s], data[(2*s)+1]);
+         BarDataInstruments[subscribedCount].setup(symbol, data[(2*s)+1]);
+         subscribedCount++;
 
       } else {
-         errorSymbols += "'" + data[2*s] + "', ";
+         errorSymbols += SymbolSelectErrorDescription(symbol) + ", ";
       }
    }
 
@@ -1234,6 +1252,37 @@ void ResetFolder() {
 // todo: add a list of error descriptions for MT5.
 string ErrorDescription(int errorCode) {
    return "ErrorCode: " + IntegerToString(errorCode);
+}
+
+string SymbolSelectErrorDescription(string symbol) {
+   int errorCode = GetLastError();
+   bool custom = false;
+   bool exists = SymbolExist(symbol, custom);
+   string selected = "unknown";
+
+   if (exists) {
+      ResetLastError();
+      long selectValue = SymbolInfoInteger(symbol, SYMBOL_SELECT);
+      int selectError = GetLastError();
+      selected = selectError == 0 ? (selectValue ? "true" : "false") : ("error " + IntegerToString(selectError));
+   }
+
+   return StringFormat("'%s' (SymbolSelect error=%d, exists=%s, custom=%s, selected=%s, market_watch=%d/%d)",
+                       symbol,
+                       errorCode,
+                       exists ? "true" : "false",
+                       custom ? "true" : "false",
+                       selected,
+                       SymbolsTotal(true),
+                       SymbolsTotal(false));
+}
+
+void UnselectMarketDataSymbols() {
+   for(int i=0; i<ArraySize(MarketDataSymbols); i++) {
+      string symbol = MarketDataSymbols[i];
+      if (StringLen(symbol) == 0) continue;
+      SymbolSelect(symbol, false);
+   }
 }
 
 
