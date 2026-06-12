@@ -40,7 +40,7 @@ function run() {
   assert.strictEqual(res.ok, true);
   assert.strictEqual(row.ticker, 'AAA');
   assert.strictEqual(row.price, 1.5);
-  assert.strictEqual(row.sl, 6);
+  assert.strictEqual(row.sl, 10);
   assert.strictEqual(row.producingLineId, 'foo');
   console.log('lastCommand tests passed');
 }

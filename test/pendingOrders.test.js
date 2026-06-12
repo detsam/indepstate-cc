@@ -5,6 +5,11 @@ const {
   createStrategyFactory
 } = require('../app/services/pendingOrders');
 
+async function sendBars(svc, bars) {
+  bars.forEach(b => svc.onBar(b));
+  await Promise.resolve();
+}
+
 async function run() {
   // long order triggers after 3 bars
   let exec;
@@ -15,7 +20,7 @@ async function run() {
     { open: 100.2, high: 100.8, low: 100, close: 100.7 },
     { open: 100.5, high: 101, low: 100.1, close: 100.9 },
   ];
-  bars1.forEach(b => svc1.onBar(b));
+  await sendBars(svc1, bars1);
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101, stopLoss: 98 });
 
   // long order triggers after 2 bars via service config
@@ -26,14 +31,14 @@ async function run() {
     { open: 99, high: 101, low: 98, close: 100.5 },
     { open: 100.2, high: 100.8, low: 100, close: 100.7 }
   ];
-  barsCfg.forEach(b => svcCfg.onBar(b));
+  await sendBars(svcCfg, barsCfg);
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101, stopLoss: 98 });
 
   // long order triggers after 1 bar when configured
   exec = undefined;
   const svc1a = createPendingOrderService({ strategyConfig: {} });
   svc1a.addOrder({ price: 100, side: 'long', bars: 1, onExecute: r => { exec = r; } });
-  svc1a.onBar({ open: 99, high: 101, low: 98, close: 100.5 });
+  await sendBars(svc1a, [{ open: 99, high: 101, low: 98, close: 100.5 }]);
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101, stopLoss: 98 });
 
   // long order triggers after 4 bars when configured
@@ -46,7 +51,7 @@ async function run() {
     { open: 100.5, high: 101, low: 100.1, close: 100.9 },
     { open: 100.6, high: 101.1, low: 100.2, close: 100.95 },
   ];
-  bars1b.forEach(b => svc1b.onBar(b));
+  await sendBars(svc1b, bars1b);
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101.1, stopLoss: 98 });
 
   // long order: first attempt invalid, then later trigger
@@ -61,7 +66,7 @@ async function run() {
     { open: 100.2, high: 100.9, low: 100.1, close: 100.8 },
     { open: 100.2, high: 101, low: 100.2, close: 100.9 },
   ];
-  bars2.forEach(b => svc2.onBar(b));
+  await sendBars(svc2, bars2);
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101, stopLoss: 100 });
 
   // short order triggers
@@ -73,7 +78,7 @@ async function run() {
     { open: 199.8, high: 199.9, low: 198.9, close: 199.3 },
     { open: 199.7, high: 199.8, low: 198.5, close: 199 },
   ];
-  bars3.forEach(b => svc3.onBar(b));
+  await sendBars(svc3, bars3);
   assert.deepStrictEqual(exec, { id: 1, side: 'short', limitPrice: 198.5, stopLoss: 201 });
 
   // long order triggers within allowed range
@@ -86,7 +91,7 @@ async function run() {
     { open: 100.6, high: 101.5, low: 100.6, close: 100.8 },
     { open: 100.8, high: 101.9, low: 100.7, close: 101 },
   ];
-  barsRange.forEach(b => svcRange.onBar(b));
+  await sendBars(svcRange, barsRange);
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 101.9, stopLoss: 99 });
 
   // short order triggers within allowed range
@@ -99,7 +104,7 @@ async function run() {
     { open: 199.8, high: 199.9, low: 198.9, close: 199.3 },
     { open: 199.7, high: 199.8, low: 198.5, close: 199 },
   ];
-  barsRangeShort.forEach(b => svcRangeShort.onBar(b));
+  await sendBars(svcRangeShort, barsRangeShort);
   assert.deepStrictEqual(exec, { id: 1, side: 'short', limitPrice: 198.5, stopLoss: 201 });
 
   // long order uses B1_10p_GAP to offset limit price
@@ -111,7 +116,7 @@ async function run() {
     { open: 100.6, high: 100.8, low: 100.6, close: 100.7 },
     { open: 100.7, high: 100.9, low: 100.6, close: 100.8 },
   ];
-  barsGapLong.forEach(b => svcGapLong.onBar(b));
+  await sendBars(svcGapLong, barsGapLong);
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 100.22, stopLoss: 99 });
 
   // short order uses B1_10p_GAP to offset limit price
@@ -123,7 +128,7 @@ async function run() {
     { open: 199.8, high: 199.9, low: 199.1, close: 199.4 },
     { open: 199.7, high: 199.8, low: 199.2, close: 199.3 },
   ];
-  barsGapShort.forEach(b => svcGapShort.onBar(b));
+  await sendBars(svcGapShort, barsGapShort);
   assert.deepStrictEqual(exec, { id: 1, side: 'short', limitPrice: 199.78, stopLoss: 201 });
 
   // long order fails if price extends too far above level
@@ -136,7 +141,7 @@ async function run() {
     { open: 100.6, high: 103.1, low: 100.5, close: 101 }, // high beyond allowed range
     { open: 100.9, high: 101.2, low: 100.8, close: 101 },
   ];
-  bars5.forEach(b => svc5.onBar(b));
+  await sendBars(svc5, bars5);
   assert.strictEqual(exec, undefined);
 
   // short order fails if price extends too far below level
@@ -149,7 +154,7 @@ async function run() {
     { open: 199.4, high: 199.6, low: 197, close: 198.5 }, // low beyond allowed range
     { open: 198.4, high: 198.6, low: 197.5, close: 198.2 },
   ];
-  bars6.forEach(b => svc6.onBar(b));
+  await sendBars(svc6, bars6);
   assert.strictEqual(exec, undefined);
 
   // custom price and stop functions
@@ -159,7 +164,7 @@ async function run() {
     dealPriceRule: () => 105,
     stoppLossRule: () => 95,
     onExecute: r => { exec = r; } });
-  bars1.forEach(b => svcCustom.onBar(b));
+  await sendBars(svcCustom, bars1);
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 105, stopLoss: 95 });
 
   // limit and stop functions via config names
@@ -174,7 +179,7 @@ async function run() {
   );
   const svcCfgFns = createPendingOrderService({ strategyFactory: factory });
   svcCfgFns.addOrder({ price: 100, side: 'long', onExecute: r => { exec = r; } });
-  bars1.forEach(b => svcCfgFns.onBar(b));
+  await sendBars(svcCfgFns, bars1);
   assert.deepStrictEqual(exec, { id: 1, side: 'long', limitPrice: 106, stopLoss: 94 });
 
   // cancelled order does not execute
@@ -182,7 +187,7 @@ async function run() {
   const svc4 = createPendingOrderService({ strategyConfig: {} });
   const id4 = svc4.addOrder({ price: 100, side: 'long', onExecute: r => { exec = r; } });
   svc4.cancelOrder(id4);
-  bars1.forEach(b => svc4.onBar(b));
+  await sendBars(svc4, bars1);
   assert.strictEqual(exec, undefined);
 
   // false break ignores bars that don't cross level

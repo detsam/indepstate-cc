@@ -2,14 +2,33 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const events = require('../app/services/events');
-const { PendingOrderHub } = require('../app/services/pendingOrders');
+const servicesApi = require('../app/services/servicesApi');
+const { MinStopPointsRule } = require('../app/services/tradeRules/minStopPoints');
+const { buildOrderCalculator } = require('../app/services/orderCalculator');
 
 const logsDir = path.join(__dirname, '..', 'app', 'logs');
 const execLog = path.join(logsDir, 'executions.jsonl');
 fs.mkdirSync(logsDir, { recursive: true });
 fs.writeFileSync(execLog, '');
 
+async function waitFor(fn, attempts = 10) {
+  for (let i = 0; i < attempts; i += 1) {
+    const value = fn();
+    if (value) return value;
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  return fn();
+}
+
 async function run() {
+  servicesApi.tradeRules = {
+    rules: [
+      new MinStopPointsRule({ default: 6, byInstrumentType: { FX: 6, EQ: 6 } })
+    ]
+  };
+  servicesApi.orderCalculator = buildOrderCalculator({}, servicesApi);
+  const { PendingOrderHub } = require('../app/services/pendingOrders');
+
   let placed;
   const hub = new PendingOrderHub({
     queuePlaceOrder: async (o) => {
@@ -22,7 +41,7 @@ async function run() {
     strategyConfig: {}
   });
 
-  hub.queuePlacePending({
+  const queued = hub.queuePlacePending({
     ticker: 'TEST',
     price: 100,
     side: 'long',
@@ -36,8 +55,8 @@ async function run() {
     { open: 100.2, high: 100.8, low: 100, close: 100.7 },
     { open: 100.5, high: 101, low: 100.1, close: 100.9 }
   ];
-  bars.forEach(b => events.emit('bar', { provider: 'dwx', symbol: 'TEST', tf: 'M1', ...b }));
-  await new Promise(r => setTimeout(r, 0));
+  bars.forEach(b => events.emit('bar', { provider: queued.provider, symbol: 'TEST', tf: 'M1', ...b }));
+  await waitFor(() => placed);
 
   assert.ok(placed, 'order was not sent for execution');
   assert.strictEqual(placed.side, 'buy');
@@ -69,7 +88,7 @@ async function run() {
     }
   });
 
-  hub2.queuePlacePending({
+  const queued2 = hub2.queuePlacePending({
     ticker: 'TPTEST',
     price: 100,
     side: 'long',
@@ -79,8 +98,8 @@ async function run() {
     meta: { qty: 1 }
   });
 
-  events.emit('bar', { provider: 'dwx', symbol: 'TPTEST', tf: 'M1', open: 100, high: 101, low: 99, close: 100 });
-  await new Promise(r => setTimeout(r, 0));
+  events.emit('bar', { provider: queued2.provider, symbol: 'TPTEST', tf: 'M1', open: 100, high: 101, low: 99, close: 100 });
+  await waitFor(() => placed);
 
   assert.ok(placed, 'takeProfit order was not executed');
   assert.strictEqual(placed.sl, 6); // diff 2 -> 4 pts -> clamped to 6

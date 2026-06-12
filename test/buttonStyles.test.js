@@ -43,8 +43,8 @@ async function run() {
   handlers['orders:new'](null, row);
   const card = t.cardByKey(t.rowKey(row));
   const buttons = card.querySelectorAll('button.btn');
-  const bfbBtn = Array.from(buttons).find(b => b.textContent === 'BFB');
-  const sfbBtn = Array.from(buttons).find(b => b.textContent === 'SFB');
+  const bfbBtn = Array.from(buttons).find(b => b.dataset.kind === 'BFB');
+  const sfbBtn = Array.from(buttons).find(b => b.dataset.kind === 'SFB');
   assert(bfbBtn.classList.contains('bc'));
   assert(sfbBtn.classList.contains('sc'));
   console.log('buttonStyles test passed');
