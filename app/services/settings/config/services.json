@@ -5,6 +5,7 @@
   "services/brokerage-adapter-j2t",
   "services/brokerage-adapter-optionstrat",
   "services/brokerage-adapter-simulated",
+  "services/mcp",
   "services/dealTrackers",
   "services/dealTrackers-chartImages",
   "services/dealTrackers-source-tv-log",

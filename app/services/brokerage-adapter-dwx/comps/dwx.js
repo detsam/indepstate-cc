@@ -72,6 +72,7 @@ class DWXAdapter extends ExecutionAdapter {
     this._ticketMeta = new Map();
     // symbols we have subscribed to for market data
     this._subscribedSymbols = new Set();
+    this._historicTradesRequestChain = Promise.resolve();
   }
 
   /**
@@ -337,6 +338,18 @@ class DWXAdapter extends ExecutionAdapter {
   async listClosedPositions() {
     return Object.values(this.client.historic_trades || {});
   }
+
+  async getDealsHistory({ from, to = new Date(), filters = {}, timeoutMs = 5000 } = {}) {
+    const fromDate = coerceDate(from, 'from');
+    const toDate = coerceDate(to, 'to');
+    if (toDate.getTime() < fromDate.getTime()) {
+      throw new Error('to must be greater than or equal to from');
+    }
+
+    const lookbackDays = calculateLookbackDays(fromDate, new Date());
+    const trades = await requestHistoricTradesSerialized(this, lookbackDays, timeoutMs);
+    return filterDwxDeals(trades, { from: fromDate, to: toDate, filters });
+  }
 }
 
 /** ---------- helpers ---------- */
@@ -389,6 +402,108 @@ function parseDealTime(s) {
   return dt.getTime();
 }
 
+function coerceDate(value, name) {
+  const date = value instanceof Date ? value : new Date(String(value || ''));
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error(`${name} must be a valid date`);
+  }
+  return date;
+}
+
+function calculateLookbackDays(from, now = new Date()) {
+  const diffMs = now.getTime() - coerceDate(from, 'from').getTime();
+  if (!Number.isFinite(diffMs) || diffMs <= 0) return 1;
+  return Math.max(1, Math.ceil(diffMs / 86400000));
+}
+
+async function requestHistoricTradesSerialized(adapter, lookbackDays, timeoutMs = 5000) {
+  const previous = adapter._historicTradesRequestChain || Promise.resolve();
+  const next = previous.catch(() => {}).then(() => requestHistoricTrades(adapter, lookbackDays, timeoutMs));
+  adapter._historicTradesRequestChain = next.catch(() => {});
+  return next;
+}
+
+async function requestHistoricTrades(adapter, lookbackDays, timeoutMs = 5000) {
+  let timer;
+  return new Promise(resolve => {
+    const done = () => {
+      clearTimeout(timer);
+      adapter.events?.off?.('dwx:historic_trades', done);
+      resolve(Object.values(adapter.client?.historic_trades || {}));
+    };
+
+    timer = setTimeout(done, Math.max(1, Number(timeoutMs) || 5000));
+    adapter.events?.on?.('dwx:historic_trades', done);
+    try {
+      adapter.client?.get_historic_trades?.(lookbackDays);
+    } catch {
+      done();
+    }
+  });
+}
+
+function filterDwxDeals(trades, { from, to, filters = {} } = {}) {
+  const fromMs = coerceDate(from, 'from').getTime();
+  const toMs = coerceDate(to, 'to').getTime();
+  return Object.values(trades || {})
+    .map(normalizeDwxDeal)
+    .filter(deal => {
+      const dealMs = deal.dealTime ? new Date(deal.dealTime).getTime() : 0;
+      if (!Number.isFinite(dealMs) || dealMs < fromMs || dealMs > toMs) return false;
+      return matchesDwxDealFilters(deal, filters);
+    });
+}
+
+function normalizeDwxDeal(raw = {}) {
+  const dealTimeMs = parseDealTime(raw.deal_time || raw.dealTime || raw.time);
+  return {
+    ticket: valueOr(raw.ticket, raw.order, raw.position_id, raw.deal),
+    magic: valueOr(raw.magic, raw.magic_number),
+    symbol: raw.symbol,
+    lots: numberOr(raw.lots, raw.volume, raw.volume_initial),
+    type: normalizeType(raw.type),
+    entry: normalizeEntry(raw.entry),
+    dealTime: dealTimeMs ? new Date(dealTimeMs).toISOString() : undefined,
+    dealPrice: numberOr(raw.deal_price, raw.price, raw.open_price),
+    pnl: numberOr(raw.pnl, raw.profit),
+    commission: numberOr(raw.commission),
+    swap: numberOr(raw.swap),
+    comment: raw.comment,
+    raw
+  };
+}
+
+function matchesDwxDealFilters(deal, filters = {}) {
+  if (filters.symbol && String(deal.symbol || '').toUpperCase() !== String(filters.symbol).toUpperCase()) return false;
+  if (filters.magic != null && String(deal.magic ?? '') !== String(filters.magic)) return false;
+  if (filters.type && String(deal.type || '').toLowerCase() !== String(filters.type).toLowerCase()) return false;
+  if (filters.entry && String(deal.entry || '').toLowerCase() !== String(filters.entry).toLowerCase()) return false;
+  if (filters.commentContains) {
+    const haystack = String(deal.comment || '').toLowerCase();
+    const needle = String(filters.commentContains).toLowerCase();
+    if (!haystack.includes(needle)) return false;
+  }
+  return true;
+}
+
+function normalizeType(value) {
+  const type = String(value || '').toLowerCase();
+  if (type.includes('buy')) return 'buy';
+  if (type.includes('sell')) return 'sell';
+  return type;
+}
+
+function valueOr(...values) {
+  return values.find(v => v != null && v !== '');
+}
+
+function numberOr(...values) {
+  const value = valueOr(...values);
+  if (value == null) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 function findHeuristicMatchCid(pendingMap, mtOrder) {
   // Подбираем pending, который максимально похож
   const entries = [...pendingMap.entries()];
@@ -422,4 +537,10 @@ function roughlyEqual(a, b, eps) {
   return Math.abs(Number(a) - Number(b)) <= (eps ?? 1e-6);
 }
 
-module.exports = { DWXAdapter };
+module.exports = {
+  DWXAdapter,
+  calculateLookbackDays,
+  filterDwxDeals,
+  normalizeDwxDeal,
+  parseDealTime
+};

@@ -85,4 +85,4 @@ function getProviderConfig(name){
   return (cfg.providers && cfg.providers[name]) || {};
 }
 
-module.exports = { getAdapter, initExecutionConfig, getProviderConfig };
+module.exports = { getAdapter, initExecutionConfig, getExecutionConfig, getProviderConfig };

@@ -1,6 +1,7 @@
 /**
  * @typedef {Object} BrokerageApi
  * @property {(name: string) => any} getAdapter
+ * @property {() => any} getExecutionConfig
  * @property {(name: string) => any} getProviderConfig
  */
 
@@ -26,6 +27,12 @@
  */
 
 /**
+ * @typedef {Object} McpApi
+ * @property {string} url
+ * @property {() => Promise<void>} [stop]
+ */
+
+/**
  * @typedef {import('electron-updater').AppUpdater} AutoUpdaterApi
  */
 
@@ -35,6 +42,7 @@
  * @property {DealTrackersApi} [dealTrackers]
  * @property {DealTrackersChartImagesApi} [dealTrackersChartImages]
  * @property {NgrokApi} [ngrok]
+ * @property {McpApi} [mcp]
  * @property {AutoUpdaterApi} [autoUpdater]
  * @property {import('./tradeRules')} [tradeRules]
  * @property {{listConfigs:Function,readConfig:Function,writeConfig:Function}} [settings]

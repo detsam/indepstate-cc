@@ -1,0 +1,28 @@
+{
+  "properties": {
+    "group": "integration",
+    "name": "MCP"
+  },
+  "options": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable the local MCP HTTP endpoint"
+    },
+    "host": {
+      "type": "string",
+      "description": "Host interface to bind"
+    },
+    "port": {
+      "type": "number",
+      "description": "Port for the MCP HTTP endpoint"
+    },
+    "path": {
+      "type": "string",
+      "description": "HTTP path for MCP requests"
+    },
+    "authToken": {
+      "type": "string",
+      "description": "Optional bearer token required for MCP requests"
+    }
+  }
+}

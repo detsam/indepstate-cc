@@ -1,0 +1,7 @@
+{
+  "enabled": false,
+  "host": "127.0.0.1",
+  "port": 3225,
+  "path": "/mcp",
+  "authToken": ""
+}

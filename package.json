@@ -7,11 +7,12 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "echo Done",
-    "test": "node test/dealTrackers-source-tv-log.test.js && node test/dealTrackers-source-mt5-log.test.js && node test/dealTrackers.test.js && node test/addCommand.test.js && node test/removeCommand.test.js && node test/lastCommand.test.js && node test/optionstrat.test.js && node test/optionstratRenderer.test.js && node test/pendingOrders.test.js && node test/pendingOrdersHub.test.js && node test/retryLabel.test.js && node test/buttonStyles.test.js && node test/commandShortcuts.test.js && node test/actionsBus.test.js && node test/settingsOverrides.test.js && node test/executionLogService.test.js",
+    "test": "node test/dealTrackers-source-tv-log.test.js && node test/dealTrackers-source-mt5-log.test.js && node test/dealTrackers.test.js && node test/addCommand.test.js && node test/removeCommand.test.js && node test/lastCommand.test.js && node test/optionstrat.test.js && node test/optionstratRenderer.test.js && node test/pendingOrders.test.js && node test/pendingOrdersHub.test.js && node test/retryLabel.test.js && node test/buttonStyles.test.js && node test/commandShortcuts.test.js && node test/actionsBus.test.js && node test/settingsOverrides.test.js && node test/executionLogService.test.js && node test/mcpDealsHistory.test.js && node test/dwxDealsHistory.test.js",
     "build": "electron-builder --win",
     "release": "electron-builder --win --publish always"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.13.0",
     "@ngrok/ngrok": "^1.5.2",
     "ccxt": "^4.5.34",
     "chokidar": "^3.6.0",
@@ -21,7 +22,8 @@
     "helmet": "^7.1.0",
     "morgan": "^1.10.0",
     "node-fetch": "^2.7.0",
-    "split2": "^4.2.0"
+    "split2": "^4.2.0",
+    "zod": "^3.25.67"
   },
   "devDependencies": {
     "electron": "^39.2.3",

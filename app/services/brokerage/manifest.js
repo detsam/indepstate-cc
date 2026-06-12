@@ -1,4 +1,4 @@
-const { initExecutionConfig, getAdapter, getProviderConfig } = require('./adapterRegistry');
+const { initExecutionConfig, getAdapter, getExecutionConfig, getProviderConfig } = require('./adapterRegistry');
 const path = require('path');
 const settings = require('../settings');
 const loadConfig = require('../../config/load');
@@ -20,7 +20,7 @@ function initService(servicesApi = {}) {
     cfg = {};
   }
   initExecutionConfig(cfg);
-  servicesApi.brokerage = { getAdapter, getProviderConfig };
+  servicesApi.brokerage = { getAdapter, getExecutionConfig, getProviderConfig };
 }
 
 module.exports = { initService };
