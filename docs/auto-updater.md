@@ -12,7 +12,7 @@ Edit `app/services/autoUpdater/config/auto-updater.json`:
   "autoDownload": true,
   "allowPrerelease": false,
   "provider": "github",
-  "owner": "detsam",
+  "owner": "iziziz-indepstate",
   "repo": "indepstate-cc"
 }
 ```
