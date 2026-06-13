@@ -2,6 +2,8 @@ const express = require('express');
 
 const DEFAULT_TIMEOUT_MS = 5000;
 const MAX_TIMEOUT_MS = 60000;
+const DEFAULT_BARS_LIMIT = 5000;
+const MAX_BARS_LIMIT = 5000;
 
 function createGetDealsHistoryHandler(servicesApi = {}) {
   return async function getDealsHistory(input = {}) {
@@ -63,13 +65,79 @@ function normalizeDealsHistoryInput(input = {}, brokerage = {}) {
   };
 }
 
+function createGetPriceBarsHandler(servicesApi = {}) {
+  return async function getPriceBars(input = {}) {
+    const brokerage = servicesApi.brokerage;
+    if (!brokerage || typeof brokerage.getAdapter !== 'function') {
+      throw new Error('Brokerage service is not available');
+    }
+
+    const args = normalizePriceBarsInput(input, brokerage);
+    const adapter = brokerage.getAdapter(args.provider);
+    if (!adapter || typeof adapter.getHistoricBars !== 'function') {
+      throw new Error(`Provider "${args.provider}" does not support historic bars`);
+    }
+
+    const bars = await adapter.getHistoricBars({
+      symbol: args.symbol,
+      timeframe: args.timeframe,
+      from: args.from,
+      to: args.to,
+      limit: args.limit,
+      timeoutMs: args.timeoutMs
+    });
+    const normalizedBars = Array.isArray(bars) ? bars : [];
+
+    return {
+      provider: args.provider,
+      symbol: args.symbol,
+      timeframe: args.timeframe,
+      from: args.from.toISOString(),
+      to: args.to.toISOString(),
+      count: normalizedBars.length,
+      bars: normalizedBars
+    };
+  };
+}
+
+function normalizePriceBarsInput(input = {}, brokerage = {}) {
+  const executionConfig = typeof brokerage.getExecutionConfig === 'function'
+    ? brokerage.getExecutionConfig()
+    : {};
+  const provider = String(input.provider || executionConfig.default || '').trim().toLowerCase();
+  if (!provider) throw new Error('provider is required');
+
+  const symbol = String(input.symbol || '').trim();
+  if (!symbol) throw new Error('symbol is required');
+
+  const timeframe = String(input.timeframe || 'M1').trim().toUpperCase();
+  if (!timeframe) throw new Error('timeframe is required');
+
+  const from = parseIsoDate(input.from, 'from', true);
+  const to = parseIsoDate(input.to, 'to', true);
+  if (to.getTime() < from.getTime()) {
+    throw new Error('to must be greater than or equal to from');
+  }
+
+  return {
+    provider,
+    symbol,
+    timeframe,
+    from,
+    to,
+    limit: clampBarsLimit(input.limit),
+    timeoutMs: clampTimeout(input.timeoutMs)
+  };
+}
+
 async function start({ servicesApi, host = '127.0.0.1', port = 3225, path = '/mcp', authToken = '' } = {}) {
   const normalizedPath = normalizeHttpPath(path);
   const mcp = await loadMcpSdk();
   const app = express();
   app.use(express.json({ limit: '1mb' }));
 
-  const createToolHandler = createGetDealsHistoryHandler(servicesApi);
+  const getDealsHistory = createGetDealsHistoryHandler(servicesApi);
+  const getPriceBars = createGetPriceBarsHandler(servicesApi);
   app.all(normalizedPath, async (req, res) => {
     if (authToken && !hasBearerToken(req, authToken)) {
       res.status(401).json({ error: 'Unauthorized' });
@@ -100,7 +168,30 @@ async function start({ servicesApi, host = '127.0.0.1', port = 3225, path = '/mc
         }
       },
       async (args) => {
-        const result = await createToolHandler(args);
+        const result = await getDealsHistory(args);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          structuredContent: result
+        };
+      }
+    );
+    server.registerTool(
+      'get_price_bars',
+      {
+        title: 'Get price bars',
+        description: 'Returns OHLCV bar history for a brokerage provider.',
+        inputSchema: {
+          provider: mcp.z.string().optional(),
+          symbol: mcp.z.string(),
+          timeframe: mcp.z.string().optional(),
+          from: mcp.z.string(),
+          to: mcp.z.string(),
+          limit: mcp.z.number().optional(),
+          timeoutMs: mcp.z.number().optional()
+        }
+      },
+      async (args) => {
+        const result = await getPriceBars(args);
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
           structuredContent: result
@@ -168,6 +259,12 @@ function clampTimeout(value) {
   return Math.min(Math.trunc(n), MAX_TIMEOUT_MS);
 }
 
+function clampBarsLimit(value) {
+  const n = Number(value ?? DEFAULT_BARS_LIMIT);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_BARS_LIMIT;
+  return Math.min(Math.trunc(n), MAX_BARS_LIMIT);
+}
+
 function normalizeHttpPath(value) {
   const p = String(value || '/mcp').trim();
   return p.startsWith('/') ? p : `/${p}`;
@@ -181,6 +278,8 @@ function hasBearerToken(req, token) {
 
 module.exports = {
   createGetDealsHistoryHandler,
+  createGetPriceBarsHandler,
   normalizeDealsHistoryInput,
+  normalizePriceBarsInput,
   start
 };

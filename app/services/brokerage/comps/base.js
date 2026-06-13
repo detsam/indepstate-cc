@@ -13,6 +13,9 @@ class ExecutionAdapter {
   /** @returns {Promise<any[]>} история закрытых позиций */
   async listClosedPositions() { return []; }
 
+  // Optional adapter contract:
+  // async getHistoricBars({ symbol, timeframe, from, to, limit, timeoutMs }) {}
+
   /**
    * Получить котировку/информацию по инструменту.
    * @param {string} symbol

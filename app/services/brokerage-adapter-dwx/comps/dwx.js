@@ -46,7 +46,10 @@ class DWXAdapter extends ExecutionAdapter {
       },
       on_tick: (...a) => userHandler.on_tick?.(...a),
       on_bar_data: (...a) => userHandler.on_bar_data?.(...a),
-      on_historic_data: (...a) => userHandler.on_historic_data?.(...a),
+      on_historic_data(symbol, timeframe, data) {
+        self.events.emit('dwx:historic_data', { symbol, timeframe, data });
+        userHandler.on_historic_data?.(symbol, timeframe, data);
+      },
       on_historic_trades() {
         // при появлении новых исторических сделок проверим закрытие позиций
         self.events.emit('dwx:historic_trades');
@@ -73,6 +76,7 @@ class DWXAdapter extends ExecutionAdapter {
     // symbols we have subscribed to for market data
     this._subscribedSymbols = new Set();
     this._historicTradesRequestChain = Promise.resolve();
+    this._historicBarsRequestChain = Promise.resolve();
   }
 
   /**
@@ -350,6 +354,32 @@ class DWXAdapter extends ExecutionAdapter {
     const trades = await requestHistoricTradesSerialized(this, lookbackDays, timeoutMs);
     return filterDwxDeals(trades, { from: fromDate, to: toDate, filters });
   }
+
+  async getHistoricBars({ symbol, timeframe = 'M1', from, to, limit = 5000, timeoutMs = 5000 } = {}) {
+    const normalizedSymbol = String(symbol || '').trim();
+    if (!normalizedSymbol) throw new Error('symbol is required');
+    const normalizedTimeframe = String(timeframe || 'M1').trim().toUpperCase();
+    const fromDate = coerceDate(from, 'from');
+    const toDate = coerceDate(to, 'to');
+    if (toDate.getTime() < fromDate.getTime()) {
+      throw new Error('to must be greater than or equal to from');
+    }
+
+    const data = await requestHistoricBarsSerialized(this, {
+      symbol: normalizedSymbol,
+      timeframe: normalizedTimeframe,
+      from: fromDate,
+      to: toDate,
+      timeoutMs
+    });
+    return filterDwxBars(data, {
+      from: fromDate,
+      to: toDate,
+      limit,
+      symbol: normalizedSymbol,
+      timeframe: normalizedTimeframe
+    });
+  }
 }
 
 /** ---------- helpers ---------- */
@@ -440,6 +470,95 @@ async function requestHistoricTrades(adapter, lookbackDays, timeoutMs = 5000) {
       done();
     }
   });
+}
+
+async function requestHistoricBarsSerialized(adapter, args) {
+  const previous = adapter._historicBarsRequestChain || Promise.resolve();
+  const next = previous.catch(() => {}).then(() => requestHistoricBars(adapter, args));
+  adapter._historicBarsRequestChain = next.catch(() => {});
+  return next;
+}
+
+async function requestHistoricBars(adapter, { symbol, timeframe, from, to, timeoutMs = 5000 } = {}) {
+  const key = `${symbol}_${timeframe}`;
+  const start = Math.floor(coerceDate(from, 'from').getTime() / 1000);
+  const end = Math.floor(coerceDate(to, 'to').getTime() / 1000);
+  let timer;
+  return new Promise(resolve => {
+    const done = () => {
+      clearTimeout(timer);
+      adapter.events?.off?.('dwx:historic_data', onHistoricData);
+      resolve(adapter.client?.historic_data?.[key] || {});
+    };
+    const onHistoricData = (event = {}) => {
+      if (event.symbol === symbol && String(event.timeframe || '').toUpperCase() === timeframe) {
+        done();
+      }
+    };
+
+    timer = setTimeout(done, Math.max(1, Number(timeoutMs) || 5000));
+    adapter.events?.on?.('dwx:historic_data', onHistoricData);
+    try {
+      adapter.client?.get_historic_data?.({ symbol, time_frame: timeframe, start, end });
+    } catch {
+      done();
+    }
+  });
+}
+
+function filterDwxBars(data, { from, to, limit = 5000 } = {}) {
+  const fromMs = coerceDate(from, 'from').getTime();
+  const toMs = coerceDate(to, 'to').getTime();
+  const lim = clampPositiveInt(limit, 5000, 5000);
+  return Object.entries(data || {})
+    .map(([time, raw]) => normalizeDwxBar(time, raw))
+    .filter(bar => {
+      if (!bar) return false;
+      const barMs = new Date(bar.time).getTime();
+      return Number.isFinite(barMs) && barMs >= fromMs && barMs <= toMs;
+    })
+    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+    .slice(0, lim);
+}
+
+function normalizeDwxBar(time, raw = {}) {
+  const timeMs = parseBarTime(time);
+  const open = numberOr(raw.open);
+  const high = numberOr(raw.high);
+  const low = numberOr(raw.low);
+  const close = numberOr(raw.close);
+  if (!timeMs || ![open, high, low, close].every(Number.isFinite)) return null;
+
+  const bar = {
+    time: new Date(timeMs).toISOString(),
+    open,
+    high,
+    low,
+    close,
+    raw
+  };
+  const volume = numberOr(raw.volume, raw.tick_volume, raw.real_volume);
+  if (Number.isFinite(volume)) bar.volume = volume;
+  return bar;
+}
+
+function parseBarTime(value) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return 0;
+    return value < 100000000000 ? value * 1000 : value;
+  }
+  const s = String(value || '').trim();
+  if (!s) return 0;
+  if (/^\d+$/.test(s)) return parseBarTime(Number(s));
+  const parsed = new Date(s).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function clampPositiveInt(value, fallback, max) {
+  const n = Number(value ?? fallback);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.trunc(n), max);
 }
 
 function filterDwxDeals(trades, { from, to, filters = {} } = {}) {
@@ -540,7 +659,9 @@ function roughlyEqual(a, b, eps) {
 module.exports = {
   DWXAdapter,
   calculateLookbackDays,
+  filterDwxBars,
   filterDwxDeals,
+  normalizeDwxBar,
   normalizeDwxDeal,
   parseDealTime
 };

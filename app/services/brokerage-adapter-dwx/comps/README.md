@@ -11,6 +11,7 @@ Modules:
 
 - `listOpenOrders()` – snapshot of current MT orders
 - `listClosedPositions()` – historic trades keyed by ticket
+- `getHistoricBars({ symbol, timeframe, from, to, limit, timeoutMs })` - normalized OHLCV history from DWX historic data
 
 `check_open_orders` returns both pending orders and open positions and triggers
 `on_order_event` whenever an order is added, removed or its `open_time`
@@ -160,6 +161,21 @@ client.subscribe_symbols_bar_data([['EURUSD','M1'], ['GBPUSD','H1']]);
 client.get_historic_data({ symbol:'EURUSD', time_frame:'D1', start: 1700000000, end: 1700600000 });
 client.get_historic_trades(30);
 ```
+
+`DWXAdapter.getHistoricBars()` wraps `client.get_historic_data()` for callers that need normalized bars, including the MCP `get_price_bars` tool. It accepts JavaScript dates or ISO-compatible values for `from` and `to`, converts them to DWX Unix-second command values, waits for matching historic data, then returns bars sorted oldest to newest:
+
+```js
+const bars = await adapter.getHistoricBars({
+  symbol: 'EURUSD',
+  timeframe: 'M1',
+  from: '2026-06-10T08:00:00.000Z',
+  to: '2026-06-10T09:00:00.000Z',
+  limit: 5000,
+  timeoutMs: 5000
+});
+```
+
+Returned bars have `{ time, open, high, low, close, volume?, raw? }`, where `time` is an ISO string. The range is inclusive and `limit` is capped at `5000`.
 
 ### Orders
 
