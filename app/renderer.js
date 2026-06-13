@@ -27,6 +27,15 @@ const INSTRUMENT_REFRESH_MS = Number.isFinite(envInstrRefresh)
   ? envInstrRefresh
   : Number(orderCardsCfg?.instrumentRefreshMs) || 1000;
 let optionStratValuationRefreshMs = 5000;
+const DEFAULT_OPTIONSTRAT_DISPLAY_FIELDS = {
+  pl: true,
+  value: true,
+  maxLoss: true,
+  maxProfit: true,
+  change: true,
+  rr: true
+};
+let optionStratDisplayFields = {...DEFAULT_OPTIONSTRAT_DISPLAY_FIELDS};
 
 const CLOSED_CARD_EVENT_STRATEGY = orderCardsCfg?.closedCardEventStrategy || 'ignore';
 const BUTTON_ROWS = Number(orderCardsCfg?.buttonRows) || 1;
@@ -90,6 +99,7 @@ ipcRenderer.invoke('settings:get', 'optionstrat').then((res) => {
   const cfg = res?.config || res || {};
   const ms = Number(cfg.valuationRefreshMs);
   if (Number.isFinite(ms) && ms > 0) optionStratValuationRefreshMs = ms;
+  optionStratDisplayFields = normalizeOptionStratDisplayFields(cfg.displayFields);
 }).catch(() => {
 });
 
@@ -417,6 +427,63 @@ function optionValuationForRow(row) {
   return row?.valuation || row?.optionValuation || row?.meta?.valuation || null;
 }
 
+function normalizeOptionStratDisplayFields(fields = {}) {
+  const normalized = {...DEFAULT_OPTIONSTRAT_DISPLAY_FIELDS};
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return normalized;
+  for (const key of Object.keys(normalized)) {
+    if (typeof fields[key] === 'boolean') normalized[key] = fields[key];
+  }
+  return normalized;
+}
+
+function coerceTimeValue(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    return value < 10000000000 ? value * 1000 : value;
+  }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric < 10000000000 ? numeric * 1000 : numeric;
+  const parsed = new Date(String(value)).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatTradeTime(value) {
+  const ms = coerceTimeValue(value);
+  if (!ms) return '-';
+  const date = new Date(ms);
+  return date.toLocaleString([], {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function markRowOpened(key, timestamp = Date.now()) {
+  const row = state.rows.find(r => rowKey(r) === key);
+  if (row && row.instrumentType === 'OPT' && !row.openedAt) row.openedAt = timestamp;
+  const orderInfo = placedOrderByKey.get(key);
+  if (orderInfo && !orderInfo.openedAt) orderInfo.openedAt = timestamp;
+}
+
+function markRowClosed(key, timestamp = Date.now()) {
+  const row = state.rows.find(r => rowKey(r) === key);
+  if (row && row.instrumentType === 'OPT') {
+    if (!row.openedAt) row.openedAt = timestamp;
+    row.closedAt = timestamp;
+  }
+  const orderInfo = placedOrderByKey.get(key);
+  if (orderInfo) {
+    if (!orderInfo.openedAt) orderInfo.openedAt = timestamp;
+    orderInfo.closedAt = timestamp;
+  }
+}
+
 function formatPercentValue(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '-';
@@ -617,6 +684,7 @@ function setCardState(key, state) {
           if (current) current.valuation = finalValuation;
           if (orderInfo) orderInfo.valuation = finalValuation;
         }
+        markRowClosed(key);
         placedOrderByKey.delete(key);
         pendingOptionValuations.delete(key);
         for (const [ticket, k] of ticketToKey.entries()) {
@@ -1172,10 +1240,14 @@ function createOptionBody(row, key) {
   });
   line.appendChild(summary);
 
-  const payoff = optionPayoffForRow(row);
-  const payoffRow = el('div', 'option-payoff', null, {
+  const detailsRow = el('div', 'option-details', null, {
     style: 'display:flex;align-items:center;gap:8px;font-size:11px;line-height:1.2;flex-wrap:wrap'
   });
+  const payoff = optionPayoffForRow(row);
+  const valuation = optionValuationForRow(row);
+  const openedAt = row.openedAt || row.meta?.openedAt;
+  const closedAt = row.closedAt || row.meta?.closedAt;
+
   const maxLoss = payoff
     ? formatPayoffValue(payoff.maxLoss, payoff.isMaxLossInfinite)
     : '-';
@@ -1183,35 +1255,50 @@ function createOptionBody(row, key) {
     ? formatPayoffValue(payoff.maxProfit, payoff.isMaxProfitInfinite)
     : '-';
   const rr = formatRiskReward(payoff);
-  const lossNode = el('span', null, 'Max Loss ', { style: 'color:#fff' });
-  lossNode.appendChild(el('span', null, maxLoss, { style: 'color:#ef4444;font-weight:700' }));
-  const profitNode = el('span', null, 'Max Profit ', { style: 'color:#fff' });
-  profitNode.appendChild(el('span', null, maxProfit, { style: 'color:#22c55e;font-weight:700' }));
-  const rrNode = el('span', null, 'RR ', { style: 'color:#fff' });
-  rrNode.appendChild(el('span', null, rr, { style: 'color:#e5e7eb;font-weight:700' }));
-  payoffRow.appendChild(lossNode);
-  payoffRow.appendChild(profitNode);
-  payoffRow.appendChild(rrNode);
-  line.appendChild(payoffRow);
+  const change = valuation ? Number(valuation.change) : NaN;
+  const color = change > 0 ? '#22c55e' : change < 0 ? '#ef4444' : '#e5e7eb';
 
-  const valuation = optionValuationForRow(row);
-  if (valuation) {
-    const change = Number(valuation.change);
-    const valuationRow = el('div', 'option-valuation', null, {
-      style: 'display:flex;align-items:center;gap:8px;font-size:11px;line-height:1.2;flex-wrap:wrap'
-    });
-    const color = change > 0 ? '#22c55e' : change < 0 ? '#ef4444' : '#e5e7eb';
+  if (valuation && optionStratDisplayFields.pl) {
     const changeNode = el('span', null, 'P/L ', { style: 'color:#fff' });
     changeNode.appendChild(el('span', null, formatCurrencyValue(change), { style: `color:${color};font-weight:700` }));
-    const pctNode = el('span', null, 'Change ', { style: 'color:#fff' });
-    pctNode.appendChild(el('span', null, formatPercentValue(valuation.changePct), { style: `color:${color};font-weight:700` }));
+    detailsRow.appendChild(changeNode);
+  }
+  if (valuation && optionStratDisplayFields.value) {
     const valueNode = el('span', null, 'Value ', { style: 'color:#fff' });
     valueNode.appendChild(el('span', null, formatCurrencyValue(valuation.currentValue), { style: 'color:#e5e7eb;font-weight:700' }));
-    valuationRow.appendChild(changeNode);
-    valuationRow.appendChild(pctNode);
-    valuationRow.appendChild(valueNode);
-    line.appendChild(valuationRow);
+    detailsRow.appendChild(valueNode);
   }
+  if (optionStratDisplayFields.maxLoss) {
+    const lossNode = el('span', null, 'Max Loss ', { style: 'color:#fff' });
+    lossNode.appendChild(el('span', null, maxLoss, { style: 'color:#ef4444;font-weight:700' }));
+    detailsRow.appendChild(lossNode);
+  }
+  if (optionStratDisplayFields.maxProfit) {
+    const profitNode = el('span', null, 'Max Profit ', { style: 'color:#fff' });
+    profitNode.appendChild(el('span', null, maxProfit, { style: 'color:#22c55e;font-weight:700' }));
+    detailsRow.appendChild(profitNode);
+  }
+  if (valuation && optionStratDisplayFields.change) {
+    const pctNode = el('span', null, 'Change ', { style: 'color:#fff' });
+    pctNode.appendChild(el('span', null, formatPercentValue(valuation.changePct), { style: `color:${color};font-weight:700` }));
+    detailsRow.appendChild(pctNode);
+  }
+  if (optionStratDisplayFields.rr) {
+    const rrNode = el('span', null, 'RR ', { style: 'color:#fff' });
+    rrNode.appendChild(el('span', null, rr, { style: 'color:#e5e7eb;font-weight:700' }));
+    detailsRow.appendChild(rrNode);
+  }
+  if (openedAt) {
+    const openedNode = el('span', null, 'Opened ', { style: 'color:#9ca3af' });
+    openedNode.appendChild(el('span', null, formatTradeTime(openedAt), { style: 'color:#e5e7eb;font-weight:700' }));
+    detailsRow.appendChild(openedNode);
+  }
+  if (closedAt) {
+    const closedNode = el('span', null, 'Closed ', { style: 'color:#9ca3af' });
+    closedNode.appendChild(el('span', null, formatTradeTime(closedAt), { style: 'color:#e5e7eb;font-weight:700' }));
+    detailsRow.appendChild(closedNode);
+  }
+  if (detailsRow.childNodes.length) line.appendChild(detailsRow);
 
   return {
     type: 'option',
@@ -2068,6 +2155,7 @@ async function place(kind, row, v, instrumentType, btnLabel) {
       render();
     } else {
       if (v.type === 'option' && res.providerOrderId) {
+        const openedAt = Date.now();
         pendingByReqId.delete(requestId);
         pendingIdByReqId.delete(requestId);
         retryCounts.delete(requestId);
@@ -2076,10 +2164,12 @@ async function place(kind, row, v, instrumentType, btnLabel) {
           ticket: String(res.providerOrderId),
           symbol: row.symbol || row.ticker || '',
           payoff: res.payoff || res.raw?.payoff,
-          valuation: res.valuation || res.raw?.valuation
+          valuation: res.valuation || res.raw?.valuation,
+          openedAt
         });
         if (res.payoff || res.raw?.payoff) row.payoff = res.payoff || res.raw.payoff;
         if (res.valuation || res.raw?.valuation) row.valuation = res.valuation || res.raw.valuation;
+        row.openedAt = row.openedAt || openedAt;
         ticketToKey.set(String(res.providerOrderId), key);
         setCardState(key, 'placed');
       } else {
@@ -2361,15 +2451,18 @@ ipcRenderer.on('execution:result', (_evt, rec) => {
     if (providerOrderId) {
       const row = state.rows.find(r => rowKey(r) === key);
       const symbol = rec.order?.symbol || rec.order?.ticker || row?.ticker || row?.symbol || '';
+      const openedAt = Date.now();
       placedOrderByKey.set(key, {
         provider: rec.provider || (row && row.provider) || '',
         ticket: providerOrderId,
         symbol: symbol,
         payoff: rec.payoff || rec.raw?.payoff,
-        valuation: rec.valuation || rec.raw?.valuation
+        valuation: rec.valuation || rec.raw?.valuation,
+        openedAt
       });
       if (row && (rec.payoff || rec.raw?.payoff)) row.payoff = rec.payoff || rec.raw.payoff;
       if (row && (rec.valuation || rec.raw?.valuation)) row.valuation = rec.valuation || rec.raw.valuation;
+      if (row && row.instrumentType === 'OPT') row.openedAt = row.openedAt || openedAt;
     }
     toast(`✔ ${rec.order.symbol} ${rec.order.side} ${rec.order.qty} — placed`);
     render();
@@ -2393,6 +2486,7 @@ ipcRenderer.on('position:opened', (_evt, rec) => {
   }
   if (!key) return;
   placedOrderByKey.delete(key);
+  markRowOpened(key);
   setCardState(key, 'executing');
   render();
 });
@@ -2401,6 +2495,7 @@ ipcRenderer.on('position:closed', (_evt, rec) => {
   const key = ticketToKey.get(String(rec.ticket));
   if (!key) return;
   ticketToKey.delete(String(rec.ticket));
+  markRowClosed(key);
   if (typeof rec.profit === 'number') {
     setCardState(key, rec.profit >= 0 ? 'profit' : 'loss');
     render();
@@ -2427,7 +2522,7 @@ $settingsBtn.addEventListener('click', () => {
   $settingsPanel.style.display = 'flex';
   loadSettingsSections();
 });
-$settingsClose.addEventListener('click', () => {
+function saveAndCloseSettingsPanel() {
   const setNested = (obj, path, value) => {
     const parts = path.split('.');
     let cur = obj;
@@ -2463,10 +2558,24 @@ $settingsClose.addEventListener('click', () => {
       ipcRenderer.invoke('settings:set', name, data).catch(() => {
       });
       if (name === 'ui') state.autoscroll = !!data.autoscroll;
+      if (name === 'optionstrat') {
+        const ms = Number(data.valuationRefreshMs);
+        if (Number.isFinite(ms) && ms > 0) optionStratValuationRefreshMs = ms;
+        optionStratDisplayFields = normalizeOptionStratDisplayFields(data.displayFields);
+        render();
+      }
     }
   }
   $settingsPanel.style.display = 'none';
   settingsForms.clear();
+}
+
+$settingsClose.addEventListener('click', saveAndCloseSettingsPanel);
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if ($settingsPanel.style.display !== 'flex') return;
+  e.preventDefault();
+  saveAndCloseSettingsPanel();
 });
 $wrap.addEventListener('wheel', () => {
   state.autoscroll = false;
@@ -2507,6 +2616,10 @@ if (typeof module !== 'undefined') {
     cardStates,
     pendingExecLabels,
     placedOrderByKey,
+    settingsForms,
+    setOptionStratDisplayFields(fields) {
+      optionStratDisplayFields = normalizeOptionStratDisplayFields(fields);
+    },
     render
   };
 }

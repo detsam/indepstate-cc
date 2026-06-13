@@ -30,8 +30,11 @@ The same API fields are also exposed in the `OptionStrat` settings section:
 - `baseURL`: defaults to `https://optionstrat.com/api`.
 - `timeoutMs`: API request timeout.
 - `valuationRefreshMs`: refresh interval for open strategy live P/L, default `5000`.
+- `displayFields`: toggles visible OptionStrat card fields: `pl`, `value`, `maxLoss`, `maxProfit`, `change`, and `rr`.
 
 Values saved in the `OptionStrat` settings section are read by the adapter at request time and are sent on chain, open, and close API calls. If both execution config and `OptionStrat` settings are present, the `OptionStrat` settings value wins.
+
+The settings panel saves dirty forms when it is closed with either the close button or `Esc`.
 
 ## Commands
 
@@ -76,7 +79,7 @@ For each leg, the adapter uses mid price `(bid + ask) / 2`. If bid or ask is mis
 
 ## Live Valuation
 
-After an OptionStrat position is successfully opened, the renderer polls `GET /quote/chain/live/{TICKER}` through the adapter and shows the strategy value change at the bottom of the card.
+After an OptionStrat position is successfully opened, the renderer polls `GET /quote/chain/live/{TICKER}` through the adapter and shows the strategy value change in a compact details row on the card.
 
 The calculation is:
 
@@ -86,6 +89,8 @@ The calculation is:
 - Percent: `P/L / abs(initial value)`.
 
 The polling interval is controlled by `valuationRefreshMs` in the `OptionStrat` settings section. Set it to milliseconds; for example `5000` means every five seconds.
+
+The details row can show P/L, Value, Max Loss, Max Profit, Change, RR, Opened, and Closed. Field visibility is controlled by `displayFields`; Opened and Closed are shown whenever the renderer has those timestamps. The compact row keeps the tail fields in this order: Change, RR, Opened, Closed.
 
 When the strategy is closed successfully, live polling stops and the green final card keeps the valuation calculated from the same close prices sent in `items[].close`. If the final close valuation cannot be calculated for some reason, the card keeps the last known live valuation instead of blocking the close flow.
 

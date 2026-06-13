@@ -8,10 +8,12 @@ catch (e) {
 const Module = require('module');
 
 async function run() {
+  const originalDateNow = Date.now;
   const handlers = {};
   const cancelled = [];
   const estimates = [];
   const valuations = [];
+  const savedSettings = [];
   const payoff = {
     maxProfit: 100,
     maxLoss: 900,
@@ -20,12 +22,15 @@ async function run() {
   };
   const ipcRenderer = {
     on: (ch, fn) => { handlers[ch] = fn; },
-    invoke: async (ch, payload) => {
+    invoke: async (ch, payload, data) => {
       if (ch === 'orders:list') return [];
       if (ch === 'settings:get' && payload === 'optionstrat') return { valuationRefreshMs: 5000 };
       if (ch === 'settings:get') return { autoscroll: true };
       if (ch === 'settings:list') return [];
-      if (ch === 'settings:set') return true;
+      if (ch === 'settings:set') {
+        savedSettings.push({ name: payload, data });
+        return true;
+      }
       if (ch === 'actions-bus:list') return [];
       if (ch === 'actions-bus:set-enabled') return [];
       if (ch === 'execution:cancel-order') {
@@ -109,6 +114,7 @@ async function run() {
 
   t.placedOrderByKey.set(key, { provider: 'optionstrat', ticket: 'deal-1', symbol: 'SPY', payoff });
   row.valuation = { initialValue: 900, currentValue: 950, change: 50, changePct: 5.56 };
+  row.openedAt = Date.UTC(2026, 5, 13, 9, 30);
   t.setCardState(key, 'placed');
   t.render();
   card = t.cardByKey(key);
@@ -117,8 +123,12 @@ async function run() {
   assert(card.textContent.includes('P/L $50'));
   assert(card.textContent.includes('Change +5.6%'));
   assert(card.textContent.includes('Value $950'));
+  assert(card.textContent.includes('Opened '));
+  assert(!card.textContent.includes('Closed '));
+  Date.now = () => Date.UTC(2026, 5, 13, 10, 45);
   closeButton.click();
   await new Promise(resolve => setImmediate(resolve));
+  Date.now = originalDateNow;
   assert.deepStrictEqual(cancelled, [{ provider: 'optionstrat', ticket: 'deal-1', symbol: 'SPY' }]);
   card = t.cardByKey(key);
   assert(card.querySelector('.card__status').classList.contains('card__status--profit'));
@@ -126,12 +136,54 @@ async function run() {
   assert(card.textContent.includes('P/L $70'));
   assert(card.textContent.includes('Change +7.8%'));
   assert(card.textContent.includes('Value $970'));
+  assert(card.textContent.includes('Closed '));
+  const detailsText = card.querySelector('.option-details').textContent;
+  assert(detailsText.indexOf('Change ') < detailsText.indexOf('RR '));
+  assert(detailsText.indexOf('RR ') < detailsText.indexOf('Opened '));
+  assert(detailsText.indexOf('Opened ') < detailsText.indexOf('Closed '));
   assert.strictEqual(t.placedOrderByKey.has(key), false);
 
   t.setCardState(key, 'profit');
   card = t.cardByKey(key);
   assert.strictEqual(card.querySelector('.btns').style.display, 'none');
   assert(card.textContent.includes('Max Loss $900'));
+  t.setOptionStratDisplayFields({
+    pl: false,
+    value: false,
+    maxLoss: false,
+    maxProfit: false,
+    change: false,
+    rr: false
+  });
+  t.render();
+  card = t.cardByKey(key);
+  assert(!card.textContent.includes('P/L $70'));
+  assert(!card.textContent.includes('Change +7.8%'));
+  assert(!card.textContent.includes('Value $970'));
+  assert(!card.textContent.includes('Max Loss $900'));
+  assert(!card.textContent.includes('Max Profit $100'));
+  assert(!card.textContent.includes('RR 1:0.1'));
+  assert(card.textContent.includes('Opened '));
+  assert(card.textContent.includes('Closed '));
+  const settingsPanel = document.getElementById('settings-panel');
+  const settingsForm = document.createElement('form');
+  settingsForm.dataset.dirty = '1';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = false;
+  input.dataset.field = 'displayFields.pl';
+  settingsForm.appendChild(input);
+  settingsPanel.style.display = 'flex';
+  t.settingsForms.set('optionstrat', settingsForm);
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(settingsPanel.style.display, 'none');
+  assert.deepStrictEqual(savedSettings[savedSettings.length - 1], {
+    name: 'optionstrat',
+    data: { displayFields: { pl: false } }
+  });
+  assert.strictEqual(t.settingsForms.size, 0);
+  Date.now = originalDateNow;
   console.log('optionstratRenderer tests passed');
 }
 

@@ -4,6 +4,14 @@
   "account": "",
   "timeoutMs": 10000,
   "valuationRefreshMs": 5000,
+  "displayFields": {
+    "pl": true,
+    "value": true,
+    "maxLoss": true,
+    "maxProfit": true,
+    "change": true,
+    "rr": true
+  },
   "commands": [
     {
       "enabled": true,

@@ -24,6 +24,15 @@
       "type": "number",
       "description": "Open position valuation refresh interval ms"
     },
+    "displayFields": {
+      "description": "Visible fields on OptionStrat order cards",
+      "pl": { "type": "boolean", "description": "Show P/L" },
+      "value": { "type": "boolean", "description": "Show Value" },
+      "maxLoss": { "type": "boolean", "description": "Show Max Loss" },
+      "maxProfit": { "type": "boolean", "description": "Show Max Profit" },
+      "change": { "type": "boolean", "description": "Show Change" },
+      "rr": { "type": "boolean", "description": "Show RR" }
+    },
     "commands": {
       "description": "OptionStrat command templates",
       "item": {
