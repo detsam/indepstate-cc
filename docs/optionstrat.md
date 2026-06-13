@@ -65,6 +65,8 @@ Example:
 
 Running `bcs 755 756 10` creates one `OPT` card named `BCS 755/756` with two call legs. Buy legs are sent with positive quantity; sell legs are sent with negative quantity. The `q` placeholder is optional and defaults to `1`, so `bcs 755 756` opens the same structure with one contract per leg.
 
+Command templates also expose range aliases for numeric strategy arguments. `{min}` resolves to the smallest numeric argument and `{max}` resolves to the largest numeric argument, independent of input order. The optional `{q}` quantity argument is excluded from this range, so `bcs 756 755 10` can still render strikes as `{min}/{max}` => `755/756` while keeping quantity `10`.
+
 If `instantExecution` is `true`, the renderer opens the OptionStrat position immediately after creating the card.
 
 `root` is optional. When present, the live option chain request uses `root`, while strategy symbols still use `ticker`. For example `ticker: "SPXW"` and `root: "SPX"` fetches `/quote/chain/live/SPX` but creates legs like `.SPXW260531C755`.

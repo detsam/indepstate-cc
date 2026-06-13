@@ -227,6 +227,35 @@ async function run() {
   assert.strictEqual(builtDefaultQtyWithoutPlaceholder.row.legs[0].quantity, 1);
   assert.strictEqual(builtDefaultQtyWithoutPlaceholder.row.legs[1].quantity, 1);
 
+  const builtSortedStrikes = buildOptionStratRow({
+    command: 'bcs {s1} {s2} {q}',
+    name: 'BCS {min}/{max}',
+    ticker: 'SPY',
+    legs: [
+      { option: 'CALL', side: 'buy', strike: '{min}', quantity: '{q}' },
+      { option: 'CALL', side: 'sell', strike: '{max}', quantity: '{q}' }
+    ]
+  }, ['756', '755', '10'], 126);
+  assert.strictEqual(builtSortedStrikes.ok, true);
+  assert.strictEqual(builtSortedStrikes.row.name, 'BCS 755/756');
+  assert.strictEqual(builtSortedStrikes.row.legs[0].strike, 755);
+  assert.strictEqual(builtSortedStrikes.row.legs[1].strike, 756);
+  assert.strictEqual(builtSortedStrikes.row.legs[0].quantity, 10);
+
+  const builtRangeAliasesAsCommandArgs = buildOptionStratRow({
+    command: 'bcs {max} {min}',
+    name: 'BCS {min}/{max}',
+    ticker: 'SPY',
+    legs: [
+      { option: 'CALL', side: 'buy', strike: '{min}', quantity: '{q}' },
+      { option: 'CALL', side: 'sell', strike: '{max}', quantity: '{q}' }
+    ]
+  }, ['756', '755'], 127);
+  assert.strictEqual(builtRangeAliasesAsCommandArgs.ok, true);
+  assert.strictEqual(builtRangeAliasesAsCommandArgs.row.name, 'BCS 755/756');
+  assert.strictEqual(builtRangeAliasesAsCommandArgs.row.legs[0].strike, 755);
+  assert.strictEqual(builtRangeAliasesAsCommandArgs.row.legs[1].strike, 756);
+
   const noRootCalls = [];
   const noRootAdapter = new OptionStratAdapter({
     account: 'acct-1',

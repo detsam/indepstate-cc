@@ -24,6 +24,21 @@ function numericTemplate(value, vars, fieldName) {
   return num;
 }
 
+function numericArgValue(value) {
+  const num = Number(String(value ?? '').trim().replace(',', '.'));
+  return Number.isFinite(num) ? num : null;
+}
+
+function applyRangeAliases(vars) {
+  const values = Object.entries(vars)
+    .filter(([key]) => key !== 'q')
+    .map(([, value]) => numericArgValue(value))
+    .filter(value => value != null);
+  if (!values.length) return;
+  vars.min = Math.min(...values);
+  vars.max = Math.max(...values);
+}
+
 function buildOptionStratRow(definition, args, now = Date.now()) {
   const tokens = tokenizeTemplate(definition.command);
   if (!tokens.length) throw new Error('OptionStrat command template is empty');
@@ -49,6 +64,7 @@ function buildOptionStratRow(definition, args, now = Date.now()) {
     }
     vars[name] = args[i];
   }
+  applyRangeAliases(vars);
 
   const ticker = fillTemplate(definition.ticker || 'SPY', vars).trim().toUpperCase();
   const root = fillTemplate(definition.root || '', vars).trim().toUpperCase();
